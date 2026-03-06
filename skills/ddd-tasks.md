@@ -16,25 +16,21 @@
    - 確認所有驗收條件
 
 2. **拆解任務**
-   - 將功能拆成 2~5 個 milestone
-   - 每個 milestone 包含若干具體 task
-   - 每個 task 必須：
-     - 可獨立測試
-     - 有明確的完成標準
-     - 預估修改的檔案範圍
-   - milestone 之間有合理的遞進關係
+   - 將功能拆成 2~5 個 milestone，每個 milestone 必須是一個「可獨立交付且可測試的增量」。
+   - 每個 task 的拆解必須符合 **Agentic TDD** 限制：
+     - 測試與實作分離：不要把「寫測試與實作」混在同一個 task 中，應確保測試先行 (Test-First)。
+     - 原子性：每個 task 只能專注修改單一行為或模組。
 
 3. **撰寫 tasks.md**
    ```markdown
    # Tasks: <功能名稱>
 
    ## Milestone 1: <名稱>
-   - [ ] Task 1.1: 描述
-   - [ ] Task 1.2: 描述
+   - [ ] Task 1.1: 撰寫 XXX 相關測試 (Red)
+   - [ ] Task 1.2: 實作 XXX 使測試通過 (Green)
 
    ## Milestone 2: <名稱>
-   - [ ] Task 2.1: 描述
-   - [ ] Task 2.2: 描述
+   - [ ] Task 2.1: ...
    ```
 
 4. **任務審查**

@@ -112,6 +112,9 @@ docs/
 | Python 套件管理 | `uv` | pip, pip3 |
 | 程式碼搜尋 | `rg`（ripgrep） | grep |
 | 檔案搜尋 | `fd` | find |
+| 檔案檢視 | `bat` | cat |
 | JSON 處理 | `jq` | 手動 parse |
 | GitHub 操作 | `gh` CLI | 手動 API 呼叫 |
 | Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
+| 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
+| 反向代理 | Traefik（Docker label 設定路由） | nginx |

@@ -41,11 +41,15 @@
    - 使用者同意後，執行 git commit（Conventional Commits 格式）
    - 繼續下一個 milestone，或全部完成時結束
 
-## 重要規則
+## 核心防呆限制 (Agentic Constraints)
 
-* 每次只專注一個 milestone，完成後再進入下一個
-* 遇到需要變更規格的情況，立即暫停，回到 `/DDD:spec` 流程
-* works.md 的更新是完成 milestone 的必要條件，不是事後補充
+* **Red State Check**：寫完測試後必須先執行，**確認看到預期的測試失敗（Fail）**，才准進入實作階段。
+* **No Logic Leaks**：嚴禁在撰寫測試的階段（Red）偷寫任何業務邏輯。
+* **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。
+* **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
+* **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD:spec`。
+* **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 
 ## 產出
 - 通過測試的程式碼
