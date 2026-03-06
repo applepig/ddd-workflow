@@ -96,11 +96,24 @@ docs/
 * E2E 測試：**Playwright**
 * Spec 中的驗收條件必須對映到測試案例
 
+## 除錯紀律
+
+* 先分析 log / error message，提出假設再驗證，禁止無根據地連續猜測
+* 連續嘗試 3 次未果，必須暫停並向使用者報告目前的假設與排除項目
+* 禁止用破壞性手段繞過問題（如刪容器、清資料庫），除非已確認根因
+
+## 測試品質
+
+* 禁止刪除已存在的測試案例，即使覺得「太複雜」
+* 邊界案例測試不可省略，不能只寫 happy path
+* 測試覆蓋率數字不代表品質，複雜邏輯需要對應的複雜測試
+
 ## Git
 
 * 遵循 Conventional Commits：`<type>[scope]: <description>`
 * 使用 `git --no-pager` 避免 pager 截斷輸出
 * Commit 需使用者明確同意，測試通過不等於提交授權
+* 每個 milestone 完成後應立即 commit，方便獨立 review
 
 ## 工具偏好
 
@@ -116,5 +129,6 @@ docs/
 | JSON 處理 | `jq` | 手動 parse |
 | GitHub 操作 | `gh` CLI | 手動 API 呼叫 |
 | Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
+| 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
 | 反向代理 | Traefik（Docker label 設定路由） | nginx |
