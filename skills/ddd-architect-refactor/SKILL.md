@@ -1,18 +1,23 @@
-# Skill: DDD:architect-refactor
+---
+name: DDD Architect Refactor
+description: >
+  This skill should be used when the user asks to "refactor the architecture",
+  "restructure modules", "fix module boundaries", "resolve circular dependencies",
+  "improve code organization", or invokes "/DDD:architect-refactor". Use for
+  structural improvements that change module boundaries, dependency directions,
+  or responsibility allocation — not for surface-level renaming or extraction.
+  Even if the user says "this part is getting messy", this skill applies.
+---
 
-## 說明
+# DDD:architect-refactor — 架構重構
+
 架構層級的重構。不是 rename / extract 等表面整理，而是改善模組邊界、依賴方向、職責分配等結構性問題。
 
-## 觸發指令
-`/DDD:architect-refactor <重構目標>`
-
 ## 嚴格禁令 (Never Do)
+
 - **嚴禁無目標重構**：每次重構必須明確回答「這服務什麼設計原則？」，禁止 rename-only 或 extract-only 的表面整理。
 - **嚴禁跳過影響分析**：涉及 3 個以上檔案的變更，必須先完成影響分析才能動手。
 - **嚴禁破壞現有測試**：重構過程中若測試失敗，必須立即撤回，不可修改測試來配合重構。
-
-## 輸入
-使用者描述的架構問題或重構方向。可以很模糊（「這塊越來越亂」）。
 
 ## 執行步驟
 
@@ -47,9 +52,11 @@
    - 更新 `works.md` 記錄架構決策
 
 ## 產出
+
 - 重構後的程式碼（通過所有測試）
 - `works.md` 中的架構決策記錄
 - Git commits
 
 ## 結束條件
+
 使用者確認重構成果，所有測試通過。

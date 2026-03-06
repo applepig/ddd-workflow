@@ -1,17 +1,22 @@
-# Skill: DDD:plan
+---
+name: DDD Plan
+description: >
+  This skill should be used when the user asks to "plan a feature",
+  "clarify requirements", "figure out what to build", "brainstorm a feature direction",
+  or invokes "/DDD:plan". Use when the requirement is vague or unclear and needs
+  structured exploration before writing a formal spec. Even if the user just says
+  "I have an idea" or describes a rough concept, this skill helps shape it into
+  actionable direction.
+---
 
-## 說明
+# DDD:plan — 前置規劃
+
 前置規劃階段。當需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
 
-## 觸發指令
-`/DDD:plan <需求簡述>`
-
 ## 嚴格禁令 (Never Do)
+
 - **嚴禁撰寫程式碼**：此階段純粹是需求釐清，絕對不可產出任何實作程式碼、假資料（Mock Data）或修改專案設定檔。
 - **嚴禁自行腦補需求**：若使用者需求模糊，必須提問釐清，不可自行假設商業邏輯。
-
-## 輸入
-使用者提供的初步需求描述，可以很模糊。
 
 ## 執行步驟
 
@@ -30,7 +35,7 @@
      - 有沒有已知的限制或偏好？
    - 根據回答整理出初步方向
 
-4. **撰寫 plan.md** (請維持以下大綱結構)
+4. **撰寫 plan.md**（維持以下大綱結構）
    - **背景 (Background)**：為什麼要做這個功能、解決什麼痛點
    - **粗略目標 (High-level Goals)**：條列式描述預期達成的目標
    - **可能的方向 (Potential Directions)**：列出 2~3 個可行方案及其優缺點
@@ -42,9 +47,11 @@
    - 根據回饋調整，直到使用者同意方向
 
 ## 產出
+
 `docs/<編號>-<名稱>/plan.md`
 
 ## 結束條件
+
 使用者確認方向後，建議下一步：
 - 需要技術調研 → 引導使用者執行 `/DDD:research`
 - 方向已明確 → 引導使用者執行 `/DDD:spec`

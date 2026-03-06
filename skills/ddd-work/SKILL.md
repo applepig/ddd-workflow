@@ -1,19 +1,19 @@
-# Skill: DDD:work
+---
+name: DDD Work
+description: >
+  This skill should be used when the user asks to "start implementing",
+  "begin development", "work on the feature", "do TDD", "write code for this task",
+  or invokes "/DDD:work". Use after tasks.md is confirmed and it's time to execute
+  the implementation with strict TDD discipline (Red-Green-Refactor cycle).
+---
 
-## 說明
+# DDD:work — 開發執行
+
 開發執行階段。以 TDD 循環逐一完成 tasks.md 中的 milestone。
 
-## 觸發指令
-`/DDD:work [milestone 編號]`
+不指定 milestone 編號時，從第一個未完成的 milestone 開始。
 
-不指定編號時，從第一個未完成的 milestone 開始。
-
-## 輸入
-已確認的 `tasks.md`，以及對應的 `spec.md` 作為驗收參考。
-
-## 執行步驟
-
-### 每個 Milestone 的循環：
+## 每個 Milestone 的循環
 
 1. **鎖定範圍**
    - 讀取 tasks.md，確認當前 milestone 的所有 task
@@ -43,19 +43,23 @@
 
 ## 核心防呆限制 (Agentic Constraints)
 
-* **Red State Check**：寫完測試後必須先執行，**確認看到預期的測試失敗（Fail）**，才准進入實作階段。
-* **No Logic Leaks**：嚴禁在撰寫測試的階段（Red）偷寫任何業務邏輯。
-* **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。
+這些限制的存在是因為 AI agent 在開發過程中容易走捷徑——每一條都是從實際失敗經驗中提煉出來的防線：
+
+* **Red State Check**：寫完測試後必須先執行，**確認看到預期的測試失敗（Fail）**，才准進入實作階段。這能確保測試確實在驗證目標行為，而非寫了一個永遠通過的空殼測試。
+* **No Logic Leaks**：嚴禁在撰寫測試的階段（Red）偷寫任何業務邏輯。測試階段只產出測試檔案。
+* **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD:spec`。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 
 ## 產出
+
 - 通過測試的程式碼
 - 更新後的 `tasks.md`（勾選進度）
 - 更新後的 `works.md`（開發日誌）
 - Git commits
 
 ## 結束條件
+
 所有 milestone 完成後，引導使用者執行 `/DDD:xwrap`。
