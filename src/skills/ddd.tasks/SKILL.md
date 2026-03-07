@@ -1,9 +1,9 @@
 ---
-name: DDD Tasks
+name: DDD.Tasks
 description: >
   This skill should be used when the user asks to "break down tasks",
   "create a task list", "split into milestones", "plan the implementation steps",
-  or invokes "/DDD:tasks". Use after spec.md is confirmed and the feature needs
+  or invokes "/DDD.tasks". Use after spec.md is confirmed and the feature needs
   to be decomposed into testable, incremental milestones following Agentic TDD.
 ---
 
@@ -54,4 +54,4 @@ description: >
 
 ## 結束條件
 
-使用者確認任務規劃後，引導使用者執行 `/DDD:work`。
+使用者確認任務規劃後，引導使用者執行 `/DDD.work`。

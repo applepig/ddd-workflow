@@ -1,9 +1,9 @@
 ---
-name: DDD Research
+name: DDD.Research
 description: >
   This skill should be used when the user asks to "research a technology",
   "investigate feasibility", "compare technical options", "do a PoC",
-  "evaluate libraries", or invokes "/DDD:research". Use when there are open
+  "evaluate libraries", or invokes "/DDD.research". Use when there are open
   technical questions that need answers before writing a spec — such as
   API limitations, performance characteristics, or library comparisons.
 ---
@@ -47,4 +47,4 @@ description: >
 
 ## 結束條件
 
-使用者確認調研結論後，引導使用者執行 `/DDD:spec`。
+使用者確認調研結論後，引導使用者執行 `/DDD.spec`。

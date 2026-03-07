@@ -1,9 +1,9 @@
 ---
-name: DDD Spec
+name: DDD.Spec
 description: >
   This skill should be used when the user asks to "write a spec",
   "create a specification", "define requirements", "draft acceptance criteria",
-  "document a feature", or invokes "/DDD:spec". Use whenever a feature needs
+  "document a feature", or invokes "/DDD.spec". Use whenever a feature needs
   formal specification before implementation — including user stories, acceptance
   criteria, API contracts, and architecture decisions. Even if the user says
   "let's define what we're building", this skill applies.
@@ -76,4 +76,4 @@ description: >
 
 ## 結束條件
 
-使用者確認規格後，引導使用者執行 `/DDD:tasks`。
+使用者確認規格後，引導使用者執行 `/DDD.tasks`。

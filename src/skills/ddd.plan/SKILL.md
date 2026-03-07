@@ -1,9 +1,9 @@
 ---
-name: DDD Plan
+name: DDD.Plan
 description: >
   This skill should be used when the user asks to "plan a feature",
   "clarify requirements", "figure out what to build", "brainstorm a feature direction",
-  or invokes "/DDD:plan". Use when the requirement is vague or unclear and needs
+  or invokes "/DDD.plan". Use when the requirement is vague or unclear and needs
   structured exploration before writing a formal spec. Even if the user just says
   "I have an idea" or describes a rough concept, this skill helps shape it into
   actionable direction.
@@ -53,5 +53,5 @@ description: >
 ## 結束條件
 
 使用者確認方向後，建議下一步：
-- 需要技術調研 → 引導使用者執行 `/DDD:research`
-- 方向已明確 → 引導使用者執行 `/DDD:spec`
+- 需要技術調研 → 引導使用者執行 `/DDD.research`
+- 方向已明確 → 引導使用者執行 `/DDD.spec`

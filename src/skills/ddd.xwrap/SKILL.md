@@ -1,9 +1,9 @@
 ---
-name: DDD Xwrap
+name: DDD.Xwrap
 description: >
   This skill should be used when the user asks to "wrap up the sprint",
   "finish the feature", "do final checks", "prepare for PR", "push the branch",
-  or invokes "/DDD:xwrap". Use when all milestones are complete and the feature
+  or invokes "/DDD.xwrap". Use when all milestones are complete and the feature
   branch needs final validation, cleanup, and push.
 ---
 

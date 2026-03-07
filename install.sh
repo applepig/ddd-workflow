@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_MD="${SCRIPT_DIR}/AGENTS.md"
-SOURCE_SKILLS="${SCRIPT_DIR}/skills"
+SOURCE_SKILLS="${SCRIPT_DIR}/src/skills"
 
 # Target configurations: directory, instructions filename, skills directory
 declare -A TARGETS=(
@@ -30,7 +30,9 @@ link_file() {
       return 0
     fi
     log "  更新連結: $target"
-    ln -sf "$source" "$target"
+    # rm 再 ln，避免 ln -sf 對目錄 symlink 會建在目標裡面的坑
+    rm "$target"
+    ln -s "$source" "$target"
   elif [[ -e "$target" ]]; then
     local backup="${target}.backup.$(date +%Y%m%d%H%M%S)"
     warn "備份現有檔案: $target → $backup"
@@ -40,6 +42,34 @@ link_file() {
     ln -s "$source" "$target"
   fi
   log "  連結完成: $target → $source"
+}
+
+# 清理目標 skills 目錄中的舊 ddd* 項目，再重新建立個別 symlink
+link_skills() {
+  local source_dir="$1"
+  local target_dir="$2"
+
+  # 確保目標 skills 目錄存在（實體目錄，非 symlink）
+  if [[ -L "$target_dir" ]]; then
+    log "  移除舊 skills symlink: $target_dir"
+    rm "$target_dir"
+  fi
+  mkdir -p "$target_dir"
+
+  # 清理目標中所有舊的 ddd* 項目（不論 ddd- 或 ddd.）
+  for old in "$target_dir"/ddd*; do
+    [[ -e "$old" || -L "$old" ]] || continue
+    log "  移除: $(basename "$old")"
+    rm -rf "$old"
+  done
+
+  # 為每個 skill 建立 symlink
+  for skill_dir in "$source_dir"/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    skill_name="$(basename "$skill_dir")"
+    ln -s "$skill_dir" "$target_dir/$skill_name"
+    log "  連結 skill: $skill_name"
+  done
 }
 
 # Preflight check
@@ -70,8 +100,8 @@ for agent in claude gemini codex; do
   # Link instructions file
   link_file "$SOURCE_MD" "${dir}/${md_name}"
 
-  # Link skills directory
-  link_file "$SOURCE_SKILLS" "${dir}/${skills_dir}"
+  # Link skills（個別 symlink，先清理舊的 ddd*）
+  link_skills "$SOURCE_SKILLS" "${dir}/${skills_dir}"
 
   echo ""
 done

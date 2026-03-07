@@ -1,9 +1,9 @@
 ---
-name: DDD Architect Refactor
+name: DDD.ArchitectRefactor
 description: >
   This skill should be used when the user asks to "refactor the architecture",
   "restructure modules", "fix module boundaries", "resolve circular dependencies",
-  "improve code organization", or invokes "/DDD:architect-refactor". Use for
+  "improve code organization", or invokes "/DDD.architect-refactor". Use for
   structural improvements that change module boundaries, dependency directions,
   or responsibility allocation — not for surface-level renaming or extraction.
   Even if the user says "this part is getting messy", this skill applies.

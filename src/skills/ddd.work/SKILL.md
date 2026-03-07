@@ -1,9 +1,9 @@
 ---
-name: DDD Work
+name: DDD.Work
 description: >
   This skill should be used when the user asks to "start implementing",
   "begin development", "work on the feature", "do TDD", "write code for this task",
-  or invokes "/DDD:work". Use after tasks.md is confirmed and it's time to execute
+  or invokes "/DDD.work". Use after tasks.md is confirmed and it's time to execute
   the implementation with strict TDD discipline (Red-Green-Refactor cycle).
 ---
 
@@ -50,7 +50,7 @@ description: >
 * **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD:spec`。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec`。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 
 ## 產出
@@ -62,4 +62,4 @@ description: >
 
 ## 結束條件
 
-所有 milestone 完成後，引導使用者執行 `/DDD:xwrap`。
+所有 milestone 完成後，引導使用者執行 `/DDD.xwrap`。

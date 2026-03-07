@@ -1,9 +1,9 @@
 ---
-name: DDD Create Hooks
+name: DDD.CreateHooks
 description: >
   This skill should be used when the user asks to "create Claude Code hooks",
   "set up hooks", "add safety hooks", "configure auto-lint", "protect sensitive files",
-  or invokes "/DDD:create-hooks". Use when the user wants to configure event-driven
+  or invokes "/DDD.create-hooks". Use when the user wants to configure event-driven
   automation in `.claude/settings.json` — including security guards, code quality
   checks, or commit review hooks.
 ---
