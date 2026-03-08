@@ -30,6 +30,7 @@
 * **No Code Without Tests**：修改 production code 前，必須先建立或更新測試。
 * **Sync on Finish**：標記任務完成前，必須先更新 `tasks.md` 和 `works.md`。
 * **規格變更**：開發中若需變更規格，暫停開發，同步更新三份文件，經使用者確認後才恢復。
+* **明確的決策點**：需要使用者確認或決策時，必須使用 `AskUserQuestion` 工具，不可用一般對話文字代替。這確保流程在決策點明確暫停，等待使用者輸入。
 
 ### 文件結構
 
@@ -55,10 +56,10 @@ docs/
 2. **Spec**：撰寫 spec.md → 使用者確認
 3. **Tasks**：拆解為 milestone + task → 撰寫 tasks.md → 使用者確認
 4. **Execute**：TDD 循環（測試 → 實作 → 驗收 → 更新文件）→ 使用者確認後才 commit
-5. **Finish**：最終檢查 → 推送分支
+5. **Review**：Cross review（Gemini + Claude 獨立審查）→ 修正
 
 > 各階段的詳細步驟請參考對應的 skill：
-> `/DDD.plan`、`/DDD.research`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xwrap`。
+> `/DDD.plan`、`/DDD.research`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xreview`。
 > 架構重構用 `/DDD.architect-refactor`，hook 設定用 `/DDD.create-hooks`。
 
 ## Coding Style

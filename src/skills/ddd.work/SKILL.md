@@ -62,4 +62,4 @@ description: >
 
 ## 結束條件
 
-所有 milestone 完成後，引導使用者執行 `/DDD.xwrap`。
+所有 milestone 完成後，引導使用者執行 `/DDD.xreview`。
