@@ -1,12 +1,11 @@
 ---
 name: DDD.Spec
 description: >
-  This skill should be used when the user asks to "write a spec",
-  "create a specification", "define requirements", "draft acceptance criteria",
-  "document a feature", or invokes "/DDD.spec". Use whenever a feature needs
-  formal specification before implementation — including user stories, acceptance
-  criteria, API contracts, and architecture decisions. Even if the user says
-  "let's define what we're building", this skill applies.
+  撰寫正式規格書 spec.md——包含 User Story、驗收條件、API 契約、ADR。
+  Use when the user says "write a spec", "define requirements", "draft acceptance
+  criteria", "document a feature", "let's define what we're building",
+  or invokes "/DDD.spec". Use whenever a feature needs formal specification
+  before implementation.
 ---
 
 # DDD:spec — 規格制定
@@ -15,9 +14,9 @@ description: >
 
 ## 嚴格禁令 (Never Do)
 
-- **嚴禁在 Spec 確認前寫 Code**：Spec 只是規格，嚴禁在使用者同意 `spec.md` 之前修改或建立任何實作檔案。
-- **嚴禁省略邊界案例**：所有的 Spec 都必須至少思考一種邊界案例（Edge Case）或錯誤處理機制。
-- **嚴禁使用未經確認的技術**：如果 Spec 牽涉到沒有在 `docs/TECHSTACK.md` 裡出現的新技術，必須在 ADR 區塊特別標註並說明原因。
+- **嚴禁在 Spec 確認前寫 Code**：規格是使用者與開發者之間的契約——未經確認就動手實作，等於在沒有共識的基礎上蓋房子，改動的代價會隨時間急遽上升。
+- **嚴禁省略邊界案例**：邊界案例往往是 bug 的溫床。Spec 階段花 5 分鐘思考「如果輸入為空會怎樣？」，遠比上線後花 5 小時除錯划算。每份 Spec 至少列出一種 Edge Case。
+- **嚴禁使用未經確認的技術**：引入新技術會增加維護成本和學習曲線。如果 Spec 牽涉到 `docs/TECHSTACK.md` 以外的技術，必須在 ADR 區塊標註並說明選用原因。
 
 ## 執行步驟
 
@@ -64,6 +63,8 @@ description: >
    - 原因：...
    - 替代方案：Y（為何不選）
    ```
+
+   > **ADR 寫作要點**：重點是記錄「為什麼選 A 而不選 B」——未來的維護者需要的是決策脈絡，而非單純的結論。替代方案不需要長篇大論，一兩句說明被排除的理由即可。
 
 4. **規格審查**
    - 將 spec.md 呈現給使用者

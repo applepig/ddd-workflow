@@ -1,12 +1,11 @@
 ---
 name: DDD.Plan
 description: >
-  This skill should be used when the user asks to "plan a feature",
-  "clarify requirements", "figure out what to build", "brainstorm a feature direction",
-  or invokes "/DDD.plan". Use when the requirement is vague or unclear and needs
-  structured exploration before writing a formal spec. Even if the user just says
-  "I have an idea" or describes a rough concept, this skill helps shape it into
-  actionable direction.
+  需求還模糊時的前置規劃——釐清方向、探索可能性、產出 plan.md。
+  Use when the user says "plan a feature", "clarify requirements", "figure out
+  what to build", "I have an idea", "scope a feature", "what should we build",
+  or invokes "/DDD.plan". Even if the user just describes a rough concept,
+  this skill helps shape it into actionable direction before writing a spec.
 ---
 
 # DDD:plan — 前置規劃
@@ -15,8 +14,8 @@ description: >
 
 ## 嚴格禁令 (Never Do)
 
-- **嚴禁撰寫程式碼**：此階段純粹是需求釐清，絕對不可產出任何實作程式碼、假資料（Mock Data）或修改專案設定檔。
-- **嚴禁自行腦補需求**：若使用者需求模糊，必須提問釐清，不可自行假設商業邏輯。
+- **嚴禁撰寫程式碼**：過早實作會讓討論從「該做什麼」偏移到「怎麼做」，導致需求被技術限制反向塑形。此階段純粹是需求釐清，不可產出任何實作程式碼、假資料或修改專案設定檔。
+- **嚴禁自行腦補需求**：AI 傾向用「合理猜測」填補模糊地帶，但猜錯的假設一旦進入後續文件就很難被發現。需求模糊時必須提問釐清，不可自行假設商業邏輯。
 
 ## 執行步驟
 

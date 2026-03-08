@@ -1,11 +1,10 @@
 ---
 name: DDD.Research
 description: >
-  This skill should be used when the user asks to "research a technology",
-  "investigate feasibility", "compare technical options", "do a PoC",
-  "evaluate libraries", or invokes "/DDD.research". Use when there are open
-  technical questions that need answers before writing a spec — such as
-  API limitations, performance characteristics, or library comparisons.
+  技術調研——驗證可行性、比較方案、產出 research.md，為 spec 做準備。
+  Use when the user says "research a technology", "investigate feasibility",
+  "compare technical options", "do a PoC", "evaluate libraries", "is this possible",
+  "can we use X", "what are the options", or invokes "/DDD.research".
 ---
 
 # DDD:research — 技術調研
@@ -14,8 +13,8 @@ description: >
 
 ## 嚴格禁令 (Never Do)
 
-- **嚴禁修改正式程式碼**：PoC (Proof of Concept) 測試程式碼必須放在暫存位置或獨立分支，絕對不可直接修改專案的主要 codebase。
-- **嚴禁過度設計**：調研應專注於回答「待釐清事項」，不要花時間刻意最佳化或重構 PoC 程式碼。
+- **嚴禁修改正式程式碼**：調研階段的程式碼隨時可能被推翻，如果混入正式 codebase，回滾成本極高。PoC 程式碼必須放在暫存位置或獨立分支。
+- **嚴禁過度設計**：調研的目的是回答問題、降低不確定性，不是寫出完美的 PoC。把時間花在刻意最佳化 PoC 上是本末倒置。
 
 ## 執行步驟
 

@@ -73,9 +73,26 @@ docs/
 
 ### 檔案組織
 
-* **Single Function File**：一個檔案匯出一個 function，檔名即函式用途
-* Utility / 字串處理等優先拆成獨立模組
+* **Single Function File**：一個檔案匯出一個 function（或一個 Class），檔名即用途
+* 相關 function 用**資料夾**分組，讓 file system 充當導航索引
+* **禁止 barrel file**（`index.ts` re-export）——Vite HMR 變慢、tree-shaking 失效。直接 import 個別檔案
 * Class 一個檔案一個，檔名用 kebab-case 對應 Class 名稱
+* 型別定義（`interface` / `type`）可集中在同資料夾的 `types.ts`
+
+```
+# ✅ 正確：資料夾分組 + 直接 import
+server/services/session/
+  create-session.ts       # export function createSession()
+  list-sessions.ts        # export function listSessions()
+  delete-session.ts       # export function deleteSession()
+
+import { createSession } from '../services/session/create-session'
+
+# ❌ 錯誤：barrel file re-export
+server/services/session/
+  index.ts                # export * from './create-session' ← 禁止
+import { createSession } from '../services/session'
+```
 
 ### 命名慣例
 

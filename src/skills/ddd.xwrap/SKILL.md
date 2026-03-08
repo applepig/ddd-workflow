@@ -1,10 +1,10 @@
 ---
 name: DDD.Xwrap
 description: >
-  This skill should be used when the user asks to "wrap up the sprint",
-  "finish the feature", "do final checks", "prepare for PR", "push the branch",
-  or invokes "/DDD.xwrap". Use when all milestones are complete and the feature
-  branch needs final validation, cleanup, and push.
+  收工——最終檢查、文件驗收、推送分支，準備建立 PR。
+  Use when the user says "wrap up", "finish the feature", "do final checks",
+  "prepare for PR", "push the branch", "we're done", "ship it",
+  or invokes "/DDD.xwrap". Use when all milestones are complete.
 ---
 
 # DDD:xwrap — 收工

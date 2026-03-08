@@ -1,11 +1,10 @@
 ---
 name: DDD.CreateHooks
 description: >
-  This skill should be used when the user asks to "create Claude Code hooks",
-  "set up hooks", "add safety hooks", "configure auto-lint", "protect sensitive files",
-  or invokes "/DDD.create-hooks". Use when the user wants to configure event-driven
-  automation in `.claude/settings.json` — including security guards, code quality
-  checks, or commit review hooks.
+  設定 Claude Code hooks——掃描專案環境，建議並寫入 .claude/settings.json。
+  Use when the user says "create hooks", "set up hooks", "add safety hooks",
+  "configure auto-lint", "protect sensitive files", or invokes "/DDD.create-hooks".
+  Covers security guards, code quality checks, and commit review hooks.
 ---
 
 # DDD:create-hooks — Hook 設定
@@ -14,8 +13,8 @@ Utility skill。掃描專案環境，建議並設定 Claude Code hooks（`.claud
 
 ## 嚴格禁令 (Never Do)
 
-- **嚴禁修改程式碼**：此 skill 只操作 `.claude/settings.json`，不可修改任何程式碼檔案。
-- **嚴禁覆蓋現有 hooks**：若 settings.json 已有 hooks 設定，必須合併而非覆蓋。
+- **嚴禁修改程式碼**：這是設定工具，不是開發工具。修改程式碼會模糊 skill 的職責邊界，讓使用者搞不清楚什麼被改了。此 skill 只操作 `.claude/settings.json`。
+- **嚴禁覆蓋現有 hooks**：使用者可能已經花時間調校過 hooks，直接覆蓋等於丟棄他們的客製化。若 settings.json 已有 hooks 設定，必須合併而非覆蓋。
 
 ## 執行步驟
 

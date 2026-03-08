@@ -1,10 +1,10 @@
 ---
 name: DDD.Work
 description: >
-  This skill should be used when the user asks to "start implementing",
-  "begin development", "work on the feature", "do TDD", "write code for this task",
-  or invokes "/DDD.work". Use after tasks.md is confirmed and it's time to execute
-  the implementation with strict TDD discipline (Red-Green-Refactor cycle).
+  以 TDD 循環執行 tasks.md 中的開發任務——Red → Green → Refactor。
+  Use when the user says "start implementing", "begin development", "work on
+  the feature", "do TDD", "let's code", "implement this", or invokes "/DDD.work".
+  Use after tasks.md is confirmed and it's time to write code.
 ---
 
 # DDD:work — 開發執行
