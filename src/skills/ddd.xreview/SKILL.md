@@ -36,21 +36,23 @@ description: >
 
 ### 3. 平行派出兩個 Reviewer
 
-使用 Bash tool 的 `run_in_background` 同時發出兩個 review 請求：
+使用 `run_in_background` 同時發出兩個 review 請求，兩邊都不帶當前對話 context，確保 reviewer 的判斷不受開發者（主 agent）思路影響。
 
-**[A] Gemini Reviewer**：
-
-```bash
-gemini -p "<review_prompt>" --yolo --output-format text
-```
-
-**[B] Claude Reviewer**：
+**[A] Gemini Reviewer**（Bash tool + stdin pipe）：
 
 ```bash
-claude -p "<review_prompt>" --allowedTools "Read,Glob,Grep,Bash(git diff:git log:git show)"
+echo "$review_prompt" | gemini --yolo --output-format text
 ```
 
-兩邊都是獨立 process，不帶當前對話 context，確保 reviewer 的判斷不受開發者（主 agent）思路影響。
+> 透過 stdin pipe 傳入 prompt，避免 prompt 內容出現在 `/proc/*/cmdline`（`-p` 會將完整 prompt 暴露在 process 命令列中）。
+
+**[B] Claude Reviewer**（Agent tool）：
+
+使用 Agent tool 啟動 subagent，將組裝好的 review prompt 作為 `prompt` 參數傳入。subagent 自帶 Read、Glob、Grep、Bash 等工具，可自行讀取檔案與執行 git 指令。
+
+> 不使用 `claude -p` CLI 的原因：Claude Code 禁止巢狀啟動（nested session），在 Claude Code 內執行 `claude -p` 會直接報錯。Agent tool 的 subagent 擁有獨立 context，功能等價且無此限制。
+
+兩邊都設定 `run_in_background: true`，平行執行不阻塞。
 
 ### 4. 整合與呈現
 
@@ -92,7 +94,8 @@ claude -p "<review_prompt>" --allowedTools "Read,Glob,Grep,Bash(git diff:git log
 
 - 兩邊 reviewer 都會讀到同一份 AGENTS.md，共享 coding style 規範，不需要在 prompt 中重複
 - Reviewer 自己有能力讀檔案、跑 git 指令，prompt 只需指定 review 範圍與審查維度
-- CLI 執行時間可能較長（60-120 秒），務必使用 `run_in_background` 避免阻塞
+- 執行時間可能較長（60-120 秒），務必使用 `run_in_background` 避免阻塞
+- **安全性**：Gemini 端一律用 stdin pipe 傳 prompt，嚴禁用 `-p` 參數直接帶入（會暴露在 process 命令列）
 - 若變更範圍太大，考慮按檔案或 milestone 拆分 review
 - 若任一 reviewer 超時或失敗，先呈現已取得的單邊結果，提示使用者是否重試另一邊
 
