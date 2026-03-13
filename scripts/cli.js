@@ -119,6 +119,7 @@ function deployGemini() {
 
   linkFile(join(ROOT, 'AGENTS.md'), join(target, 'GEMINI.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
+  linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
 }
 
 function deployCodex() {
