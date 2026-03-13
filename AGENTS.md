@@ -150,8 +150,12 @@ import { createSession } from '../services/session'
 | 檔案搜尋 | `fd` | find |
 | 檔案檢視 | `bat` | cat |
 | JSON 處理 | `jq` | 手動 parse |
-| GitHub 操作 | `gh` CLI | 手動 API 呼叫 |
 | Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
 | 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
 | 反向代理 | Traefik（Docker label 設定路由） | nginx |
+| 瀏覽器自動化 | `agent-browser --cdp 9222`（連接既有 Chrome） | 不加 `--cdp` 另開 instance |
+| Second opinion / Cross check | `gemini -y -p "PROMPT"`（呼叫 Gemini Pro 當 subagent） | 單一模型自我驗證 |
+| Dead code 偵測 | `knip --reporter json` | 手動找 unused code |
+| 拼字檢查 | `typos --format json .` | 肉眼校稿 |
+| 安全 / 邏輯掃描 | `semgrep scan --config auto --json .` | 純 regex grep |

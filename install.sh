@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_MD="${SCRIPT_DIR}/AGENTS.md"
 SOURCE_SKILLS="${SCRIPT_DIR}/src/skills"
+SOURCE_AGENTS="${SCRIPT_DIR}/src/agents"
 
 # Target configurations: directory, instructions filename, skills directory
 declare -A TARGETS=(
@@ -83,6 +84,11 @@ if [[ ! -d "$SOURCE_SKILLS" ]]; then
   exit 1
 fi
 
+if [[ ! -d "$SOURCE_AGENTS" ]]; then
+  echo "ERROR: 找不到 ${SOURCE_AGENTS}" >&2
+  exit 1
+fi
+
 log "來源: ${SCRIPT_DIR}"
 echo ""
 
@@ -102,6 +108,11 @@ for agent in claude gemini codex; do
 
   # Link skills（個別 symlink，先清理舊的 ddd*）
   link_skills "$SOURCE_SKILLS" "${dir}/${skills_dir}"
+
+  # Link agents（只有 Claude Code 支援 agents）
+  if [[ "$agent" == "claude" ]]; then
+    link_skills "$SOURCE_AGENTS" "${dir}/agents"
+  fi
 
   echo ""
 done
