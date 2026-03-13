@@ -1,0 +1,17 @@
+{
+  "name": "agents",
+  "version": "0.1.0",
+  "description": "DDD 工作流跨 AI agent CLI 安裝工具",
+  "type": "module",
+  "scripts": {
+    "deploy": "node scripts/cli.js deploy",
+    "deploy:claude": "node scripts/cli.js deploy claude",
+    "deploy:gemini": "node scripts/cli.js deploy gemini",
+    "deploy:codex": "node scripts/cli.js deploy codex",
+    "undeploy": "node scripts/cli.js undeploy",
+    "undeploy:claude": "node scripts/cli.js undeploy claude",
+    "undeploy:gemini": "node scripts/cli.js undeploy gemini",
+    "undeploy:codex": "node scripts/cli.js undeploy codex",
+    "test": "node scripts/cli.js test"
+  }
+}
