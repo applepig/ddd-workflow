@@ -107,7 +107,7 @@ function deployClaude() {
   const target = join(HOME, '.claude')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(ROOT, 'AGENTS.md'), join(target, 'CLAUDE.md'))
+  linkFile(join(SRC, 'AGENTS.md'), join(target, 'CLAUDE.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
 }
@@ -117,7 +117,7 @@ function deployGemini() {
   const target = join(HOME, '.gemini')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(ROOT, 'AGENTS.md'), join(target, 'GEMINI.md'))
+  linkFile(join(SRC, 'AGENTS.md'), join(target, 'GEMINI.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
 }
@@ -127,7 +127,7 @@ function deployCodex() {
   const target = join(HOME, '.codex')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(ROOT, 'AGENTS.md'), join(target, 'AGENTS.md'))
+  linkFile(join(SRC, 'AGENTS.md'), join(target, 'AGENTS.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
 }
 
