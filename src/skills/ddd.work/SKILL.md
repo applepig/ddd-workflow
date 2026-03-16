@@ -74,7 +74,10 @@ description: >
 
 2. **組裝 worker prompt**
 
-   每個 worker 的 prompt 必須**完全自足**——worker 無法回問 coordinator。prompt 包含：
+   每個 worker 的 prompt 必須讓 worker **不需要自行探索就能理解任務**——worker 無法回問 coordinator。
+   Coordinator 負責提供摘要和關鍵片段，不是 raw dump 整個檔案。Worker 有 tool access 可以讀取完整檔案來執行實作，但不應需要靠探索來理解「要做什麼」。
+
+   prompt 包含：
 
    ```
    ## 整體目標
@@ -88,6 +91,18 @@ description: >
 
    ## 介面契約
    （從 tasks.md 的 blockquote 複製介面定義）
+
+   ## 關鍵上下文
+   （Coordinator 摘要的關鍵程式碼片段：函式簽名、型別定義、相關邏輯。
+     不要 raw dump 整個檔案——貼介面定義和關鍵片段就好。
+     涉及的完整檔案路徑列在「參考檔案」供 worker 按需讀取。）
+
+   ## 參考檔案
+   （列出 worker 實作時可能需要讀取的完整檔案路徑，作為 fallback。
+     Worker 可用 Read tool 按需讀取，不必全部事先貼入。）
+   - `docs/<編號>-<名稱>/spec.md`
+   - `docs/<編號>-<名稱>/tasks.md`
+   - （其他相關的 source files）
 
    ## 專案慣例
    - 語言/框架：（從 TECHSTACK.md 或 AGENTS.md 摘要）
@@ -178,7 +193,7 @@ description: >
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec`。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 隔離**：所有派出的 worker 一律使用 `isolation: "worktree"`。Worker 在獨立的 worktree 中工作、測試、commit，確保不會互相干擾或汙染主線。
-* **Worker 自足性**：平行模式下，worker prompt 必須包含所有必要上下文。禁止仰賴 worker「自己去讀檔案找上下文」——coordinator 有責任提供完整資訊。
+* **Worker 自足性**：Worker prompt 必須讓 worker 不需自行探索就能理解任務。Coordinator 負責提供目標摘要、task 清單、介面契約、關鍵程式碼片段。Worker 有 tool access 可按需讀取完整檔案來執行實作，但「理解要做什麼」的上下文必須在 prompt 中。附上參考檔案路徑作為 fallback。
 * **Worker 測試紀律**：Worker 必須在報 DONE 前貼出測試執行的完整輸出——不是「我跑了測試」這句話，而是實際的測試結果數字。沒有測試輸出的 DONE 視為 FAIL。
 * **測試失敗透明化**：即使 worker 判斷失敗「不是本次變更造成的」，仍必須在回報中明確標註哪些測試失敗、失敗原因、以及為什麼認為與本次無關。Coordinator 會驗證這個判斷。
 * **環境問題不是藉口**：測試環境有問題時（如 `ref is not defined`、容器未啟動），worker 必須嘗試修復或明確報 FAIL 說明環境障礙，不能跳過測試直接交卷。
