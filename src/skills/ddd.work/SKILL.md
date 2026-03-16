@@ -99,11 +99,14 @@ description: >
 
    ## Worker 完成協議
    完成實作後，依序執行：
-   1. **Simplify** — 呼叫 `Skill` tool，skill: "simplify"，審查你的變更
-   2. **Unit test** — 執行測試套件，失敗則修復
-   3. **E2E 驗證** — 依上方食譜執行端對端驗證；標註「僅 unit test」則跳過
-   4. **Commit** — 用 Conventional Commits 格式 commit 所有變更
-   5. **回報** — 最後一行輸出：`DONE: <一句話摘要>`；若失敗則輸出 `FAIL: <原因>`
+   1. **Unit test** — 執行測試套件，**貼出完整執行結果**（如 `Tests: 19, Assertions: 130`）
+   2. **測試全過** → 繼續下一步
+   3. **測試失敗** → 嘗試修復（最多 3 次），仍失敗則報 `FAIL: <失敗的測試 + 原因>`
+   4. **E2E 驗證** — 依上方食譜執行端對端驗證；標註「僅 unit test」則跳過
+   5. **Simplify** — 呼叫 `Skill` tool，skill: "simplify"，審查你的變更
+   6. **Commit** — 用 Conventional Commits 格式 commit 所有變更
+   7. **回報** — 最後一行輸出：`DONE: <一句話摘要>（測試結果：X passed, Y failed）`；若失敗則輸出 `FAIL: <原因>`
+      - **沒有測試執行結果的 DONE 會被 coordinator 退回**
    ```
 
 3. **確認派發計畫**
@@ -145,11 +148,12 @@ description: >
 
 3. **匯合（🔗 匯合點）**
 
-   所有 worker 完成後，在主線執行匯合：
+   所有 worker 完成後，在主線**逐一**執行匯合：
 
-   - 合併各 worker 的 worktree 分支到主分支
+   - **逐一 merge**：每次合併一條 worker 的 worktree 分支到主分支
+   - **每次 merge 後跑測試**：確認合併沒有破壞既有功能，發現問題立即修復再繼續下一條
    - 解決合併衝突（若有）
-   - 執行 `🔗 匯合點` 中的整合測試 task（依標準 TDD 循環）
+   - 全部 merge 完成後，執行 `🔗 匯合點` 中的整合測試 task（依標準 TDD 循環）
    - 呼叫 `/simplify` 審查合併後的完整變更
 
 4. **更新文件**
@@ -173,7 +177,12 @@ description: >
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec`。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
+* **Worker 隔離**：所有派出的 worker 一律使用 `isolation: "worktree"`。Worker 在獨立的 worktree 中工作、測試、commit，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：平行模式下，worker prompt 必須包含所有必要上下文。禁止仰賴 worker「自己去讀檔案找上下文」——coordinator 有責任提供完整資訊。
+* **Worker 測試紀律**：Worker 必須在報 DONE 前貼出測試執行的完整輸出——不是「我跑了測試」這句話，而是實際的測試結果數字。沒有測試輸出的 DONE 視為 FAIL。
+* **測試失敗透明化**：即使 worker 判斷失敗「不是本次變更造成的」，仍必須在回報中明確標註哪些測試失敗、失敗原因、以及為什麼認為與本次無關。Coordinator 會驗證這個判斷。
+* **環境問題不是藉口**：測試環境有問題時（如 `ref is not defined`、容器未啟動），worker 必須嘗試修復或明確報 FAIL 說明環境障礙，不能跳過測試直接交卷。
+* **Coordinator 驗收必跑測試**：每條 worker 分支 merge 回主線後，coordinator 必須立即執行該工作線的測試套件驗收，確認合併沒有破壞東西。不能只看 worker 的自述，也不能等全部 merge 完才一次驗證。
 
 ## 產出
 
