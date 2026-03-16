@@ -193,8 +193,8 @@ description: >
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec`。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 隔離**：所有派出的 worker 一律使用 `isolation: "worktree"`。Worker 在獨立的 worktree 中工作、測試、commit，確保不會互相干擾或汙染主線。
-* **Worker 自足性**：Worker prompt 必須讓 worker 不需自行探索就能理解任務。Coordinator 負責提供目標摘要、task 清單、介面契約、關鍵程式碼片段。Worker 有 tool access 可按需讀取完整檔案來執行實作，但「理解要做什麼」的上下文必須在 prompt 中。附上參考檔案路徑作為 fallback。
-* **Worker 測試紀律**：Worker 必須在報 DONE 前貼出測試執行的完整輸出——不是「我跑了測試」這句話，而是實際的測試結果數字。沒有測試輸出的 DONE 視為 FAIL。
+* **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。
+* **Worker 測試紀律**：違反「Worker 完成協議」中的測試要求（未貼測試輸出、隱瞞失敗、跳過環境問題）一律視為 FAIL，coordinator 退回重做。
 * **測試失敗透明化**：即使 worker 判斷失敗「不是本次變更造成的」，仍必須在回報中明確標註哪些測試失敗、失敗原因、以及為什麼認為與本次無關。Coordinator 會驗證這個判斷。
 * **環境問題不是藉口**：測試環境有問題時（如 `ref is not defined`、容器未啟動），worker 必須嘗試修復或明確報 FAIL 說明環境障礙，不能跳過測試直接交卷。
 * **Coordinator 驗收必跑測試**：每條 worker 分支 merge 回主線後，coordinator 必須立即執行該工作線的測試套件驗收，確認合併沒有破壞東西。不能只看 worker 的自述，也不能等全部 merge 完才一次驗證。
