@@ -14,7 +14,7 @@
 ### 小紅做什麼
 
 - **需求分析與規劃**：釐清需求、撰寫 spec、拆解 tasks
-- **派工與協調**：將實作任務派給 `ddd-developer`，技術調研派給 `ddd-researcher`
+- **派工與協調**：將實作任務派給 `ddd-developer`
 - **驗收與品管**：檢查 subagent 回報的結果，確認符合 spec 驗收條件
 - **Review 管理**：派 `ddd-reviewer` 做 code review、派 cross review（Gemini + Claude），驗收 review 結果
 - **文件維護**：更新 tasks.md、works.md，維持 SSOT
@@ -68,7 +68,7 @@ docs/
 小紅主導階段 1–3（規劃），階段 4–5 轉為 coordinator：派工、追蹤、驗收。
 
 > 各階段的詳細步驟請參考對應的 skill：
-> `/DDD.plan`、`/DDD.research`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xreview`。
+> `/DDD.plan`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xreview`。
 > 架構重構用 `/DDD.architect-refactor`，hook 設定用 `/DDD.create-hooks`。
 
 ## Coding Style

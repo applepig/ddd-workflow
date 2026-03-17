@@ -27,19 +27,19 @@ description: >
    - 如果這是一個全新的需求，確認或建立 `docs/<編號>-<名稱>/` 資料夾
    - 建立 `plan.md`
 
-3. **需求釐清**
-   - 用 AskUserQuestion 向使用者確認以下問題：
-     - 這個功能要解決什麼問題？
-     - 預期的使用者是誰？
-     - 有沒有已知的限制或偏好？
-   - 根據回答整理出初步方向
+3. **需求釐清（Grill Me 模式）**
+   - 沿著決策樹逐一追問，直到雙方對每個分支都達成共識
+   - 每次只聚焦一個決策點，解決後再往下走
+   - **能靠 codebase 回答的問題自己去查**，不要問使用者（用 Explore agent、Grep、Read）
+   - 只有真正需要使用者判斷的問題才用 AskUserQuestion 提出
+   - 持續追問直到沒有未解決的分支為止
 
 4. **撰寫 plan.md**（維持以下大綱結構）
    - **背景 (Background)**：為什麼要做這個功能、解決什麼痛點
    - **粗略目標 (High-level Goals)**：條列式描述預期達成的目標
    - **可能的方向 (Potential Directions)**：列出 2~3 個可行方案及其優缺點
-   - **待釐清事項 (Open Questions)**：具體且可被後續 research 階段執行的技術/規格問題
-   - **下一步建議 (Next Step)**：建議進入 research 還是直接寫 spec
+   - **待釐清事項 (Open Questions)**：尚未解決的技術或規格問題（若有需要調研的，直接用原生工具查完再寫進來）
+   - **下一步建議 (Next Step)**：建議直接寫 spec，或說明還缺什麼資訊
 
 5. **交付**
    - 將 plan.md 內容呈現給使用者確認
@@ -51,6 +51,5 @@ description: >
 
 ## 結束條件
 
-使用者確認方向後，建議下一步：
-- 需要技術調研 → 引導使用者執行 `/DDD.research`
-- 方向已明確 → 引導使用者執行 `/DDD.spec`
+使用者確認方向後，引導使用者執行 `/DDD.spec`。
+如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。
