@@ -1,0 +1,11 @@
+{
+  "name": "ddd-workflow",
+  "description": "Document Driven Development — a structured workflow for AI-assisted software development with TDD, specs, and cross-review",
+  "version": "0.1.0",
+  "author": {
+    "name": "applepig"
+  },
+  "repository": "https://github.com/applepig/ddd-workflow",
+  "license": "MIT",
+  "keywords": ["ddd", "tdd", "workflow", "spec", "code-review"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "ddd-workflow",
+  "version": "0.1.0",
+  "description": "Document Driven Development — a structured workflow for AI-assisted software development with TDD, specs, and cross-review",
+  "skills": true,
+  "agents": true
+}
