@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const SRC = join(ROOT, 'src')
+const SRC = join(ROOT, 'ddd-workflow')
 const HOME = homedir()
 
 const ALL_TARGETS = ['claude', 'gemini', 'codex']
@@ -70,7 +70,7 @@ function linkFile(source, target) {
 }
 
 /**
- * 清理目標目錄中的 ddd* 項目，再為每個子目錄建立 symlink。
+ * 清理目標目錄中的 ddd* 項目，再為 ddd-workflow 中的子目錄建立 symlink。
  * @param {string} source_dir
  * @param {string} target_dir
  * @param {string} label  用於 log 的名稱（如 'skill', 'agent'）
@@ -107,7 +107,7 @@ function deployClaude() {
   const target = join(HOME, '.claude')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(SRC, 'AGENTS.md'), join(target, 'CLAUDE.md'))
+  linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'CLAUDE.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
 }
@@ -117,7 +117,7 @@ function deployGemini() {
   const target = join(HOME, '.gemini')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(SRC, 'AGENTS.md'), join(target, 'GEMINI.md'))
+  linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'GEMINI.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
 }
@@ -127,14 +127,14 @@ function deployCodex() {
   const target = join(HOME, '.codex')
   mkdirSync(target, { recursive: true })
 
-  linkFile(join(SRC, 'AGENTS.md'), join(target, 'AGENTS.md'))
+  linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'AGENTS.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
 }
 
 // ─── Undeploy ────────────────────────────────────────────────────────────────
 
 /**
- * 移除指向 src/ 的 symlink（只動我們自己建的）。
+ * 移除指向本專案的 symlink（只動我們自己建的）。
  * @param {string} target_path
  * @param {string} label
  */
@@ -181,6 +181,7 @@ function undeployGemini() {
   log('=== gemini ===')
   unlinkIfOurs(join(HOME, '.gemini', 'GEMINI.md'), '~/.gemini/GEMINI.md')
   unlinkDirIfOurs(join(HOME, '.gemini', 'skills'))
+  unlinkDirIfOurs(join(HOME, '.gemini', 'agents'))
 }
 
 function undeployCodex() {
@@ -209,7 +210,7 @@ function parseFrontmatter(filepath) {
 }
 
 /**
- * 驗證 src/skills/ 中每個 SKILL.md 的 frontmatter。
+ * 驗證 skills/ 中每個 SKILL.md 的 frontmatter。
  * @returns {{ ok: boolean, errors: string[] }}
  */
 function lintSkills() {
@@ -232,7 +233,7 @@ function lintSkills() {
 }
 
 /**
- * 驗證 src/agents/ 中每個 agent .md 的 frontmatter。
+ * 驗證 agents/ 中每個 agent .md 的 frontmatter。
  * @returns {{ ok: boolean, errors: string[] }}
  */
 function lintAgents() {
@@ -315,6 +316,7 @@ function testGemini() {
   let ok = true
   if (!checkSymlink(join(HOME, '.gemini', 'GEMINI.md'), '~/.gemini/GEMINI.md')) ok = false
   countInstalledLinks(join(HOME, '.gemini', 'skills'), '~/.gemini/skills ddd*')
+  countInstalledLinks(join(HOME, '.gemini', 'agents'), '~/.gemini/agents ddd*')
   return ok
 }
 
@@ -371,7 +373,10 @@ function main() {
 
   switch (command) {
     case 'deploy': {
-      log(`來源: ${SRC}`)
+      if (!existsSync(join(SRC, 'references'))) {
+        fail(`ddd-workflow/ 目錄內容為空。請先執行：git submodule update --init`)
+      }
+      log(`來源: ${SRC} (${existsSync(join(SRC, '.git')) ? 'submodule' : 'local'})`)
       log(`目標: ${targets.join(', ')}`)
       console.log('')
       for (const t of targets) { deployers[t](); console.log('') }
