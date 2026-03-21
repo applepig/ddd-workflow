@@ -8,11 +8,37 @@ Document Driven Development 工作流——讓 AI agent 用結構化的文件驅
 
 每個功能都從文件開始：先釐清需求、寫 spec、拆 tasks，確認後才動手寫程式碼。Main agent 擔任 Coordinator（規劃、派工、驗收），實作和 review 交給專屬 subagent，保護 main agent 的 context window 不被消耗。
 
+## 安裝
+
+### Claude Code
+
+```bash
+claude plugin add github:applepig/ddd-workflow
+```
+
+### Gemini CLI
+
+```bash
+gemini extensions install https://github.com/applepig/ddd-workflow.git
+```
+
+### 其他 Agent CLI
+
+本專案遵循標準的 skills/agents 目錄結構。如果你的 agent CLI 支援從目錄載入 skills，可以手動 clone 後 symlink：
+
+```bash
+git clone https://github.com/applepig/ddd-workflow.git
+# 將 skills/、agents/、references/AGENTS.md 連結到你的 agent 設定目錄
+```
+
 ## 工作流總覽
 
 ```mermaid
 flowchart TD
-    Start([使用者提出需求]) --> Clarity{需求明確？}
+    Start([新專案]) --> Init["建立 docs/<br/>PRD.md + TECHSTACK.md"]
+    Init --> Feature([提出功能需求])
+
+    Feature --> Clarity{需求明確？}
 
     Clarity -- 模糊 --> Plan["/DDD.Plan<br/>釐清方向、產出 plan.md"]
     Plan --> Spec
@@ -29,7 +55,9 @@ flowchart TD
     Work["/DDD.Work<br/>TDD 循環實作"] --> Review
     Review["/DDD.Xreview<br/>Cross review（多模型獨立審查）"] --> Fix{需要修正？}
     Fix -- 是 --> Work
-    Fix -- 否 --> Done([完成])
+    Fix -- 否 --> Next{還有下一個功能？}
+    Next -- 是 --> Feature
+    Next -- 否 --> Done([完成])
 ```
 
 ## 角色分工
@@ -61,15 +89,17 @@ flowchart LR
 
 ```
 docs/
-├── PRD.md                        # 產品需求文件
-├── TECHSTACK.md                  # 技術棧 + 參考文件連結
-└── <編號>-<名稱>/                # Sprint 文件包
+├── PRD.md                        # 產品需求文件（專案層級，只建一次）
+├── TECHSTACK.md                  # 技術棧 + 參考文件連結（專案層級，只建一次）
+└── <編號>-<名稱>/                # Sprint 文件包（每個功能一個）
     ├── plan.md                   # (optional) 前置規劃
     ├── research.md               # (optional) 技術調研
     ├── spec.md                   # 規格書：User Story、驗收條件、ADR
     ├── tasks.md                  # Milestone + task checklist
     └── works.md                  # 開發日誌：決策與問題記錄
 ```
+
+專案初始化時先建立 `PRD.md`（產品目標、使用者、範圍）和 `TECHSTACK.md`（語言、框架、部署環境），後續每個功能的 spec 都以此為基礎。
 
 ## Skills
 
@@ -90,35 +120,6 @@ docs/
 | `/DDD.ArchitectRefactor` | 架構層級重構——模組邊界、依賴方向、職責分配 |
 | `/DDD.AgentBrowser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
 | `/DDD.CreateHooks` | 設定 Claude Code hooks（安全防護、lint、commit review） |
-
-## 安裝
-
-### 搭配 [AGENTS](https://github.com/applepig/AGENTS) wrapper（推薦）
-
-```bash
-git clone --recursive https://github.com/applepig/AGENTS.git
-cd AGENTS
-npm run deploy        # symlink 到 ~/.claude/, ~/.gemini/, ~/.codex/
-```
-
-### 手動安裝（僅 Claude Code）
-
-```bash
-git clone https://github.com/applepig/ddd-workflow.git ~/.claude/ddd-workflow
-
-# Symlink 指令檔
-ln -sf ~/.claude/ddd-workflow/references/AGENTS.md ~/.claude/CLAUDE.md
-
-# Symlink skills
-for skill in ~/.claude/ddd-workflow/skills/ddd.*/; do
-  ln -sf "$skill" ~/.claude/skills/"$(basename "$skill")"
-done
-
-# Symlink agents
-for agent in ~/.claude/ddd-workflow/agents/ddd-*.md; do
-  ln -sf "$agent" ~/.claude/agents/"$(basename "$agent")"
-done
-```
 
 ## 核心原則
 
