@@ -114,6 +114,33 @@ describe('rm', () => {
       expect(mock_killSession).toHaveBeenCalledWith('proj-b')
     })
 
+    it('should clear state before killing sessions (saveState called before killSession)', async () => {
+      const call_order: string[] = []
+      const state = {
+        'proj-a': { dir: '/a', restart: 'no' as const, created_at: '2025-01-01T00:00:00Z' },
+        'proj-b': { dir: '/b', restart: 'no' as const, created_at: '2025-01-01T00:00:00Z' },
+      }
+      mock_loadState.mockReturnValue(state)
+      mock_saveState.mockImplementation(() => { call_order.push('saveState') })
+      mock_killSession.mockImplementation(() => { call_order.push('killSession') })
+
+      await rm(['-a', '-f'])
+
+      expect(call_order[0]).toBe('saveState')
+      expect(call_order.filter(c => c === 'killSession')).toHaveLength(2)
+    })
+
+    it('should return early with message when no sessions exist', async () => {
+      mock_loadState.mockReturnValue({})
+      const console_spy = vi.spyOn(console, 'log')
+
+      await rm(['-a', '-f'])
+
+      expect(console_spy).toHaveBeenCalledWith('No sessions to remove.')
+      expect(mock_saveState).not.toHaveBeenCalled()
+      expect(mock_killSession).not.toHaveBeenCalled()
+    })
+
     it('should accept short flags -a and -f', async () => {
       const state = {
         'proj-a': { dir: '/a', restart: 'no' as const, created_at: '2025-01-01T00:00:00Z' },

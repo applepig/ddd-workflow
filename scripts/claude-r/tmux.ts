@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 const PREFIX = 'cr-'
 
@@ -11,8 +11,8 @@ function sessionName(name: string): string {
  */
 export function createSession(name: string, dir: string, claude_name: string): void {
   const session = sessionName(name)
-  execSync(`tmux new-session -d -s ${session} -c ${dir}`, { stdio: 'pipe' })
-  execSync(`tmux send-keys -t ${session} 'claude --dangerously-skip-permissions --name "${claude_name}"' Enter`, { stdio: 'pipe' })
+  execFileSync('tmux', ['new-session', '-d', '-s', session, '-c', dir], { stdio: 'pipe' })
+  execFileSync('tmux', ['send-keys', '-t', session, `claude --dangerously-skip-permissions --name "${claude_name}"`, 'Enter'], { stdio: 'pipe' })
 }
 
 /**
@@ -20,7 +20,7 @@ export function createSession(name: string, dir: string, claude_name: string): v
  */
 export function killSession(name: string): void {
   try {
-    execSync(`tmux kill-session -t ${sessionName(name)}`, { stdio: 'pipe' })
+    execFileSync('tmux', ['kill-session', '-t', sessionName(name)], { stdio: 'pipe' })
   } catch {
     // 靜默處理：session 不存在
   }
@@ -32,7 +32,7 @@ export function killSession(name: string): void {
  */
 export function listSessions(): string[] {
   try {
-    const output = execSync("tmux list-sessions -F '#{session_name}'", { stdio: 'pipe' })
+    const output = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { stdio: 'pipe' })
     return output
       .toString()
       .split('\n')
@@ -48,7 +48,7 @@ export function listSessions(): string[] {
  * Session 不存在時會 throw。
  */
 export function attachSession(name: string): void {
-  execSync(`tmux attach-session -t ${sessionName(name)}`, { stdio: 'inherit' })
+  execFileSync('tmux', ['attach-session', '-t', sessionName(name)], { stdio: 'inherit' })
 }
 
 /**
@@ -56,7 +56,7 @@ export function attachSession(name: string): void {
  */
 export function sessionExists(name: string): boolean {
   try {
-    execSync(`tmux has-session -t ${sessionName(name)}`, { stdio: 'pipe' })
+    execFileSync('tmux', ['has-session', '-t', sessionName(name)], { stdio: 'pipe' })
     return true
   } catch {
     return false

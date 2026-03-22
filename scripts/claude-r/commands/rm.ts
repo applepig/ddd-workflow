@@ -19,6 +19,11 @@ export async function rm(args: string[]): Promise<void> {
   if (values.all) {
     const names = Object.keys(state)
 
+    if (names.length === 0) {
+      console.log('No sessions to remove.')
+      return
+    }
+
     if (!values.force) {
       const confirmed = await askConfirmation(`Remove ${names.length} session(s)? [y/N] `)
       if (!confirmed) {
@@ -26,10 +31,10 @@ export async function rm(args: string[]): Promise<void> {
       }
     }
 
+    saveState({})
     for (const name of names) {
       killSession(name)
     }
-    saveState({})
     console.log(`Removed ${names.length} session(s).`)
     return
   }

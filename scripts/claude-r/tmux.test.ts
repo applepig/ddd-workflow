@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }))
 
-const mocked_exec = vi.mocked(execSync)
+const mocked_exec = vi.mocked(execFileSync)
 
 // Import after mock setup
 import {
@@ -26,7 +26,8 @@ describe('tmux module', () => {
       createSession('my-project', '/home/user/projects/my-project', 'my-claude')
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        'tmux new-session -d -s cr-my-project -c /home/user/projects/my-project',
+        'tmux',
+        ['new-session', '-d', '-s', 'cr-my-project', '-c', '/home/user/projects/my-project'],
         expect.any(Object),
       )
     })
@@ -35,17 +36,18 @@ describe('tmux module', () => {
       createSession('my-project', '/home/user/projects/my-project', 'my-claude')
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        'tmux send-keys -t cr-my-project \'claude --dangerously-skip-permissions --name "my-claude"\' Enter',
+        'tmux',
+        ['send-keys', '-t', 'cr-my-project', 'claude --dangerously-skip-permissions --name "my-claude"', 'Enter'],
         expect.any(Object),
       )
     })
 
     it('should call new-session before send-keys', () => {
       const call_order: string[] = []
-      mocked_exec.mockImplementation((cmd) => {
-        const cmd_str = typeof cmd === 'string' ? cmd : cmd.toString()
-        if (cmd_str.includes('new-session')) call_order.push('new-session')
-        if (cmd_str.includes('send-keys')) call_order.push('send-keys')
+      mocked_exec.mockImplementation((_cmd, args) => {
+        const args_arr = args as string[]
+        if (args_arr.includes('new-session')) call_order.push('new-session')
+        if (args_arr.includes('send-keys')) call_order.push('send-keys')
         return Buffer.from('')
       })
 
@@ -60,7 +62,8 @@ describe('tmux module', () => {
       killSession('my-project')
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        'tmux kill-session -t cr-my-project',
+        'tmux',
+        ['kill-session', '-t', 'cr-my-project'],
         expect.any(Object),
       )
     })
@@ -115,7 +118,8 @@ describe('tmux module', () => {
       listSessions()
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        "tmux list-sessions -F '#{session_name}'",
+        'tmux',
+        ['list-sessions', '-F', '#{session_name}'],
         expect.any(Object),
       )
     })
@@ -146,7 +150,8 @@ describe('tmux module', () => {
       sessionExists('test-session')
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        'tmux has-session -t cr-test-session',
+        'tmux',
+        ['has-session', '-t', 'cr-test-session'],
         expect.any(Object),
       )
     })
@@ -157,7 +162,8 @@ describe('tmux module', () => {
       attachSession('my-project')
 
       expect(mocked_exec).toHaveBeenCalledWith(
-        'tmux attach-session -t cr-my-project',
+        'tmux',
+        ['attach-session', '-t', 'cr-my-project'],
         { stdio: 'inherit' },
       )
     })
