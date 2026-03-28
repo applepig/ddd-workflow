@@ -1,64 +1,71 @@
 import { execFileSync } from 'node:child_process'
+import * as path from 'node:path'
 
-const PREFIX = 'cr-'
+export const PREFIX = 'cr-'
 
-function sessionName(name: string): string {
-  return `${PREFIX}${name}`
+/** Session 資訊 */
+export interface SessionInfo {
+  name: string
+  dir: string
 }
 
 /**
- * 建立 detached tmux session，並送出 claude 命令。
- */
-export function createSession(name: string, dir: string, claude_name: string): void {
-  const session = sessionName(name)
-  execFileSync('tmux', ['new-session', '-d', '-s', session, '-c', dir], { stdio: 'pipe' })
-  execFileSync('tmux', ['send-keys', '-t', session, `claude --dangerously-skip-permissions --name "${claude_name}"`, 'Enter'], { stdio: 'pipe' })
-}
-
-/**
- * 殺掉 tmux session。Session 不存在時不 throw。
- */
-export function killSession(name: string): void {
-  try {
-    execFileSync('tmux', ['kill-session', '-t', sessionName(name)], { stdio: 'pipe' })
-  } catch {
-    // 靜默處理：session 不存在
-  }
-}
-
-/**
- * 列出所有 cr- 開頭的 tmux session（回傳去除 prefix 的名稱）。
+ * 列出所有 cr- 開頭的 tmux session，包含名稱與工作目錄。
  * 無 tmux server 時回傳空陣列。
  */
-export function listSessions(): string[] {
+export function listSessions(): SessionInfo[] {
   try {
-    const output = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { stdio: 'pipe' })
+    const output = execFileSync(
+      'tmux',
+      ['list-sessions', '-F', '#{session_name}:#{pane_current_path}'],
+      { stdio: 'pipe' },
+    )
     return output
       .toString()
       .split('\n')
       .filter((line) => line.startsWith(PREFIX))
-      .map((line) => line.slice(PREFIX.length))
+      .map((line) => {
+        const colon_idx = line.indexOf(':')
+        if (colon_idx === -1) {
+          return { name: line, dir: '' }
+        }
+        return {
+          name: line.slice(0, colon_idx),
+          dir: line.slice(colon_idx + 1),
+        }
+      })
   } catch {
     return []
   }
 }
 
 /**
- * 接上 tmux session（會接管 stdio）。
- * Session 不存在時會 throw。
+ * 建立 detached tmux session，並送出 claude -y 命令。
  */
-export function attachSession(name: string): void {
-  execFileSync('tmux', ['attach-session', '-t', sessionName(name)], { stdio: 'inherit' })
+export function createSession(session_name: string, dir: string): void {
+  execFileSync('tmux', ['new-session', '-d', '-s', session_name, '-c', dir], { stdio: 'pipe' })
+  execFileSync('tmux', ['send-keys', '-t', session_name, 'claude --dangerously-skip-permissions', 'Enter'], { stdio: 'pipe' })
 }
 
 /**
- * 檢查 tmux session 是否存在。
+ * 接上 tmux session（會接管 stdio）。
  */
-export function sessionExists(name: string): boolean {
-  try {
-    execFileSync('tmux', ['has-session', '-t', sessionName(name)], { stdio: 'pipe' })
-    return true
-  } catch {
-    return false
+export function attachSession(session_name: string): void {
+  execFileSync('tmux', ['attach-session', '-t', session_name], { stdio: 'inherit' })
+}
+
+/**
+ * 產生 session 名稱：cr-<basename>，若同名已存在則加 suffix。
+ */
+export function generateSessionName(dir: string, existing: SessionInfo[]): string {
+  const basename = path.basename(path.resolve(dir)) || 'root'
+  const base_name = `${PREFIX}${basename}`
+
+  const name_exists = existing.some((s) => s.name === base_name)
+  if (!name_exists) {
+    return base_name
   }
+
+  const suffix = Date.now().toString(36).slice(-4)
+  return `${base_name}-${suffix}`
 }
