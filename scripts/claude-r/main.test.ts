@@ -128,11 +128,13 @@ describe('renderMenu', () => {
     expect(highlighted_first[0]).not.toBe(highlighted_second[0])
   })
 
-  it('should show footer with navigation hints', () => {
+  it('should show footer with navigation hints including terminate and restart', () => {
     const output = renderMenu(sessions, '/tmp', 0)
 
     expect(output).toContain('↑↓')
     expect(output).toContain('Enter')
+    expect(output).toContain('x 終止')
+    expect(output).toContain('r 重啟')
     expect(output).toContain('q')
   })
 
@@ -251,10 +253,64 @@ describe('handleInput', () => {
     })
   })
 
+  describe('terminate (x key)', () => {
+    it('should return terminate action when pressing x on existing session', () => {
+      const state: MenuState = { selected: 0, total: total_items }
+      const action = handleInput('x', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'terminate', session_name: 'cr-AGENTS' })
+    })
+
+    it('should return terminate for second session when selected', () => {
+      const state: MenuState = { selected: 1, total: total_items }
+      const action = handleInput('x', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'terminate', session_name: 'cr-aistudio' })
+    })
+
+    it('should return none when pressing x on "Start new session" option', () => {
+      const state: MenuState = { selected: 2, total: total_items }
+      const action = handleInput('x', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'none' })
+    })
+  })
+
+  describe('restart (r key)', () => {
+    it('should return restart action when pressing r on existing session', () => {
+      const state: MenuState = { selected: 0, total: total_items }
+      const action = handleInput('r', state, sessions, '/tmp')
+
+      expect(action).toEqual({
+        type: 'restart',
+        session_name: 'cr-AGENTS',
+        dir: '/home/user/projects/AGENTS',
+      })
+    })
+
+    it('should return restart for second session when selected', () => {
+      const state: MenuState = { selected: 1, total: total_items }
+      const action = handleInput('r', state, sessions, '/tmp')
+
+      expect(action).toEqual({
+        type: 'restart',
+        session_name: 'cr-aistudio',
+        dir: '/home/user/projects/aistudio',
+      })
+    })
+
+    it('should return none when pressing r on "Start new session" option', () => {
+      const state: MenuState = { selected: 2, total: total_items }
+      const action = handleInput('r', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'none' })
+    })
+  })
+
   describe('unknown keys', () => {
     it('should return none for unrecognized input', () => {
       const state: MenuState = { selected: 0, total: total_items }
-      const action = handleInput('x', state, sessions, '/tmp')
+      const action = handleInput('z', state, sessions, '/tmp')
 
       expect(action).toEqual({ type: 'none' })
     })

@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import * as os from 'node:os'
-import { listSessions, attachSession, createSession, generateSessionName } from './tmux.ts'
+import { listSessions, attachSession, createSession, createSessionWithResume, getClaudeSessionId, killSession, generateSessionName } from './tmux.ts'
 import type { SessionInfo } from './tmux.ts'
 
 /** 選單狀態 */
@@ -14,6 +14,8 @@ export interface MenuState {
 export type MenuAction =
   | { type: 'attach'; session_name: string }
   | { type: 'create'; dir: string }
+  | { type: 'terminate'; session_name: string }
+  | { type: 'restart'; session_name: string; dir: string }
   | { type: 'move'; selected: number }
   | { type: 'quit' }
   | { type: 'none' }
@@ -62,7 +64,7 @@ export function renderMenu(
   lines.push(`${new_marker} [${new_num}] ○ Start new session here (${cwd_display})`)
 
   lines.push('')
-  lines.push('  ↑↓/數字 選擇  Enter 連線  q 離開')
+  lines.push('  ↑↓/數字 選擇  Enter 連線  x 終止  r 重啟  q 離開')
   lines.push('')
 
   return lines.join('\n')
@@ -100,6 +102,26 @@ export function handleInput(
   if (key === 'UP') {
     const prev = (state.selected - 1 + state.total) % state.total
     return { type: 'move', selected: prev }
+  }
+
+  // Terminate
+  if (key === 'x') {
+    if (state.selected < sessions.length) {
+      return { type: 'terminate', session_name: sessions[state.selected].name }
+    }
+    return { type: 'none' }
+  }
+
+  // Restart
+  if (key === 'r') {
+    if (state.selected < sessions.length) {
+      return {
+        type: 'restart',
+        session_name: sessions[state.selected].name,
+        dir: sessions[state.selected].dir,
+      }
+    }
+    return { type: 'none' }
   }
 
   // Enter
@@ -147,7 +169,7 @@ function draw(content: string, prev_lines: number): number {
  */
 async function main(): Promise<void> {
   const cwd = process.cwd()
-  const sessions = listSessions()
+  let sessions = listSessions()
 
   // 沒有任何 session 時，直接建立新 session
   if (sessions.length === 0) {
@@ -159,7 +181,7 @@ async function main(): Promise<void> {
   }
 
   // 顯示互動選單
-  const total = sessions.length + 1
+  let total = sessions.length + 1
   let selected = 0
   let prev_lines = 0
 
@@ -212,6 +234,28 @@ async function main(): Promise<void> {
           createSession(new_name, cwd)
           attachSession(new_name)
           resolve()
+          break
+        }
+        case 'terminate': {
+          killSession(action.session_name)
+          sessions = listSessions()
+          const new_total = sessions.length + 1
+          total = new_total
+          if (selected >= new_total) selected = new_total - 1
+          prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
+          break
+        }
+        case 'restart': {
+          const claude_session_id = getClaudeSessionId(action.session_name)
+          killSession(action.session_name)
+          if (claude_session_id) {
+            createSessionWithResume(action.session_name, action.dir, claude_session_id)
+          } else {
+            createSession(action.session_name, action.dir)
+          }
+          sessions = listSessions()
+          total = sessions.length + 1
+          prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
           break
         }
         case 'none':
