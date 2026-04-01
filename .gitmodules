@@ -1,4 +1,0 @@
-[submodule "ddd-workflow"]
-	path = ddd-workflow
-	url = git@github.com:applepig/ddd-workflow.git
-	branch = dev
