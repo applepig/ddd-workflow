@@ -185,7 +185,7 @@ import { createSession } from '../services/session'
 
 | 角色 | 模型 ID | 退化模型 | 備註 |
 |------|---------|----------|------|
-| 外部 Reviewer A | `openai/gpt-5.4` | `openai/gpt-5.2` | |
+| 外部 Reviewer A | `github-copilot/gpt-5.4` | `github-copilot/gpt-5.3-codex` | |
 <!-- | 外部 Reviewer B | `google/gemini-3.1-pro-preview` | `google/gemini-2.5-pro` | 暫停：持續 429 rate limit | -->
 
 新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。

@@ -4,9 +4,9 @@
  * AGENTS CLI
  *
  * 用法：
- *   node scripts/cli.js deploy   [claude|gemini|codex]   symlink 安裝到系統目錄
- *   node scripts/cli.js undeploy [claude|gemini|codex]   移除 symlink
- *   node scripts/cli.js test     [claude|gemini|codex]   驗證 symlink + markdown frontmatter
+ *   node scripts/cli.js deploy   [claude|gemini|codex|opencode]   symlink 安裝到系統目錄
+ *   node scripts/cli.js undeploy [claude|gemini|codex|opencode]   移除 symlink
+ *   node scripts/cli.js test     [claude|gemini|codex|opencode]   驗證 symlink + markdown frontmatter
  */
 
 import {
@@ -21,7 +21,7 @@ const ROOT = resolve(import.meta.dirname, '..')
 const SRC = join(ROOT, 'ddd-workflow')
 const HOME = homedir()
 
-const ALL_TARGETS = ['claude', 'gemini', 'codex']
+const ALL_TARGETS = ['claude', 'gemini', 'codex', 'opencode']
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -110,6 +110,11 @@ function deployClaude() {
   linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'CLAUDE.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
+
+  // statusline script
+  const scripts_dir = join(target, 'scripts')
+  mkdirSync(scripts_dir, { recursive: true })
+  linkFile(join(SRC, 'scripts', 'statusline.sh'), join(scripts_dir, 'statusline.sh'))
 }
 
 function deployGemini() {
@@ -129,6 +134,18 @@ function deployCodex() {
 
   linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'AGENTS.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
+}
+
+function deployOpencode() {
+  log('=== opencode ===')
+  const target = join(HOME, '.config', 'opencode')
+  mkdirSync(target, { recursive: true })
+
+  linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
+  const agents_src = join(SRC, 'opencode', 'agents')
+  if (existsSync(agents_src)) {
+    linkDir(agents_src, join(target, 'agents'), 'agent')
+  }
 }
 
 // ─── Undeploy ────────────────────────────────────────────────────────────────
@@ -175,6 +192,7 @@ function undeployClaude() {
   unlinkIfOurs(join(HOME, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md')
   unlinkDirIfOurs(join(HOME, '.claude', 'skills'))
   unlinkDirIfOurs(join(HOME, '.claude', 'agents'))
+  unlinkIfOurs(join(HOME, '.claude', 'scripts', 'statusline.sh'), '~/.claude/scripts/statusline.sh')
 }
 
 function undeployGemini() {
@@ -188,6 +206,12 @@ function undeployCodex() {
   log('=== codex ===')
   unlinkIfOurs(join(HOME, '.codex', 'AGENTS.md'), '~/.codex/AGENTS.md')
   unlinkDirIfOurs(join(HOME, '.codex', 'skills'))
+}
+
+function undeployOpencode() {
+  log('=== opencode ===')
+  unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'skills'))
+  unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'agents'))
 }
 
 // ─── Test ────────────────────────────────────────────────────────────────────
@@ -307,6 +331,7 @@ function testClaude() {
   if (!checkSymlink(join(HOME, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md')) ok = false
   countInstalledLinks(join(HOME, '.claude', 'skills'), '~/.claude/skills ddd*')
   countInstalledLinks(join(HOME, '.claude', 'agents'), '~/.claude/agents ddd*')
+  if (!checkSymlink(join(HOME, '.claude', 'scripts', 'statusline.sh'), '~/.claude/scripts/statusline.sh')) ok = false
 
   return ok
 }
@@ -328,6 +353,14 @@ function testCodex() {
   return ok
 }
 
+function testOpencode() {
+  log('=== opencode 驗證 ===')
+  const ok = true
+  countInstalledLinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills ddd*')
+  countInstalledLinks(join(HOME, '.config', 'opencode', 'agents'), '~/.config/opencode/agents ddd*')
+  return ok
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 function parseTargets(args) {
@@ -344,9 +377,9 @@ AGENTS CLI — DDD 工作流跨平台安裝工具
   node scripts/cli.js <command> [target...]
 
 Commands：
-  deploy   [claude|gemini|codex]   symlink 安裝到系統目錄
-  undeploy [claude|gemini|codex]   移除 symlink（只動本專案建的）
-  test     [claude|gemini|codex]   驗證 symlink 狀態 + markdown frontmatter lint
+  deploy   [claude|gemini|codex|opencode]   symlink 安裝到系統目錄
+  undeploy [claude|gemini|codex|opencode]   移除 symlink（只動本專案建的）
+  test     [claude|gemini|codex|opencode]   驗證 symlink 狀態 + markdown frontmatter lint
 
 npm scripts：
   npm run deploy             安裝所有平台
@@ -355,13 +388,13 @@ npm scripts：
   npm run undeploy:claude    只移除 Claude Code
   npm test                   驗證安裝狀態
 
-Target 不指定時預設為 all（claude + gemini + codex）。
+Target 不指定時預設為 all（claude + gemini + codex + opencode）。
 `.trim())
 }
 
-const deployers = { claude: deployClaude, gemini: deployGemini, codex: deployCodex }
-const undeployers = { claude: undeployClaude, gemini: undeployGemini, codex: undeployCodex }
-const testers = { claude: testClaude, gemini: testGemini, codex: testCodex }
+const deployers = { claude: deployClaude, gemini: deployGemini, codex: deployCodex, opencode: deployOpencode }
+const undeployers = { claude: undeployClaude, gemini: undeployGemini, codex: undeployCodex, opencode: undeployOpencode }
+const testers = { claude: testClaude, gemini: testGemini, codex: testCodex, opencode: testOpencode }
 
 function main() {
   const [command, ...rest] = process.argv.slice(2)
@@ -374,9 +407,9 @@ function main() {
   switch (command) {
     case 'deploy': {
       if (!existsSync(join(SRC, 'references'))) {
-        fail(`ddd-workflow/ 目錄內容為空。請先執行：git submodule update --init`)
+        fail(`ddd-workflow/ 目錄內容為空。`)
       }
-      log(`來源: ${SRC} (${existsSync(join(SRC, '.git')) ? 'submodule' : 'local'})`)
+      log(`來源: ${SRC} (subtree)`)
       log(`目標: ${targets.join(', ')}`)
       console.log('')
       for (const t of targets) { deployers[t](); console.log('') }

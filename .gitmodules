@@ -1,0 +1,6 @@
+[submodule "reference/ccstatusline"]
+	path = reference/ccstatusline
+	url = https://github.com/sirmalloc/ccstatusline
+[submodule "reference/codex-plugin-cc"]
+	path = reference/codex-plugin-cc
+	url = https://github.com/openai/codex-plugin-cc
