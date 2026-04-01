@@ -1,152 +1,48 @@
 # Tasks: claude-r
 
-## Milestone 1: 專案骨架 + 核心模組
+## ~~v1: 宣告式 CLI + Daemon~~（已廢棄）
 
-> 建立專案結構與三個核心模組：state（狀態檔管理）、tmux（tmux 操作封裝）、fuzzy-match（模糊比對）。
-> 完成後可在程式碼中 import 使用，所有後續命令都依賴這三個模組。
-> 驗證方式：`pnpm --filter claude-r test` 全過
-
-- [x] Task 1.1: 專案初始化——package.json、tsconfig、vitest config、types.ts
-
-### 🔀 可平行工作線
-
-**[A] State + Fuzzy Match** — `isolation: worktree`
-> 範圍：`scripts/claude-r/state.ts`、`scripts/claude-r/fuzzy-match.ts`、對應測試
-> 依賴：Task 1.1 完成的 types.ts
-> 介面契約：
-> - `loadState(): Promise<State>` — 讀取 sessions.json，不存在則回傳 `{}`
-> - `saveState(state: State): Promise<void>` — 寫入 sessions.json
-> - `fuzzyMatch(input: string, candidates: string[]): FuzzyResult` — 回傳 `{ type: 'exact' | 'unique' | 'ambiguous' | 'none', matches: string[] }`
-> 驗證方式：`pnpm --filter claude-r test state fuzzy`
-
-- [x] Task 1.2: State module + fuzzy-match 測試 (Red)
-- [x] Task 1.3: State module + fuzzy-match 實作 (Green)
-
-**[B] tmux Module** — `isolation: worktree`
-> 範圍：`scripts/claude-r/tmux.ts`、對應測試
-> 依賴：Task 1.1 完成的 types.ts
-> 介面契約：
-> - `createSession(name: string, dir: string, claudeName: string): void` — 建立 detached tmux session `cr-<name>`，執行 claude
-> - `killSession(name: string): void` — 殺掉 tmux session `cr-<name>`
-> - `listSessions(): TmuxSession[]` — 列出所有 `cr-` 開頭的 tmux session
-> - `attachSession(name: string): void` — attach 到 tmux session（execSync, inherit stdio）
-> - `sessionExists(name: string): boolean` — 檢查 session 是否存在
-> 驗證方式：`pnpm --filter claude-r test tmux`
-
-- [x] Task 1.4: tmux module 測試 (Red)
-- [x] Task 1.5: tmux module 實作 (Green)
-
-### 🔗 匯合點
-> 合併 [A]、[B] 分支後確認所有模組測試通過。
-> 驗證方式：`pnpm --filter claude-r test`
-
-- [x] Task 1.6: 合併並驗證所有基礎模組
+> v1 採用 state file + daemon + systemd 架構，開發完成後發現 daemon 有 process leak 問題。
+> 決定以 v2 取代，見 ADR-1。
 
 ---
 
-## Milestone 2: CLI 命令
+## v2: 互動式 tmux session picker
 
-> 建立 CLI 入口與所有命令。完成後 `claude-r` 可透過 command 模式操作。
-> 驗證方式：`pnpm --filter claude-r test`
+> 移除 daemon/state file/systemd，改為純互動式選單。
+> tmux 為唯一真相來源，無額外狀態管理。
 
-- [x] Task 2.1: CLI 入口 + command routing + help 骨架（main.ts）
+### Milestone 1: 核心模組重寫
 
-### 🔀 可平行工作線
+> 精簡 tmux.ts，移除 state/fuzzy-match/resolve-name/types 等 v1 模組。
+> 驗證方式：`vitest run`
 
-**[A] add + ls + help** — `isolation: worktree`
-> 範圍：`scripts/claude-r/commands/add.ts`、`commands/ls.ts`、`commands/help.ts`、對應測試
-> 依賴：Task 2.1 完成的 main.ts routing
-> 介面契約：每個 command 匯出 `(args: string[]) => Promise<void>`
-> 驗證方式：`pnpm --filter claude-r test add ls help`
-> 手動驗證：
-> - `claude-r add -d /tmp/test-proj` → state file 新增 entry + tmux session 建立
-> - `claude-r ls` → 顯示 session 列表
-> - `claude-r help` → 顯示使用說明
+- [x] Task 1.1: tmux module 重寫——listSessions 回傳 name + dir、createSession 產生 UUID session ID、attachSession、killSession、generateSessionName
+- [x] Task 1.2: tmux module 測試——39 tests
 
-- [x] Task 2.2: add + ls + help 測試 (Red)
-- [x] Task 2.3: add + ls + help 實作 (Green)
+### Milestone 2: 互動式選單
 
-**[B] rm + resume + restart + rename** — `isolation: worktree`
-> 範圍：`scripts/claude-r/commands/rm.ts`、`commands/resume.ts`、`commands/restart.ts`、`commands/rename.ts`、對應測試
-> 依賴：Task 2.1 完成的 main.ts routing
-> 介面契約：每個 command 匯出 `(args: string[]) => Promise<void>`，接受 positional name 參數 + flags
-> 驗證方式：`pnpm --filter claude-r test rm resume restart rename`
-> 手動驗證：
-> - `claude-r rm test-proj` → state file 移除 + tmux session 殺掉
-> - `claude-r restart test-proj` → 舊 session 殺掉、新 session 建立
-> - `claude-r rename test-proj new-name` → state file key 更新、tmux session 重建
-> - `claude-r resume test-proj` → attach 到 tmux session
+> 用 raw stdin 實作選單，支援數字鍵 + 方向鍵。
+> 驗證方式：`vitest run`
 
-- [x] Task 2.4: rm + resume + restart + rename 測試 (Red)
-- [x] Task 2.5: rm + resume + restart + rename 實作 (Green)
+- [x] Task 2.1: 選單渲染（renderMenu）——純函式，顯示 session 列表 + 新建選項
+- [x] Task 2.2: 按鍵處理（handleInput）——數字鍵選取、方向鍵移動、Enter 確認、q 離開
+- [x] Task 2.3: CLI 進入點——無 session 自動建立、有 session 顯示選單、非 TTY 報錯
+- [x] Task 2.4: main.test.ts——39 tests（parseKey、shortenDir、renderMenu、handleInput）
 
-### 🔗 匯合點
-> 合併 [A]、[B] 分支後，所有 CLI 命令整合測試。
-> 驗證方式：`pnpm --filter claude-r test`
+### Milestone 3: Terminate / Restart 功能
 
-- [x] Task 2.6: 合併並驗證所有 CLI 命令
+> 選單內直接操作 session，不需離開選單。
+> 驗證方式：`vitest run`
 
----
+- [x] Task 3.1: terminate 動作（x 鍵）——killSession 後更新選單
+- [x] Task 3.2: restart 動作（r 鍵）——讀取 CLAUDE_SESSION_ID、killSession、createSessionWithResume（或 createSession）
+- [x] Task 3.3: session ID 追蹤——createSession 產生 UUID、存入 tmux environment、getClaudeSessionId 讀取
 
-## Milestone 3: Daemon + systemd
+### Milestone 4: v1 殘留清理
 
-> 實作 daemon reconciliation loop 與 systemd service 安裝。
-> 完成後 session 可在 crash / reboot 後自動恢復。
-> 驗證方式：`pnpm --filter claude-r test`
+> 移除 v1 遺留但 v2 不再使用的程式碼。
 
-### 🔀 可平行工作線
-
-**[A] Daemon reconciliation** — `isolation: worktree`
-> 範圍：`scripts/claude-r/commands/daemon.ts`、對應測試
-> 依賴：M1 的 state + tmux module
-> 介面契約：`runDaemon(): Promise<never>` — 無限 loop，每 5 秒調和一次
-> 驗證方式：`pnpm --filter claude-r test daemon`
-> 行為規格：
-> - state 有、tmux 無 + `restart: always` → 重建
-> - state 有、tmux 無 + `restart: no` → 不動
-> - state 有、tmux 有 → 不動
-> - log 每次調和結果到 stdout
-
-- [x] Task 3.1: daemon reconciliation 測試 (Red)
-- [x] Task 3.2: daemon reconciliation 實作 (Green)
-
-**[B] install / uninstall** — `isolation: worktree`
-> 範圍：`scripts/claude-r/commands/install.ts`、`commands/uninstall.ts`、對應測試
-> 依賴：無（只是產生 service 檔案 + 呼叫 systemctl）
-> 介面契約：
-> - `install()` → 產生 `~/.config/systemd/user/claude-r.service`，enable + start
-> - `uninstall()` → disable + stop，移除 service 檔案
-> 驗證方式：`pnpm --filter claude-r test install uninstall`
-> service 檔案內容：
-> ```ini
-> [Unit]
-> Description=Claude Remote Session Manager
-> [Service]
-> Type=simple
-> ExecStart=tsx {scripts/claude-r/main.ts 的絕對路徑} daemon
-> Restart=always
-> RestartSec=5
-> [Install]
-> WantedBy=default.target
-> ```
-
-- [x] Task 3.3: install + uninstall 測試 (Red)
-- [x] Task 3.4: install + uninstall 實作 (Green)
-
-### 🔗 匯合點
-> 合併後整合測試 daemon + systemd 安裝。
-> 驗證方式：`pnpm --filter claude-r test`
-
-- [x] Task 3.5: 合併並驗證 daemon + systemd
-
----
-
-## Milestone 4: Interactive Mode
-
-> 實作互動式 UI，使用 `@clack/prompts`。
-> 完成後 `claude-r`（無參數）進入游標選單。
-> 驗證方式：`pnpm --filter claude-r test` + 手動驗證互動流程
-
-- [x] Task 4.1: interactive mode 邏輯測試 (Red)——選項生成、action dispatch、non-TTY fallback
-- [x] Task 4.2: interactive mode 實作 (Green)——@clack/prompts UI、session 列表、action submenu
-- [x] Task 4.3: edge cases——無 session 提示 add、非 TTY fallback 到 ls
+- [x] Task 4.1: 刪除 commands/ 目錄（v2 main.ts 不再 route 到 subcommands）
+- [x] Task 4.2: 同步 spec.md——補齊 x/r 按鍵、session ID 機制、tmux 操作表
+- [x] Task 4.3: 同步 tasks.md + works.md

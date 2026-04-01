@@ -109,6 +109,8 @@ AGENTS/scripts/claude-r/
 | `1`–`9` | 直接選取對應選項 |
 | `↑` / `↓` | 移動游標（循環） |
 | `Enter` | 確認目前游標選項 |
+| `x` | 終止目前選取的 session |
+| `r` | 重啟目前選取的 session（保留 session ID 以 resume 對話） |
 | `q` / `Ctrl+C` | 離開 |
 
 ### 行為流程
@@ -120,7 +122,10 @@ AGENTS/scripts/claude-r/
   │
   └── 有 session → 顯示選單
         │
-        ├── 選現有 session → tmux attach
+        ├── 選現有 session
+        │     ├── Enter / 數字鍵 → tmux attach
+        │     ├── x → 終止 session，更新選單
+        │     └── r → 重啟 session（嘗試 resume 對話）
         └── 選「Start new」 → 建立 + attach
 ```
 
@@ -140,7 +145,11 @@ AGENTS/scripts/claude-r/
 |------|------|
 | 列出 session | `tmux list-sessions -F '#{session_name}:#{pane_current_path}'` |
 | 建立 session | `tmux new-session -d -s <name> -c <dir>` |
-| 啟動 claude | `tmux send-keys -t <name> 'claude --dangerously-skip-permissions' Enter` |
+| 啟動 claude | `tmux send-keys -t <name> 'claude --session-id <uuid> --dangerously-skip-permissions' Enter` |
+| 儲存 session ID | `tmux set-environment -t <name> CLAUDE_SESSION_ID <uuid>` |
+| 讀取 session ID | `tmux show-environment -t <name> CLAUDE_SESSION_ID` |
+| Resume claude | `tmux send-keys -t <name> 'claude --resume <uuid> --dangerously-skip-permissions' Enter` |
+| 終止 session | `tmux kill-session -t <name>` |
 | 接上 session | `tmux attach-session -t <name>`（stdio: inherit） |
 
 ### 辨識策略
@@ -154,9 +163,11 @@ AGENTS/scripts/claude-r/
 | 情境 | 行為 |
 |------|------|
 | 無 tmux server | 等同無 session，自動建立 |
-| stdin 非 TTY | 目前不處理（未來可 fallback 到 ls） |
-| 目錄名含特殊字元 | basename 中非 `[a-zA-Z0-9_-]` 的字元替換為 `_` |
+| stdin 非 TTY | 報錯 exit 1 |
+| 目錄名含 `.` | basename 中的 `.` 替換為 `_`（避免 tmux target 語法衝突） |
 | tmux session 存在但 claude 已退出 | 仍然顯示在列表中（attach 後使用者自行處理） |
+| 重啟 session 時有 session ID | 用 `--resume` 恢復對話 |
+| 重啟 session 時無 session ID | 用新 session ID 重新建立 |
 
 ---
 

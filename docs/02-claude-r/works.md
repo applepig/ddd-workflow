@@ -2,35 +2,39 @@
 
 ## 2026-03-22
 
-### Milestone 1: 專案骨架 + 核心模組
+### v1: 宣告式 CLI + Daemon
 
-- Task 1.1 由 ddd-developer 完成專案初始化（package.json、tsconfig、vitest、types.ts）
-- [A] State + Fuzzy Match 和 [B] tmux Module 平行派發至 worktree
-- State module：同步 API（readFileSync/writeFileSync），config path 可注入方便測試
-- Fuzzy match：純函式，exact match 優先於 substring
-- tmux module：mock execSync 測試，所有函式內部處理 `cr-` prefix
-- 匯合後 28 tests 全過，無衝突
-
-### Milestone 2: CLI 命令
-
-- Task 2.1 建立 CLI routing（main.ts）+ help + 6 個 stub，附帶 18 個整合測試
-- [A] add + ls 平行實作：add 支援 --dir/--name/--restart flags，ls 支援 --quiet 和 STATUS 顯示
-- [B] rm + resume + restart + rename 平行實作：抽出共用 resolve-name.ts 做模糊比對
-- 匯合後修復 main.test.ts 的 7 個過時 stub 測試（命令已實作，不再回傳 "not yet implemented"）
-- 匯合後 104 tests 全過
-
-### Milestone 3: Daemon + systemd
-
-- [A] daemon reconciliation：reconcile() 做單次比對，runDaemon() 跑 loop，main.ts 用 dynamic import
-- [B] install/uninstall：產生 systemd user service file，含 linger 檢查提示
-- 匯合後 136 tests 全過
-
-### Milestone 4: Interactive Mode
-
-- 使用 @clack/prompts 實作兩層選單（主選單 → action submenu）
-- main.ts 偵測 TTY 環境，非 TTY fallback 到 ls
-- 無 session 時直接 confirm 是否 add
-- dead session 的 Resume 選項標示 hint 提醒
-- 19 個測試覆蓋所有流程分支（Ctrl+C、back、rename 文字輸入等）
+- Milestone 1–4 完成：state module、fuzzy-match、tmux module、CLI commands（add/rm/ls/resume/restart/rename）、daemon reconciliation、systemd install/uninstall、interactive mode
 - 最終 155 tests 全過
+- 使用 @clack/prompts 做互動 UI
 
+## 2026-03-28
+
+### v2 重寫：互動式 tmux session picker
+
+**動機**：v1 的 daemon 有嚴重 process leak（systemd Restart=always 累積 88 個 orphan process）。tmux 本身就保活，daemon + state file 是多餘的複雜度。
+
+**變更**：
+- 刪除 state file、daemon、systemd、fuzzy-match、resolve-name、types 等模組
+- main.ts 重寫為 raw stdin 互動選單（支援數字鍵 + 方向鍵，iPad 友善）
+- tmux.ts 精簡為純 tmux 操作封裝
+- 新增 session ID 追蹤：createSession 產生 UUID 存入 tmux environment，restart 時用 --resume 恢復對話
+- 新增 terminate（x 鍵）和 restart（r 鍵）操作
+- 從 155 tests 精簡為 78 tests（移除所有 v1 command 測試）
+
+**決策紀錄**：
+- 不用 @clack/prompts，因為不支援數字鍵直接選取
+- tmux 為唯一 SSOT，不維護第二份狀態
+- 保留 `cr-` prefix 慣例
+
+## 2026-04-01
+
+### v1 殘留清理 + Dropbox 同步修復
+
+**背景**：Dropbox 同步在兩台電腦之間失效數天。檢查後發現兩邊檔案已由 Dropbox 同步為一致，真正的差異是 git uncommitted changes。
+
+**變更**：
+- 刪除 `commands/` 目錄——v2 的 main.ts 不使用這些 v1 subcommands，裡面的 import 指向已刪除的模組（resolve-name.ts、state.ts 等），導致 4 個 test suite 失敗
+- 更新 spec.md：補齊 x/r 按鍵說明、session ID 機制、完整 tmux 操作表
+- 更新 tasks.md：改為反映 v2 實際完成的 milestones
+- 確認 AGENTS_bak 與 AGENTS 內容一致，可安全刪除
