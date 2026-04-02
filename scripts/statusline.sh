@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 # statusline.sh — Claude Code custom status line
 #
 # 從 stdin 讀取 StatusJSON，輸出 ANSI 格式化的三行文字到 stdout。
-# 依賴：jq, git
+# 依賴：jq, git, curl（OAuth Usage API）
 #
 # 三行布局：
 #   Line 1: Model: {短名}     | Context: {bar} {pct}%
 #   Line 2: Reset: {timer}    | Session: {bar} {pct}%
 #   Line 3: Dir: {目錄名}     | branch: {分支名} (+ins, -del)
+
+# ─── 錯誤處理 ────────────────────────────────────────────────────────────────
+ERR_LOG="/tmp/statusline-err.log"
+trap '_statusline_err $LINENO "$BASH_COMMAND"' ERR
+_statusline_err() {
+  local line="$1" cmd="$2"
+  echo "[statusline ERR] line:${line} cmd: ${cmd}" | tee -a "$ERR_LOG"
+  exit 1
+}
+set -o pipefail
 
 # ─── 常數 ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +37,174 @@ GREEN=$'\x1b[32m'
 YELLOW=$'\x1b[33m'
 RED=$'\x1b[31m'
 CYAN=$'\x1b[36m'
+
+# OAuth Usage API
+USAGE_API_URL="https://api.anthropic.com/api/oauth/usage"
+CACHE_MAX_AGE=60
+# 允許測試覆蓋快取路徑和 credentials 路徑
+: "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
+: "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
+
+# ─── OAuth + API Functions ───────────────────────────────────────────────────
+
+# 依優先序讀取 OAuth token：
+#   1. 環境變數 $CLAUDE_CODE_OAUTH_TOKEN
+#   2. ~/.claude/.credentials.json → .claudeAiOauth.accessToken
+# 找不到時回傳空字串
+getOAuthToken() {
+  # 1. 環境變數
+  if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+    echo "$CLAUDE_CODE_OAUTH_TOKEN"
+    return 0
+  fi
+
+  # 2. Credentials 檔案
+  if [[ -f "$STATUSLINE_CREDENTIALS_FILE" ]]; then
+    local token
+    token=$(jq -r '.claudeAiOauth.accessToken // empty' "$STATUSLINE_CREDENTIALS_FILE" 2>/dev/null) || true
+    if [[ -n "$token" ]]; then
+      echo "$token"
+      return 0
+    fi
+  fi
+
+  # 找不到 token
+  echo ""
+}
+
+# 呼叫 Usage API，帶快取機制
+# 用法: fetchUsageAPI <oauth_token>
+# 回傳: JSON response 或空字串
+fetchUsageAPI() {
+  local token="$1"
+
+  # 無 token 時不呼叫 API
+  if [[ -z "$token" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local cache_file="$STATUSLINE_CACHE_FILE"
+  local cache_dir
+  cache_dir="$(dirname "$cache_file")"
+
+  # 快取命中檢查：檔案存在且 mtime 在 CACHE_MAX_AGE 秒內
+  if [[ -f "$cache_file" ]]; then
+    local file_mtime now age
+    file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || file_mtime=0
+    now=$(date +%s)
+    age=$(( now - file_mtime ))
+    if (( age < CACHE_MAX_AGE )); then
+      cat "$cache_file"
+      return 0
+    fi
+  fi
+
+  # 快取過期或不存在，呼叫 API
+  mkdir -p "$cache_dir"
+  local response
+  local curl_exit
+  response=$(curl --silent --max-time 5 \
+    -H "Authorization: Bearer ${token}" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    "$USAGE_API_URL" 2>/dev/null) && curl_exit=0 || curl_exit=$?
+
+  if [[ $curl_exit -eq 0 ]] && [[ -n "$response" ]]; then
+    # 驗證回傳是有效 JSON
+    if echo "$response" | jq -e '.five_hour' > /dev/null 2>&1; then
+      echo "$response" > "$cache_file"
+      echo "$response"
+      return 0
+    fi
+  fi
+
+  # API 失敗：fallback 到舊快取
+  if [[ -f "$cache_file" ]]; then
+    cat "$cache_file"
+    return 0
+  fi
+
+  # 完全沒有資料
+  echo ""
+}
+
+# 解析 Usage API response 為 shell 變數（用 eval 接收）
+# 用法: eval "$(parseUsageResponse "$json")"
+# 產出變數: api_five_hour_util, api_five_hour_resets_at, api_seven_day_util,
+#           api_seven_day_resets_at, api_extra_enabled, api_extra_util,
+#           api_extra_used_credits, api_extra_monthly_limit
+parseUsageResponse() {
+  local input="$1"
+
+  if [[ -z "$input" ]]; then
+    cat <<'DEFAULTS'
+api_five_hour_util=0
+api_five_hour_resets_at=""
+api_seven_day_util=0
+api_seven_day_resets_at=""
+api_extra_enabled=false
+api_extra_util=0
+api_extra_used_credits=0
+api_extra_monthly_limit=0
+DEFAULTS
+    return 0
+  fi
+
+  echo "$input" | jq -r '
+    def safe_num: if . == null then 0 else . end;
+    def safe_str: if . == null then "" else tostring end;
+    def safe_bool: if . == true then "true" else "false" end;
+    [
+      "api_five_hour_util=\(.five_hour.utilization | safe_num)",
+      "api_five_hour_resets_at=\(.five_hour.resets_at | safe_str)",
+      "api_seven_day_util=\(.seven_day.utilization | safe_num)",
+      "api_seven_day_resets_at=\(.seven_day.resets_at | safe_str)",
+      "api_extra_enabled=\(.extra_usage.is_enabled | safe_bool)",
+      "api_extra_util=\(.extra_usage.utilization | safe_num)",
+      "api_extra_used_credits=\(.extra_usage.used_credits | safe_num)",
+      "api_extra_monthly_limit=\(.extra_usage.monthly_limit | safe_num)"
+    ] | .[]
+  ' 2>/dev/null || {
+    # jq 解析失敗時的 fallback
+    cat <<'DEFAULTS'
+api_five_hour_util=0
+api_five_hour_resets_at=""
+api_seven_day_util=0
+api_seven_day_resets_at=""
+api_extra_enabled=false
+api_extra_util=0
+api_extra_used_credits=0
+api_extra_monthly_limit=0
+DEFAULTS
+  }
+}
+
+# ─── 共用 Helper Functions（測試模式也需要） ─────────────────────────────────
+
+# 色彩判斷：0-60% 綠、60-80% 橘、80%+ 紅
+# 用法: colorByPct <percentage>
+# 回傳: ANSI 色彩碼
+colorByPct() {
+  local pct=$1
+  if (( pct >= 80 )); then
+    echo "$RED"
+  elif (( pct >= 60 )); then
+    echo "$YELLOW"
+  else
+    echo "$GREEN"
+  fi
+}
+
+# ─── 測試模式：只載入函式，不執行主流程 ─────────────────────────────────────
+if [[ "${STATUSLINE_TEST_MODE:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+# ─── OAuth Usage API 呼叫 ────────────────────────────────────────────────────
+
+oauth_token=$(getOAuthToken)
+usage_response=$(fetchUsageAPI "$oauth_token")
+eval "$(parseUsageResponse "$usage_response")"
 
 # ─── 讀取 JSON ───────────────────────────────────────────────────────────────
 
@@ -54,7 +231,7 @@ eval "$(echo "$json" | jq -r '
         ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0))
       end
     ),
-    used_pct: (.rate_limits.five_hour.used_percentage | safe_num),
+    used_pct: (.rate_limits.five_hour.used_percentage | safe_num | round),
     resets_at: (.rate_limits.five_hour.resets_at | safe_num)
   } | to_entries | map("json_\(.key)=\(.value | @sh)") | .[]
 ' 2>/dev/null)" || {
@@ -66,6 +243,15 @@ eval "$(echo "$json" | jq -r '
   json_used_pct=0
   json_resets_at=0
 }
+
+# ─── API 資料覆蓋 StatusJSON ──────────────────────────────────────────────────
+# 若 API 有資料，用 API 的 five_hour 資料覆蓋 StatusJSON 的 rate_limits
+if [[ -n "$api_five_hour_resets_at" ]]; then
+  # API utilization 覆蓋 StatusJSON used_percentage
+  json_used_pct="$api_five_hour_util"
+  # ISO 8601 → Unix timestamp
+  json_resets_at=$(date -d "$api_five_hour_resets_at" +%s 2>/dev/null) || json_resets_at=0
+fi
 
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -152,13 +338,7 @@ ctx_filled=$(( ctx_pct / 4 ))
 (( ctx_filled > BAR_WIDTH )) && ctx_filled=$BAR_WIDTH
 
 # 色彩規則：0-60% 綠、60-80% 橘、80%+ 紅
-if (( ctx_pct >= 80 )); then
-  ctx_color="$RED"
-elif (( ctx_pct >= 60 )); then
-  ctx_color="$YELLOW"
-else
-  ctx_color="$GREEN"
-fi
+ctx_color=$(colorByPct "$ctx_pct")
 
 # 左欄
 line1_left=$(formatLabelValue "Model:" "$model_short" "$LEFT_COL_WIDTH")
@@ -242,11 +422,49 @@ fi
 
 SEP="${NBSP}|${NBSP}"
 
-# 開頭 reset 覆蓋 Claude Code 的 dim
-output="${RST}${line1_left}${SEP}${line1_right_label}${line1_bar}${line1_right_suffix}"
-output+=$'\n'
-output+="${RST}${line2_left}${SEP}${line2_right_label}${line2_bar}${line2_right_suffix}"
-output+=$'\n'
-output+="${RST}${line3_left}${SEP}${line3_right}"
+# 偵測 terminal 寬度，允許環境變數覆蓋（方便測試）
+term_cols="${STATUSLINE_TERM_COLS:-$(tput cols 2>/dev/null)}" || term_cols=80
+: "${term_cols:=80}"
 
-echo -n "$output"
+if (( term_cols < 60 )); then
+  # ─── Compact 模式：單行輸出 ──────────────────────────────────────────────
+  # 格式: Opus 4.6 | CTX 22% | USG 84% | RES 10m
+  compact_sep=" | "
+
+  # CTX 色彩：0-60% 綠、60-80% 橘、80%+ 紅
+  compact_ctx_color=$(colorByPct "$ctx_pct")
+
+  # USG 色彩：0-60% 綠、60-80% 橘、80%+ 紅
+  compact_usg_color=$(colorByPct "$json_used_pct")
+
+  # RES：只顯示最精簡的倒數（不上色）
+  if (( json_resets_at > 0 && json_resets_at > now )); then
+    compact_remaining=$(( json_resets_at - now ))
+    compact_hours=$(( compact_remaining / 3600 ))
+    compact_minutes=$(( (compact_remaining % 3600) / 60 ))
+    if (( compact_hours > 0 )); then
+      compact_res="${compact_hours}h${compact_minutes}m"
+    else
+      compact_res="${compact_minutes}m"
+    fi
+  else
+    compact_res="--:--"
+  fi
+
+  output="${RST}${model_short}"
+  output+="${compact_sep}CTX ${compact_ctx_color}${ctx_pct}%${RST}"
+  output+="${compact_sep}USG ${compact_usg_color}${json_used_pct}%${RST}"
+  output+="${compact_sep}RES ${compact_res}"
+
+  echo -n "$output"
+else
+  # ─── 完整模式：三行輸出 ──────────────────────────────────────────────────
+  # 開頭 reset 覆蓋 Claude Code 的 dim
+  output="${RST}${line1_left}${SEP}${line1_right_label}${line1_bar}${line1_right_suffix}"
+  output+=$'\n'
+  output+="${RST}${line2_left}${SEP}${line2_right_label}${line2_bar}${line2_right_suffix}"
+  output+=$'\n'
+  output+="${RST}${line3_left}${SEP}${line3_right}"
+
+  echo -n "$output"
+fi
