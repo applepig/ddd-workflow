@@ -10,7 +10,7 @@
  */
 
 import {
-  readFileSync, mkdirSync, rmSync, existsSync,
+  readFileSync, writeFileSync, mkdirSync, rmSync, existsSync,
   readdirSync, statSync, symlinkSync, readlinkSync,
   renameSync, lstatSync
 } from 'node:fs'
@@ -70,6 +70,35 @@ function linkFile(source, target) {
 }
 
 /**
+ * 讀取 JSON 檔案，解析失敗回 null。
+ * @param {string} filepath
+ * @returns {object | null}
+ */
+function readJSON(filepath) {
+  try { return JSON.parse(readFileSync(filepath, 'utf-8')) } catch { return null }
+}
+
+/**
+ * 更新 ~/.claude/settings.json 中的 statusLine.command。
+ * 若檔案不存在則建立，已正確則跳過。
+ */
+function updateClaudeSettings() {
+  const settings_path = join(HOME, '.claude', 'settings.json')
+  const expected_command = 'bash "$HOME/.claude/scripts/statusline.sh"'
+
+  const settings = readJSON(settings_path) ?? {}
+
+  if (settings.statusLine?.type === 'command' && settings.statusLine?.command === expected_command) {
+    log('  settings.json statusLine 已正確')
+    return
+  }
+
+  settings.statusLine = { type: 'command', command: expected_command }
+  writeFileSync(settings_path, JSON.stringify(settings, null, 2) + '\n')
+  log('  更新 settings.json statusLine.command')
+}
+
+/**
  * 清理目標目錄中的 ddd* 項目，再為 ddd-workflow 中的子目錄建立 symlink。
  * @param {string} source_dir
  * @param {string} target_dir
@@ -115,6 +144,9 @@ function deployClaude() {
   const scripts_dir = join(target, 'scripts')
   mkdirSync(scripts_dir, { recursive: true })
   linkFile(join(SRC, 'scripts', 'statusline.sh'), join(scripts_dir, 'statusline.sh'))
+
+  // settings.json: statusLine.command
+  updateClaudeSettings()
 }
 
 function deployGemini() {
