@@ -1,11 +1,10 @@
 ---
 name: DDD.Plan
 description: >
-  需求還模糊時的前置規劃——釐清方向、探索可能性、產出 plan.md。
-  Use when the user says "plan a feature", "clarify requirements", "figure out
-  what to build", "I have an idea", "scope a feature", "what should we build",
-  or invokes "/DDD.plan". Even if the user just describes a rough concept,
-  this skill helps shape it into actionable direction before writing a spec.
+  前置規劃：需求模糊時釐清方向、探索可能性，產出 plan.md。
+  Trigger: "plan a feature", "clarify requirements", "figure out what to build",
+  "規劃功能", "釐清需求", "我有個想法", /DDD.plan。
+  即使只是粗略描述概念，也應觸發此 skill 來定型方向。
 ---
 
 # DDD:plan — 前置規劃
@@ -28,10 +27,12 @@ description: >
    - 建立 `plan.md`
 
 3. **需求釐清（Grill Me 模式）**
-   - 沿著決策樹逐一追問，直到雙方對每個分支都達成共識
-   - 每次只聚焦一個決策點，解決後再往下走
+   - **範圍評估先行**：追問前先判斷需求範圍——若概念涉及多個獨立子系統，先協助使用者拆分為獨立的 sprint，再逐一深入。不要在巨大範圍上鑽細節
+   - **一次一題**：沿著決策樹逐一追問，每次只聚焦一個決策點，解決後再往下走
+   - **選擇題優先**：能用 2-4 個選項框架化的問題，就用 AskUserQuestion 的多選項格式呈現，降低使用者的認知負擔。開放式問題只在無法預判答案範圍時使用
    - **能靠 codebase 回答的問題自己去查**，不要問使用者（用 Explore agent、Grep、Read）
    - 只有真正需要使用者判斷的問題才用 AskUserQuestion 提出
+   - **在分歧點提出方案**：遇到多種可行路徑時，提出 2-3 個方案及各自取捨，附上你的推薦——讓使用者做選擇題而非申論題
    - 持續追問直到沒有未解決的分支為止
 
 4. **撰寫 plan.md**（維持以下大綱結構）
