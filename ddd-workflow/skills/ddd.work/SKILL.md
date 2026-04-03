@@ -1,11 +1,11 @@
 ---
 name: DDD.Work
 description: >
-  以 TDD 循環執行 tasks.md 中的開發任務——Red → Green → Refactor。
-  遇到 🔀 平行工作線時，自動切換為 coordinator 模式，派發 Agent 子行程平行開發。
-  Use when the user says "start implementing", "begin development", "work on
-  the feature", "do TDD", "let's code", "implement this", or invokes "/DDD.work".
-  Use after tasks.md is confirmed and it's time to write code.
+  TDD 開發執行：以 Red → Green → Refactor 循環實作 tasks.md 中的任務。
+  遇到 🔀 平行工作線時自動切換 coordinator 模式，派發 Agent 子行程平行開發。
+  Trigger: "start implementing", "begin development", "let's code", "do TDD",
+  "開始實作", "開始寫", "動工", /DDD.work。
+  tasks.md 確認後、準備寫程式碼時使用。
 ---
 
 # DDD:work — 開發執行
@@ -23,6 +23,13 @@ description: >
 
 ---
 
+## 模型選擇
+
+派發 `ddd-developer` 時，預設使用 **Sonnet**。只在以下情境升級 **Opus**：
+- 複雜的架構性邏輯（多模組交互、狀態機設計）
+- 反覆除錯仍無法解決的問題
+- 需要深度理解大量既有程式碼的重構
+
 ## 序列模式：TDD 開發循環
 
 適用於一般的線性 milestone。
@@ -39,8 +46,8 @@ description: >
    - **Refactor**：最佳化程式碼結構，確保測試維持通過
 
 3. **Simplify**
-   - 呼叫 `/simplify` skill 審查本次變更
-   - 檢查是否有重複邏輯、過度設計、可簡化的抽象
+   - 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff
+   - 它會平行啟動 code reuse / code quality / efficiency 三個 review agent 並直接修正問題
 
 4. **自我驗收**
    - 執行所有相關測試，確認全部通過
@@ -119,9 +126,9 @@ description: >
    3. **測試失敗** → 嘗試修復（最多 3 次），仍失敗則報 `FAIL: <失敗的測試 + 原因>`
    4. **E2E 驗證** — 依上方食譜執行端對端驗證；標註「僅 unit test」則跳過
    5. **Simplify** — 呼叫 `Skill` tool，skill: "simplify"，審查你的變更
-   6. **Commit** — 用 Conventional Commits 格式 commit 所有變更
-   7. **回報** — 最後一行輸出：`DONE: <一句話摘要>（測試結果：X passed, Y failed）`；若失敗則輸出 `FAIL: <原因>`
+   6. **回報（不 commit）** — 最後一行輸出：`DONE: <一句話摘要>（測試結果：X passed, Y failed）`；若失敗則輸出 `FAIL: <原因>`
       - **沒有測試執行結果的 DONE 會被 coordinator 退回**
+      - **Worker 不得自行 commit**——commit 由 coordinator merge 後、經使用者確認才執行
    ```
 
 3. **確認派發計畫**
@@ -135,7 +142,8 @@ description: >
 ```
 對每條工作線 [A], [B], [C]…：
   Agent tool:
-    subagent_type: "general-purpose"
+    subagent_type: "ddd-developer"
+    model: "sonnet"              # 預設用 Sonnet；複雜邏輯或除錯困難時才升級 Opus
     isolation: "worktree"
     run_in_background: true
     prompt: （上面組裝好的 worker prompt）
@@ -190,7 +198,7 @@ description: >
 * **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec`。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec` 更新規格。Spec 更新確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 隔離**：所有派出的 worker 一律使用 `isolation: "worktree"`。Worker 在獨立的 worktree 中工作、測試、commit，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。

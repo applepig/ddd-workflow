@@ -1,15 +1,11 @@
 ---
 name: DDD.E2E
 description: >
-  E2E 測試規劃與撰寫——在 main agent context 中探索應用、規劃測試案例、與使用者確認後撰寫 Playwright 測試。
-  支援兩種模式：Greenfield（從 spec 驅動）和 Retrofit（既有專案補 E2E）。
-  Use when the user says "write E2E tests", "add E2E", "we need E2E coverage",
-  "test this page", "test this flow", "supplement E2E", "補 E2E", "幫我測這個頁面",
-  "這個功能需要 E2E", "Playwright test", or invokes "/DDD.e2e".
-  Also use when tasks.md contains E2E-related tasks, when the user wants to
-  verify UI behavior through automated browser testing, when an existing project
-  needs test coverage for its frontend flows, or when "/DDD.work" encounters
-  E2E-specific tasks that require browser interaction planning.
+  E2E 測試規劃與撰寫：在 main agent context 中探索應用、規劃測試案例、撰寫 Playwright 測試。
+  支援 Greenfield（從 spec 驅動）和 Retrofit（既有專案補 E2E）兩種模式。
+  Trigger: "write E2E tests", "add E2E", "Playwright test", "test this page",
+  "補 E2E", "幫我測這個頁面", "這個功能需要 E2E", /DDD.e2e。
+  任何需要 E2E 測試覆蓋的場景都應觸發。
 ---
 
 # DDD:E2E — E2E 測試規劃與撰寫

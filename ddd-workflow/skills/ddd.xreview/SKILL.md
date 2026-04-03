@@ -1,12 +1,11 @@
 ---
 name: DDD.Xreview
 description: >
-  Cross review——使用多種模型進行 cross review，採用分段約束 prompt 提升 finding 品質。
-  Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫，具體模型清單見 AGENTS.md。
-  Use when the user says "review code", "cross review", "let's review",
-  "check my changes", "review this sprint", or invokes "/DDD.xreview".
-  Use after development work to get independent code review from multiple
-  AI models before committing or pushing.
+  Cross review：派發多個 AI 模型獨立審查程式碼，交叉比對 findings 提升品質。
+  Claude subagent 固定使用，外部模型清單見 AGENTS.md。
+  Trigger: "review code", "cross review", "let's review", "check my changes",
+  "審查程式碼", "code review", "review 一下", /DDD.xreview。
+  開發完成後、commit 或 push 前使用。
 ---
 
 # DDD:xreview — Cross Review
@@ -42,15 +41,7 @@ description: >
 
 所有 reviewer 使用**相同的 prompt**。prompt 採用分段約束結構，每個段落控制 reviewer 行為的一個面向——詳見 `references/review-prompt.md`。
 
-**組裝後寫入暫存檔**，避免在多個 Bash 呼叫中重複嵌入同一份 prompt（浪費 context window）：
-
-```bash
-review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md)
-cat > "$review_prompt_file" << 'PROMPT_EOF'
-<填入完整的 review prompt>
-PROMPT_EOF
-echo "$review_prompt_file"
-```
+**組裝後寫入暫存檔**（`mktemp /tmp/xreview-XXXXXX.md`），避免在多個 Bash 呼叫中重複嵌入同一份 prompt。
 
 ### 3. 平行派出 Reviewer
 
@@ -77,29 +68,19 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 
 `<cli>:<model>` 從 AGENTS.md 的「Cross Review 模型設定」表格讀取。例如 `opencode:github-copilot/gpt-5.4`。
 
-以 `Bash({ command: ..., run_in_background: true })` 執行。對表格中建議的模型都派一個。
+以 `Bash({ command: ..., run_in_background: true })` 執行。對 AGENTS.md 表格中的每個模型都派一個。
 
-> `xreview-runner.sh` 是刻意保持精簡的 shell proxy：只包 timeout（預設 600 秒），支援多種 CLI（opencode、gemini、codex），根據 `<cli>:<model>` 格式自動分發到對應的 CLI。它不對 review 內容做語意判斷；但若 CLI 自己在 stderr 明確吐出 error marker，runner 會把那次執行視為失敗，補一行 `XREVIEW_ERROR` summary。不含冒號的 model 參數會向後相容地視為 `opencode:<model>`。
->
-> 各 CLI 的呼叫慣例、read-only 機制與注意事項詳見 `references/cli-adapters.md`。
+> `xreview-runner.sh` 是精簡的 shell proxy：包 timeout、根據 `<cli>:<model>` 格式分發到對應 CLI、失敗時補 `XREVIEW_ERROR` summary。各 CLI 的詳細呼叫慣例見 `references/cli-adapters.md`。
 
 ### 4. 失敗處理與退化
 
-**失敗處理**：`xreview-runner.sh` 不判讀 review 內容。它只處理 process 層級訊號：
+**失敗判定**：Bash exit code 非零，或輸出含 `XREVIEW_ERROR` marker。不需對 reviewer 內容做語意判斷。
 
-- `timeout`：輸出 `XREVIEW_ERROR: timed out ...`
-- CLI 非零 exit code：輸出 `XREVIEW_ERROR: <cli> exited with code ...`
-- CLI 自己透過 stderr 回傳的明確錯誤：原樣保留在輸出中，並轉成失敗
-- 未知 CLI：輸出 `XREVIEW_ERROR: unknown cli: ...`
-- CLI 未安裝：輸出 `XREVIEW_ERROR: cli not found: ...`
-
-Coordinator 只需檢查 Bash 回報的 exit code，或輸出是否含 `XREVIEW_ERROR`；不要再對 reviewer 內容做額外語意判斷。
-
-**退化策略**——Bash 回報非零 exit code，或 output 含 `XREVIEW_ERROR` 時：
+**退化策略**：
 
 1. 查 AGENTS.md 表格中該模型的「退化模型」欄位
-2. 有退化模型：重試一次，替換 model 參數
-3. 沒有退化模型或退化也失敗：在報告中標示該 reviewer 失敗，呈現已取得的結果
+2. 有退化模型 → 重試一次，替換 model 參數
+3. 無退化模型或退化也失敗 → 在報告中標示失敗，呈現已取得的結果
 
 ### 5. 整合與呈現
 
@@ -159,10 +140,8 @@ Coordinator 只需檢查 Bash 回報的 exit code，或輸出是否含 `XREVIEW_
 
 ## 前提條件
 
-- **外部 CLI**：至少安裝一種（opencode、gemini、codex），並設定好認證。各 CLI 的安裝與設定詳見 `references/cli-adapters.md`
-- **OpenCode reviewer agent**（若使用 opencode）：需部署到 `~/.config/opencode/agents/ddd.xreviewer.md`（見 `references/cli-adapters.md`）
-  - **關鍵**：所有 permission key 必須明確設為 `allow` 或 `deny`（或 glob whitelist）。未設定的 key 在 `run` 模式下預設 `"ask"`，會導致進程永久掛住。`external_directory` 需設 whitelist 允許 `/tmp/*`，否則某些模型建立暫存檔後無法讀回。
-- 若所有外部 CLI 均未安裝，skill 會退化為僅 Claude subagent 的單方 review
+- **外部 CLI**：至少安裝一種（AGENTS.md 表格列出的 CLI），並設定好認證。安裝與設定詳見 `references/cli-adapters.md`
+- 若所有外部 CLI 均未安裝，退化為僅 Claude subagent 的單方 review
 
 ## 產出
 

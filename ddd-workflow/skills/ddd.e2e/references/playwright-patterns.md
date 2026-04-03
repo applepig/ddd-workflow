@@ -38,12 +38,7 @@ page.locator('.submit-btn')
 // ✅ Web-first assertion（auto-retry）
 await expect(element).toBeVisible()
 
-// ✅ 等 API 回應——waitForResponse 必須在觸發動作之前設置
-const resp = page.waitForResponse('**/api/data')
-await button.click()
-await resp
-
-// ✅ click + waitForResponse 用 Promise.all 防止快回應被漏掉
+// ✅ click + waitForResponse 用 Promise.all（優先使用，防止快回應被漏掉）
 await Promise.all([
   page.waitForResponse(r => r.url().includes('/api/data')),
   save_button.click(),
@@ -59,6 +54,7 @@ await expect.poll(async () => {
 }).toBe(200)
 
 // ✅ 動作觸發 API 後，等 network 穩定再操作表單（見下方「re-render 陷阱」）
+// ⚠️ 有背景輪詢、WebSocket、SSE 的應用會導致永遠等不到 networkidle，改用 waitForResponse 鎖定特定請求
 await page.waitForLoadState('networkidle')
 
 // ❌ 絕對禁止

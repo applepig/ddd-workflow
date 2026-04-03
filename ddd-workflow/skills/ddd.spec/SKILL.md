@@ -1,11 +1,10 @@
 ---
 name: DDD.Spec
 description: >
-  撰寫正式規格書 spec.md——包含 User Story、驗收條件、API 契約、ADR。
-  Use when the user says "write a spec", "define requirements", "draft acceptance
-  criteria", "document a feature", "let's define what we're building",
-  or invokes "/DDD.spec". Use whenever a feature needs formal specification
-  before implementation.
+  撰寫規格書：產出包含 User Story、驗收條件、API 契約、ADR 的 spec.md。
+  Trigger: "write a spec", "define requirements", "draft acceptance criteria",
+  "寫規格", "定義需求", "驗收條件", /DDD.spec。
+  功能需要正式規格才能開始實作時使用。
 ---
 
 # DDD:spec — 規格制定
@@ -21,7 +20,7 @@ description: >
 ## 執行步驟
 
 1. **準備工作**
-   - 建立並切換至 feature branch：使用 `git checkout -b feat/<編號>-<名稱>`（若已有分支則切換過去）
+   - 建立並切換至 feature branch：`git checkout -b feat/<編號>-<名稱>`（若已有分支則切換過去）。**branch 名稱中的 `<編號>-<名稱>` 必須與文件包 `docs/<編號>-<名稱>/` 完全一致**——這是從程式碼追溯需求的唯一索引，命名不一致會切斷追溯鏈。
    - 確認或建立 `docs/<編號>-<名稱>/` 資料夾
    - 讀取現有的 plan.md、research.md（如果有的話）
    - 讀取 `docs/PRD.md`、`docs/TECHSTACK.md` 了解專案脈絡

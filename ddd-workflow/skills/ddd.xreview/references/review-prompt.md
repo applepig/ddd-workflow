@@ -1,6 +1,6 @@
 # Review Prompt 模板（分段約束版）
 
-送給三個 reviewer（Claude subagent、OpenCode/GPT-5.4、OpenCode/Gemini）的統一 review prompt。
+送給所有 reviewer（Claude subagent + AGENTS.md 表格中的外部模型）的統一 review prompt。
 根據實際 sprint 內容填入 `{{placeholder}}` 後送出。
 
 每個段落控制 reviewer 行為的一個面向，段落之間正交互補。
