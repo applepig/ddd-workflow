@@ -181,11 +181,11 @@ import { createSession } from '../services/session'
 
 ## Cross Review 模型設定
 
-`/DDD.xreview3` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過 OpenCode CLI 呼叫。
+`/DDD.Xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
 
-| 角色 | 模型 ID | 退化模型 | 備註 |
+| 角色 | CLI:模型 | 退化模型 | 備註 |
 |------|---------|----------|------|
-| 外部 Reviewer A | `github-copilot/gpt-5.4` | `github-copilot/gpt-5.3-codex` | |
-<!-- | 外部 Reviewer B | `google/gemini-3.1-pro-preview` | `google/gemini-2.5-pro` | 暫停：持續 429 rate limit | -->
+| 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | `opencode:github-copilot/gpt-5.3-codex` | 預設 |
+<!-- | 外部 Reviewer B | `gemini:gemini-3.1-pro-preview` | `gemini:gemini-2.5-pro` | 暫停：持續 429 rate limit | -->
 
 新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。
