@@ -20,6 +20,31 @@ _statusline_err() {
 }
 set -o pipefail
 
+# ─── Parent Process TTY Detection ────────────────────────────────────────────
+
+# 向上走 process tree，找到有 TTY 的祖先，用 stty size 讀取實際寬度
+# 回傳: 偵測到的 columns 數，或空字串（偵測失敗）
+_detect_term_cols() {
+  local pid=$$
+  local i
+  for i in $(seq 1 10); do
+    local ppid tty_dev
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || break
+    tty_dev=$(ps -o tty= -p "$ppid" 2>/dev/null | tr -d ' ') || break
+    if [[ "$tty_dev" != "?" && "$tty_dev" != "??" && -n "$tty_dev" ]]; then
+      local cols
+      cols=$(stty size < "/dev/$tty_dev" 2>/dev/null | awk '{print $2}')
+      if [[ -n "$cols" && "$cols" -gt 0 ]] 2>/dev/null; then
+        echo "$cols"
+        return 0
+      fi
+    fi
+    pid="$ppid"
+    [[ "$ppid" == "1" || "$ppid" == "0" || -z "$ppid" ]] && break
+  done
+  echo ""
+}
+
 # ─── 常數 ────────────────────────────────────────────────────────────────────
 
 BAR_WIDTH=25
@@ -415,27 +440,35 @@ line3_left=$(formatLabelValue "Dir:" "$dir_name" "$LEFT_COL_WIDTH")
 # 右欄
 line3_right=""
 if [[ -n "$git_branch" ]]; then
-  line3_right="branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
+  line3_right="Branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
 fi
 
 # ─── 輸出 ────────────────────────────────────────────────────────────────────
 
 SEP="${NBSP}|${NBSP}"
 
-# 偵測 terminal 寬度，允許環境變數覆蓋（方便測試）
-term_cols="${STATUSLINE_TERM_COLS:-$(tput cols 2>/dev/null)}" || term_cols=80
+# Fallback chain: Parent TTY detection → $STATUSLINE_TERM_COLS → tput cols → 80
+term_cols=$(_detect_term_cols)
+: "${term_cols:=${STATUSLINE_TERM_COLS:-}}"
+: "${term_cols:=$(tput cols 2>/dev/null)}"
 : "${term_cols:=80}"
 
-if (( term_cols < 60 )); then
+if (( term_cols < 100 )); then
   # ─── Compact 模式：單行輸出 ──────────────────────────────────────────────
-  # 格式: Opus 4.6 | CTX 22% | USG 84% | RES 10m
+  # 格式: Opus 4.6 | Context 8% | Usage 84% | Reset 10m
   compact_sep=" | "
 
   # CTX 色彩：0-60% 綠、60-80% 橘、80%+ 紅
   compact_ctx_color=$(colorByPct "$ctx_pct")
 
-  # USG 色彩：0-60% 綠、60-80% 橘、80%+ 紅
-  compact_usg_color=$(colorByPct "$json_used_pct")
+  # USG 色彩：對齊完整版 Session bar（0-79% 藍、80-89% 橘、90%+ 紅）
+  if (( json_used_pct >= 90 )); then
+    compact_usg_color="$RED"
+  elif (( json_used_pct >= 80 )); then
+    compact_usg_color="$YELLOW"
+  else
+    compact_usg_color="$CYAN"
+  fi
 
   # RES：只顯示最精簡的倒數（不上色）
   if (( json_resets_at > 0 && json_resets_at > now )); then
@@ -452,9 +485,9 @@ if (( term_cols < 60 )); then
   fi
 
   output="${RST}${model_short}"
-  output+="${compact_sep}CTX ${compact_ctx_color}${ctx_pct}%${RST}"
-  output+="${compact_sep}USG ${compact_usg_color}${json_used_pct}%${RST}"
-  output+="${compact_sep}RES ${compact_res}"
+  output+="${compact_sep}Context ${compact_ctx_color}${ctx_pct}%${RST}"
+  output+="${compact_sep}Usage ${compact_usg_color}${json_used_pct}%${RST}"
+  output+="${compact_sep}Reset ${compact_res}"
 
   echo -n "$output"
 else
