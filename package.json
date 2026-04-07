@@ -4,10 +4,10 @@
   "description": "DDD 工作流跨 AI agent CLI 安裝工具",
   "type": "module",
   "scripts": {
-    "deploy": "node scripts/cli.js deploy",
+    "deploy": "node scripts/build.js && node scripts/cli.js deploy",
     "deploy:claude": "node scripts/cli.js deploy claude",
-    "deploy:gemini": "node scripts/cli.js deploy gemini",
-    "deploy:codex": "node scripts/cli.js deploy codex",
+    "deploy:gemini": "node scripts/build.js && node scripts/cli.js deploy gemini",
+    "deploy:codex": "node scripts/build.js && node scripts/cli.js deploy codex",
     "undeploy": "node scripts/cli.js undeploy",
     "undeploy:claude": "node scripts/cli.js undeploy claude",
     "undeploy:gemini": "node scripts/cli.js undeploy gemini",

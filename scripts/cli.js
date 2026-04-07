@@ -19,6 +19,7 @@ import { homedir } from 'node:os'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const SRC = join(ROOT, 'ddd-workflow')
+const DIST = join(ROOT, 'dist')
 const HOME = homedir()
 
 const ALL_TARGETS = ['claude', 'gemini', 'codex', 'opencode']
@@ -99,7 +100,7 @@ function updateClaudeSettings() {
 }
 
 /**
- * 清理目標目錄中的 ddd* 項目，再為 ddd-workflow 中的子目錄建立 symlink。
+ * 清理目標目錄中的 ddd* 項目，再為 source_dir 中的項目建立 symlink。
  * @param {string} source_dir
  * @param {string} target_dir
  * @param {string} label  用於 log 的名稱（如 'skill', 'agent'）
@@ -123,7 +124,7 @@ function linkDir(source_dir, target_dir, label) {
   // 建立 symlink
   for (const name of readdirSync(source_dir)) {
     const src_path = join(source_dir, name)
-    if (!statSync(src_path).isDirectory() && !name.endsWith('.md')) continue
+    if (!statSync(src_path).isDirectory() && !name.endsWith('.md') && !name.endsWith('.toml')) continue
     symlinkSync(src_path, join(target_dir, name))
     log(`  連結 ${label}: ${name}`)
   }
@@ -156,7 +157,7 @@ function deployGemini() {
 
   linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'GEMINI.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
-  linkDir(join(SRC, 'agents'), join(target, 'agents'), 'agent')
+  linkDir(join(DIST, 'gemini', 'agents'), join(target, 'agents'), 'agent')
 }
 
 function deployCodex() {
@@ -166,6 +167,7 @@ function deployCodex() {
 
   linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'AGENTS.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
+  linkDir(join(DIST, 'codex', 'agents'), join(target, 'agents'), 'agent')
 }
 
 function deployOpencode() {
@@ -174,10 +176,7 @@ function deployOpencode() {
   mkdirSync(target, { recursive: true })
 
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
-  const agents_src = join(SRC, 'opencode', 'agents')
-  if (existsSync(agents_src)) {
-    linkDir(agents_src, join(target, 'agents'), 'agent')
-  }
+  linkDir(join(DIST, 'opencode', 'agents'), join(target, 'agents'), 'agent')
 }
 
 // ─── Undeploy ────────────────────────────────────────────────────────────────
@@ -238,6 +237,7 @@ function undeployCodex() {
   log('=== codex ===')
   unlinkIfOurs(join(HOME, '.codex', 'AGENTS.md'), '~/.codex/AGENTS.md')
   unlinkDirIfOurs(join(HOME, '.codex', 'skills'))
+  unlinkDirIfOurs(join(HOME, '.codex', 'agents'))
 }
 
 function undeployOpencode() {
@@ -382,6 +382,7 @@ function testCodex() {
   let ok = true
   if (!checkSymlink(join(HOME, '.codex', 'AGENTS.md'), '~/.codex/AGENTS.md')) ok = false
   countInstalledLinks(join(HOME, '.codex', 'skills'), '~/.codex/skills ddd*')
+  countInstalledLinks(join(HOME, '.codex', 'agents'), '~/.codex/agents ddd*')
   return ok
 }
 

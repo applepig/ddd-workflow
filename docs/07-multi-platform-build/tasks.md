@@ -30,10 +30,10 @@
 ## Milestone 2: CLI 整合（序列）
 > 驗證方式：`npm run deploy` 成功執行，Gemini/OpenCode/Codex 的 agent symlink 指向 dist/，Claude 不變。`npm test` 全部通過。
 
-- [ ] Task 2.1: 撰寫 cli.js 修改的驗證測試（Red）——deploy 後 Gemini/OpenCode/Codex 的 agent symlink 指向 dist/
-- [ ] Task 2.2: 修改 `cli.js` 的 deploy 函式——Gemini/OpenCode/Codex agent 改為 symlink dist/ 產出，Claude 不變（Green）
-- [ ] Task 2.3: 修改 `cli.js` 的 undeploy 與 test 函式，適應新路徑結構
-- [ ] Task 2.4: 更新 `package.json` scripts——新增 `build`，修改 `deploy` 系列為先 build 再 deploy
-- [ ] Task 2.5: `.gitignore` 加入 `dist/`
-- [ ] Task 2.6: 刪除 `ddd-workflow/opencode/agents/` 舊目錄，修改 cli.js 中 deployOpencode 對應的舊路徑邏輯
-- [ ] Task 2.7: 端對端驗證——`npm run build && npm run deploy && npm test` 全部通過
+- [x] Task 2.1: 撰寫 cli.js 修改的驗證測試（Red）——deploy 後 Gemini/OpenCode/Codex 的 agent symlink 指向 dist/
+- [x] Task 2.2: 修改 `cli.js` 的 deploy 函式——Gemini/OpenCode/Codex agent 改為 symlink dist/ 產出，Claude 不變（Green）
+- [x] Task 2.3: 修改 `cli.js` 的 undeploy 與 test 函式，適應新路徑結構
+- [x] Task 2.4: 更新 `package.json` scripts——新增 `build`，修改 `deploy` 系列為先 build 再 deploy
+- [x] Task 2.5: `.gitignore` 加入 `dist/`
+- [x] Task 2.6: 刪除 `ddd-workflow/opencode/agents/` 舊目錄，修改 cli.js 中 deployOpencode 對應的舊路徑邏輯
+- [x] Task 2.7: 端對端驗證——`npm run build && npm run deploy && npm test` 全部通過
