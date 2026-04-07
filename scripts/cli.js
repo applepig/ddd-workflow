@@ -442,6 +442,11 @@ function main() {
       if (!existsSync(join(SRC, 'references'))) {
         fail(`ddd-workflow/ 目錄內容為空。`)
       }
+      // 非 claude 平台需要 dist/（由 build.js 產生）
+      const needs_dist = targets.some(t => t !== 'claude')
+      if (needs_dist && !existsSync(DIST)) {
+        fail('dist/ 目錄不存在。請先執行 `npm run build` 或使用 `npm run deploy`（會自動 build）。')
+      }
       log(`來源: ${SRC} (subtree)`)
       log(`目標: ${targets.join(', ')}`)
       console.log('')

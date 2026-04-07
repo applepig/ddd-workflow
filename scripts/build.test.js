@@ -552,3 +552,72 @@ describe('edge cases', () => {
     expect(() => convertToCodex(REVIEWER_FRONTMATTER, body_with_toml, 'ddd-reviewer')).not.toThrow()
   })
 })
+
+// ─── 修正 3：TOML 轉義強化 ────────────────────────────────────────────────────
+
+describe('escapeTomlMultiline (via convertToCodex)', () => {
+  it('should not produce three consecutive double quotes in output for 3-quote input', () => {
+    const body = 'some """ triple quotes here'
+    const result = convertToCodex(REVIEWER_FRONTMATTER, body, 'ddd-reviewer')
+    // 從 developer_instructions 開始的部分不得出現 """ 除了開頭和結尾的多行字串分隔符
+    // 找出 developer_instructions = """ 後面到最後 """ 前的內容
+    const inner_match = result.match(/developer_instructions\s*=\s*"""\n([\s\S]*?)\n"""/)
+    expect(inner_match).not.toBeNull()
+    const inner = inner_match[1]
+    expect(inner).not.toMatch(/"""/)
+  })
+
+  it('should handle 4 consecutive double quotes without producing triple quotes', () => {
+    const body = 'four quotes: """"'
+    const result = convertToCodex(REVIEWER_FRONTMATTER, body, 'ddd-reviewer')
+    const inner_match = result.match(/developer_instructions\s*=\s*"""\n([\s\S]*?)\n"""/)
+    expect(inner_match).not.toBeNull()
+    const inner = inner_match[1]
+    expect(inner).not.toMatch(/"""/)
+  })
+
+  it('should handle 5 consecutive double quotes without producing triple quotes', () => {
+    const body = 'five quotes: """""'
+    const result = convertToCodex(REVIEWER_FRONTMATTER, body, 'ddd-reviewer')
+    const inner_match = result.match(/developer_instructions\s*=\s*"""\n([\s\S]*?)\n"""/)
+    expect(inner_match).not.toBeNull()
+    const inner = inner_match[1]
+    expect(inner).not.toMatch(/"""/)
+  })
+
+  it('should handle 6 consecutive double quotes without producing triple quotes', () => {
+    const body = 'six quotes: """"""'
+    const result = convertToCodex(REVIEWER_FRONTMATTER, body, 'ddd-reviewer')
+    const inner_match = result.match(/developer_instructions\s*=\s*"""\n([\s\S]*?)\n"""/)
+    expect(inner_match).not.toBeNull()
+    const inner = inner_match[1]
+    expect(inner).not.toMatch(/"""/)
+  })
+
+  it('should preserve non-quote content unchanged', () => {
+    const body = 'hello world, no special chars'
+    const result = convertToCodex(REVIEWER_FRONTMATTER, body, 'ddd-reviewer')
+    expect(result).toContain(body)
+  })
+})
+
+describe('convertToCodex name escaping', () => {
+  it('should escape double quotes in agent name', () => {
+    const fm = { ...REVIEWER_FRONTMATTER, name: 'agent "with" quotes' }
+    const result = convertToCodex(fm, SAMPLE_BODY, 'test')
+    // 輸出的 name = "..." 中不應有未轉義的引號
+    // 確認包含轉義後的形式
+    expect(result).toContain('agent \\"with\\" quotes')
+  })
+
+  it('should escape backslashes in agent name', () => {
+    const fm = { ...REVIEWER_FRONTMATTER, name: 'agent\\with\\backslash' }
+    const result = convertToCodex(fm, SAMPLE_BODY, 'test')
+    expect(result).toContain('agent\\\\with\\\\backslash')
+  })
+
+  it('should handle normal name without escaping', () => {
+    const result = convertToCodex(REVIEWER_FRONTMATTER, SAMPLE_BODY, 'ddd-reviewer')
+    expect(result).toContain('name = "ddd-reviewer"')
+  })
+})

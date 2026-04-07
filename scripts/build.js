@@ -258,13 +258,28 @@ export function convertToOpencode(frontmatter, body, agent_name) {
 
 /**
  * 將 TOML 字串值轉義（處理三重引號問題）。
- * 注意：TOML 多行字串中 """ 需要拆開處理。
+ * 注意：TOML 多行字串中不能有連續 3 個以上的雙引號。
+ * 逐字掃描，確保輸出中永遠不會出現連續 3 個雙引號。
  * @param {string} str
  * @returns {string}
  */
 function escapeTomlMultiline(str) {
-  // TOML 多行字串中不能有連續三個或以上的雙引號，需要拆開
-  return str.replace(/"""/g, '""\\"')
+  let result = ''
+  let consecutive_quotes = 0
+  for (const ch of str) {
+    if (ch === '"') {
+      consecutive_quotes++
+      if (consecutive_quotes === 3) {
+        result += '\\'
+        consecutive_quotes = 1
+      }
+      result += ch
+    } else {
+      consecutive_quotes = 0
+      result += ch
+    }
+  }
+  return result
 }
 
 /**
@@ -279,8 +294,9 @@ export function convertToCodex(frontmatter, body, agent_name) {
   const description = frontmatter.description ?? ''
   const sandbox_mode = deriveCodexSandboxMode(frontmatter.tools ?? [])
 
+  const escaped_name = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   const lines = []
-  lines.push(`name = "${name}"`)
+  lines.push(`name = "${escaped_name}"`)
   lines.push(`sandbox_mode = "${sandbox_mode}"`)
   lines.push(`description = """`)
   lines.push(escapeTomlMultiline(description))
@@ -296,10 +312,32 @@ export function convertToCodex(frontmatter, body, agent_name) {
 
 /**
  * 清空並重建 dist/ 目錄，然後對每個 agent 原始檔執行三個平台的轉換。
+ * 採用兩階段策略：Phase 1 全部解析（不寫入），Phase 2 全部解析成功才清空並寫入。
+ * 確保解析失敗時不產出任何 dist/ 產物（原子性）。
  * @returns {Promise<void>}
  */
 export async function build() {
-  // 清空 dist/
+  // 掃描原始 agent 檔案
+  const agent_files = readdirSync(AGENTS_SRC).filter(f => f.endsWith('.md'))
+
+  // Phase 1：解析所有原始檔（不寫入任何檔案）
+  const parsed_agents = []
+  for (const filename of agent_files) {
+    const filepath = join(AGENTS_SRC, filename)
+    const raw = readFileSync(filepath, 'utf-8')
+
+    let parsed
+    try {
+      parsed = matter(raw)
+    } catch (err) {
+      console.error(`[build] 解析失敗：${filename}：${err.message}`)
+      process.exit(1)
+    }
+
+    parsed_agents.push({ filename, frontmatter: parsed.data, body: parsed.content })
+  }
+
+  // Phase 2：全部解析成功，清空 dist/ 並寫入
   if (existsSync(DIST)) {
     rmSync(DIST, { recursive: true })
   }
@@ -313,22 +351,7 @@ export async function build() {
   mkdirSync(opencode_dir, { recursive: true })
   mkdirSync(codex_dir, { recursive: true })
 
-  // 掃描原始 agent 檔案
-  const agent_files = readdirSync(AGENTS_SRC).filter(f => f.endsWith('.md'))
-
-  for (const filename of agent_files) {
-    const filepath = join(AGENTS_SRC, filename)
-    const raw = readFileSync(filepath, 'utf-8')
-
-    let parsed
-    try {
-      parsed = matter(raw)
-    } catch (err) {
-      console.error(`[build] 解析失敗：${filename}：${err.message}`)
-      process.exit(1)
-    }
-
-    const { data: frontmatter, content: body } = parsed
+  for (const { filename, frontmatter, body } of parsed_agents) {
     const agent_name = frontmatter.name ?? basename(filename, '.md')
     const stem = basename(filename, '.md')
 
