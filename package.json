@@ -12,6 +12,14 @@
     "undeploy:claude": "node scripts/cli.js undeploy claude",
     "undeploy:gemini": "node scripts/cli.js undeploy gemini",
     "undeploy:codex": "node scripts/cli.js undeploy codex",
-    "test": "node scripts/cli.js test"
+    "test": "node scripts/cli.js test",
+    "test:unit": "vitest run",
+    "build": "node scripts/build.js"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
   }
 }
