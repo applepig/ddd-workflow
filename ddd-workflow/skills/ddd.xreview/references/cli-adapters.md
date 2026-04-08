@@ -1,6 +1,6 @@
 # CLI Adapters — xreview-runner.sh 支援的外部 CLI
 
-`/DDD.Xreview` 透過 `xreview-runner.sh` 呼叫外部 CLI 執行 review。本文件說明各 CLI 的呼叫方式、read-only 機制與注意事項。
+`/ddd.xreview` 透過 `xreview-runner.sh` 呼叫外部 CLI 執行 review。本文件說明各 CLI 的呼叫方式、read-only 機制與注意事項。
 
 ## 總覽
 

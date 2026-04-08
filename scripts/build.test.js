@@ -21,7 +21,7 @@ import {
 
 const REVIEWER_FRONTMATTER = {
   name: 'ddd-reviewer',
-  description: 'DDD 程式碼審查 subagent——獨立審查程式碼變更，產出 review 報告。\nUse this agent when dispatched by /DDD.xreview for cross-review,\nor when code changes need independent review before committing.',
+  description: 'DDD 程式碼審查 subagent——獨立審查程式碼變更，產出 review 報告。\nUse this agent when dispatched by /ddd.xreview for cross-review,\nor when code changes need independent review before committing.',
   model: 'inherit',
   color: 'blue',
   tools: ['Read', 'Grep', 'Glob', 'Bash'],
@@ -29,7 +29,7 @@ const REVIEWER_FRONTMATTER = {
 
 const DEVELOPER_FRONTMATTER = {
   name: 'ddd-developer',
-  description: 'DDD 開發者 subagent——以 TDD 循環實作功能程式碼與測試。\nUse this agent when dispatching implementation work during /DDD.work,',
+  description: 'DDD 開發者 subagent——以 TDD 循環實作功能程式碼與測試。\nUse this agent when dispatching implementation work during /ddd.work,',
   model: 'inherit',
   color: 'green',
   tools: ['Read', 'Grep', 'Glob', 'Bash', 'Write', 'Edit'],

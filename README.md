@@ -49,16 +49,16 @@ Document Driven Development——先寫文件、再寫測試、最後寫程式�
 
 | Skill | 用途 |
 |-------|-----|
-| `/DDD.plan` | 需求不明確時的前置規劃 |
-| `/DDD.research` | 技術調研，驗證可行性 |
-| `/DDD.spec` | 撰寫正式規格書 |
-| `/DDD.tasks` | 將 spec 拆解為 milestone + task |
-| `/DDD.work` | 以 TDD 循環執行開發任務 |
-| `/DDD.xreview` | Cross review（Gemini + Claude 獨立審查） |
-| `/DDD.architect-refactor` | 架構層級重構 |
-| `/DDD.create-hooks` | 設定 Claude Code hooks |
-| `/DDD.code-to-spec` | 從既有程式碼反向萃取規格 |
-| `/DDD.agent-browser` | E2E 除錯（瀏覽器自動化） |
+| `/ddd.plan` | 需求不明確時的前置規劃 |
+| `/ddd.research` | 技術調研，驗證可行性 |
+| `/ddd.spec` | 撰寫正式規格書 |
+| `/ddd.tasks` | 將 spec 拆解為 milestone + task |
+| `/ddd.work` | 以 TDD 循環執行開發任務 |
+| `/ddd.xreview` | Cross review（Gemini + Claude 獨立審查） |
+| `/ddd.architect-refactor` | 架構層級重構 |
+| `/ddd.create-hooks` | 設定 Claude Code hooks |
+| `/ddd.code-to-spec` | 從既有程式碼反向萃取規格 |
+| `/ddd.agent-browser` | E2E 除錯（瀏覽器自動化） |
 
 ### Subagents
 

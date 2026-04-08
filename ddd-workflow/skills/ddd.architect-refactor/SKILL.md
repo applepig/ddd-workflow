@@ -1,13 +1,13 @@
 ---
-name: DDD.ArchitectRefactor
+name: ddd.architect-refactor
 description: >
   架構層級重構——改善模組邊界、依賴方向、職責分配，非表面 rename/extract。
   Use when the user says "refactor the architecture", "restructure modules",
   "fix module boundaries", "resolve circular dependencies", "improve code
-  organization", "this part is getting messy", or invokes "/DDD.architect-refactor".
+  organization", "this part is getting messy", or invokes "/ddd.architect-refactor".
 ---
 
-# DDD:architect-refactor — 架構重構
+# ddd.architect-refactor — 架構重構
 
 架構層級的重構。不是 rename / extract 等表面整理，而是改善模組邊界、依賴方向、職責分配等結構性問題。
 

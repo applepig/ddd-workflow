@@ -1,13 +1,13 @@
 ---
-name: DDD.Tasks
+name: ddd.tasks
 description: >
   任務拆解：將 spec.md 分解為 milestone + task checklist，產出 tasks.md。
   Trigger: "break down tasks", "create a task list", "split into milestones",
-  "拆任務", "建 task list", "規劃實作步驟", /DDD.tasks。
+  "拆任務", "建 task list", "規劃實作步驟", /ddd.tasks。
   spec.md 確認後、需要拆解為可測試的增量 milestone 時使用。
 ---
 
-# DDD:tasks — 任務拆解
+# ddd.tasks — 任務拆解
 
 任務拆解階段。將 spec.md 拆解為可執行、可測試的 milestone 與 task。
 
@@ -131,7 +131,7 @@ description: >
 
 用 `🔀 可平行工作線` 標記可同時派發的區塊，用 `🔗 匯合點` 標記合併後的驗證步驟。每條工作線用 `[A]`、`[B]` 等字母標識。格式範例見上方「好的拆解」。
 
-**每條工作線的 blockquote 是 worker 的上下文卡片**——`/DDD.work` 的 coordinator 會直接從這裡擷取資訊組裝 worker prompt，所以必須包含 agent 獨立作業所需的一切：
+**每條工作線的 blockquote 是 worker 的上下文卡片**——`/ddd.work` 的 coordinator 會直接從這裡擷取資訊組裝 worker prompt，所以必須包含 agent 獨立作業所需的一切：
 
 | 欄位 | 說明 | 必要性 |
 |------|------|--------|
@@ -156,4 +156,4 @@ description: >
 
 ## 結束條件
 
-使用者確認任務規劃後，引導使用者執行 `/DDD.work`。
+使用者確認任務規劃後，引導使用者執行 `/ddd.work`。

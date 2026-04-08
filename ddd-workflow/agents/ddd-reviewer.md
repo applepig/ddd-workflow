@@ -2,12 +2,12 @@
 name: ddd-reviewer
 description: >
   DDD 程式碼審查 subagent——獨立審查程式碼變更，產出 review 報告。
-  Use this agent when dispatched by /DDD.xreview for cross-review,
+  Use this agent when dispatched by /ddd.xreview for cross-review,
   or when code changes need independent review before committing.
   Examples:
 
   <example>
-  Context: /DDD.xreview 派發 Claude 端的 reviewer
+  Context: /ddd.xreview 派發 Claude 端的 reviewer
   user: "cross review 這次的變更"
   assistant: "我同時派出 Gemini 和 Claude reviewer 獨立審查。"
   <commentary>

@@ -40,20 +40,20 @@ flowchart TD
 
     Feature --> Clarity{需求明確？}
 
-    Clarity -- 模糊 --> Plan["/DDD.Plan<br/>釐清方向、產出 plan.md"]
+    Clarity -- 模糊 --> Plan["/ddd.plan<br/>釐清方向、產出 plan.md"]
     Plan --> Spec
 
-    Clarity -- 明確 --> Spec["/DDD.Spec<br/>撰寫 spec.md"]
+    Clarity -- 明確 --> Spec["/ddd.spec<br/>撰寫 spec.md"]
     Spec --> UserSpec{使用者確認 spec？}
     UserSpec -- 修改 --> Spec
     UserSpec -- 確認 --> Tasks
 
-    Tasks["/DDD.Tasks<br/>拆解為 milestone + task"] --> UserTasks{使用者確認 tasks？}
+    Tasks["/ddd.tasks<br/>拆解為 milestone + task"] --> UserTasks{使用者確認 tasks？}
     UserTasks -- 修改 --> Tasks
     UserTasks -- 確認 --> Work
 
-    Work["/DDD.Work<br/>TDD 循環實作"] --> Review
-    Review["/DDD.Xreview<br/>Cross review（多模型獨立審查）"] --> Fix{需要修正？}
+    Work["/ddd.work<br/>TDD 循環實作"] --> Review
+    Review["/ddd.xreview<br/>Cross review（多模型獨立審查）"] --> Fix{需要修正？}
     Fix -- 是 --> Work
     Fix -- 否 --> Next{還有下一個功能？}
     Next -- 是 --> Feature
@@ -107,19 +107,19 @@ docs/
 
 | Slash Command | 用途 | 何時觸發 |
 |---------------|------|----------|
-| `/DDD.Plan` | 需求模糊時釐清方向，產出 plan.md | 「我有個想法…」 |
-| `/DDD.Spec` | 撰寫正式規格書 spec.md | 需求明確，準備定義規格 |
-| `/DDD.Tasks` | 將 spec 拆解為 milestone + task checklist | spec 確認後 |
-| `/DDD.Work` | 以 TDD 循環實作（支援平行派工） | tasks 確認後，開始寫 code |
-| `/DDD.Xreview` | 多模型 cross review | 實作完成，準備提交前 |
+| `/ddd.plan` | 需求模糊時釐清方向，產出 plan.md | 「我有個想法…」 |
+| `/ddd.spec` | 撰寫正式規格書 spec.md | 需求明確，準備定義規格 |
+| `/ddd.tasks` | 將 spec 拆解為 milestone + task checklist | spec 確認後 |
+| `/ddd.work` | 以 TDD 循環實作（支援平行派工） | tasks 確認後，開始寫 code |
+| `/ddd.xreview` | 多模型 cross review | 實作完成，準備提交前 |
 
 輔助 skills：
 
 | Slash Command | 用途 |
 |---------------|------|
-| `/DDD.ArchitectRefactor` | 架構層級重構——模組邊界、依賴方向、職責分配 |
-| `/DDD.AgentBrowser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
-| `/DDD.CreateHooks` | 設定 Claude Code hooks（安全防護、lint、commit review） |
+| `/ddd.architect-refactor` | 架構層級重構——模組邊界、依賴方向、職責分配 |
+| `/ddd.agent-browser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
+| `/ddd.create-hooks` | 設定 Claude Code hooks（安全防護、lint、commit review） |
 
 ## 核心原則
 

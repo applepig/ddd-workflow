@@ -1,14 +1,14 @@
 ---
-name: DDD.Work
+name: ddd.work
 description: >
   TDD 開發執行：以 Red → Green → Refactor 循環實作 tasks.md 中的任務。
   遇到 🔀 平行工作線時自動切換 coordinator 模式，派發 Agent 子行程平行開發。
   Trigger: "start implementing", "begin development", "let's code", "do TDD",
-  "開始實作", "開始寫", "動工", /DDD.work。
+  "開始實作", "開始寫", "動工", /ddd.work。
   tasks.md 確認後、準備寫程式碼時使用。
 ---
 
-# DDD:work — 開發執行
+# ddd.work — 開發執行
 
 開發執行階段。以 TDD 循環逐一完成 tasks.md 中的 milestone。
 
@@ -198,7 +198,7 @@ description: >
 * **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/DDD.spec` 更新規格。Spec 更新確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。Spec 更新確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 隔離**：所有派出的 worker 一律使用 `isolation: "worktree"`。Worker 在獨立的 worktree 中工作、測試、commit，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。
@@ -216,4 +216,4 @@ description: >
 
 ## 結束條件
 
-所有 milestone 完成後，引導使用者執行 `/DDD.xreview`。
+所有 milestone 完成後，引導使用者執行 `/ddd.xreview`。

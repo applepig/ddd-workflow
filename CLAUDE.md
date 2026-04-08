@@ -33,7 +33,7 @@ AGENTS/                          # monorepo
 - **Git subtree**：`ddd-workflow/` 以 subtree 方式嵌入，日常直接編輯、一起 commit，發布時用 `subtree push` 推到 GitHub
 - **Symlink 部署**：修改 `ddd-workflow/` 內的檔案後不需要重新 deploy（因為是 symlink）
 - **cli.js 清理策略**：每次安裝會先移除目標 skills/agents 目錄中所有 `ddd*` 項目，再重新建立個別 symlink，確保不留殘餘
-- **Skill 命名**：`ddd.<動作>` 格式（如 `ddd.plan`、`ddd.work`），對應 slash command `/DDD.<PascalCase>`
+- **Skill 命名**：`ddd.<動作>` 格式（如 `ddd.plan`、`ddd.work`），對應 slash command `/ddd.<name>`
 - **Agent 命名**：`ddd-<角色>` 格式（如 `ddd-developer`、`ddd-reviewer`）
 
 ## 常用指令
@@ -80,6 +80,6 @@ git subtree pull --prefix=ddd-workflow ddd-workflow dev --squash
 - 修改後不需要重新 deploy（symlink 直接生效）
 - 新增 skill：在 `ddd-workflow/skills/` 下建立 `ddd.<name>/SKILL.md`，遵循現有 YAML frontmatter 格式
 - 新增 agent：在 `ddd-workflow/agents/` 下建立 `ddd-<role>.md`，frontmatter 必須有 `name`、`description`（含 examples）、`model`、`color`
-- Skill 的 `name` 欄位用 `DDD.PascalCase`，`description` 須同時包含中文說明和英文 trigger phrases
+- Skill 的 `name` 欄位用 `ddd.kebab-case`，與資料夾名稱一致，`description` 須同時包含中文說明和英文 trigger phrases
 - 新增 skill/agent 後需重新執行 `npm run deploy` 建立 symlink
 - Commit 後若要發布：`git subtree push --prefix=ddd-workflow ddd-workflow dev`
