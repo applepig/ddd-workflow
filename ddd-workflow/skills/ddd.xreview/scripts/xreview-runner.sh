@@ -13,7 +13,7 @@ set -uo pipefail
 
 prompt_file="${1:?Usage: xreview-runner.sh <prompt-file> <cli:model> [timeout]}"
 cli_spec="${2:?Usage: xreview-runner.sh <prompt-file> <cli:model> [timeout]}"
-timeout_sec="${3:-600}"
+timeout_sec="${3:-1200}"
 
 if [[ ! -f "$prompt_file" ]]; then
   echo "XREVIEW_ERROR: prompt file not found: $prompt_file" >&2

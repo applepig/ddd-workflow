@@ -31,17 +31,22 @@ description: >
 
 不需要將完整內容傳給各個 reviewer，每個 reviewer 會自行蒐集。
 
-### 2. 組裝 Review Prompt 並寫入暫存檔
+### 2. 組裝任務 Prompt 並寫入暫存檔
 
-讀取 `references/review-prompt.md` 模板，將步驟 1 確認的範圍資訊填入 placeholder：
+將步驟 1 確認的範圍資訊組裝為任務 prompt，寫入暫存檔（`mktemp /tmp/xreview-XXXXXX.md`），避免在多個呼叫中重複嵌入。
 
-- `{{SPEC_PATH}}`：spec.md 的路徑
-- `{{TASKS_PATH}}`：tasks.md 的路徑
-- `{{GIT_DIFF_CMD}}`：實際的 git diff 指令
+審查方法論（立場、攻擊面、品質門檻、輸出格式）由各 reviewer 的 `ddd-reviewer` agent 定義自帶，任務 prompt 只需指定範圍：
 
-所有 reviewer 使用**相同的 prompt**。prompt 採用分段約束結構，每個段落控制 reviewer 行為的一個面向——詳見 `references/review-prompt.md`。
+```markdown
+請依照 ddd-reviewer 角色定義執行獨立 code review。
 
-**組裝後寫入暫存檔**（`mktemp /tmp/xreview-XXXXXX.md`），避免在多個 Bash 呼叫中重複嵌入同一份 prompt。
+審查範圍：
+- Sprint 規格：<spec.md 路徑>
+- 任務清單：<tasks.md 路徑>
+- 變更：請執行 `<git diff 指令>` 取得
+
+先讀取 sprint 文件理解目標與驗收條件，再檢視程式碼變更。
+```
 
 ### 3. 平行派出 Reviewer
 
@@ -52,7 +57,7 @@ description: >
 ```
 Agent({
   subagent_type: "ddd-reviewer",
-  prompt: "這是一次 cross review，你負責 Claude 端的獨立審查。\n請閱讀 <review_prompt_file 路徑> 中的 review prompt 並依照指示執行 code review。\n審查完成後依照 prompt 中的輸出格式回報。",
+  prompt: "這是一次 cross review，你負責 Claude 端的獨立審查。\n請閱讀 <task_prompt_file 路徑> 取得審查範圍，依照你的審查流程執行 code review 並回報。",
   run_in_background: true
 })
 ```
@@ -68,7 +73,7 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 
 `<cli>:<model>` 從 AGENTS.md 的「Cross Review 模型設定」表格讀取。例如 `opencode:github-copilot/gpt-5.4`。
 
-以 `Bash({ command: ..., run_in_background: true })` 執行。對 AGENTS.md 表格中的每個模型都派一個。
+以 `Bash({ command: ..., timeout: 600000, run_in_background: true })` 執行。對 AGENTS.md 表格中的每個模型都派一個。`timeout: 600000`（10 分鐘）是 Bash tool 的上限，腳本內建的 20 分鐘 timeout 會在此之後才生效，實際以 Bash tool 的 10 分鐘為準。
 
 > `xreview-runner.sh` 是精簡的 shell proxy：包 timeout、根據 `<cli>:<model>` 格式分發到對應 CLI、失敗時補 `XREVIEW_ERROR` summary。各 CLI 的詳細呼叫慣例見 `references/cli-adapters.md`。
 
@@ -104,10 +109,9 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 ---
 
 ## 交叉比對
-| 維度 | Claude | 外部 A | ... | 共識 |
+| 問題 | Claude | 外部 A | ... | 共識 |
 |------|--------|--------|-----|------|
-| 正確性 | ... | ... | ... | 一致/分歧 |
-| ... | ... | ... | ... | ... |
+| <問題摘要> | Critical/Important/未提及 | Critical/Important/未提及 | ... | 一致/分歧 |
 
 ## 共識問題（多數 reviewer 都指出）
 <最值得優先處理的問題>
@@ -130,9 +134,12 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 
 ## 注意事項
 
-- 所有 reviewer 共享相同的 AGENTS.md coding style 規範，不需要在 prompt 中重複
-- Reviewer 自己有能力讀檔案、跑 git 指令，prompt 只需指定 review 範圍
-- 執行時間可能較長（90-180 秒），務必使用 `run_in_background` 避免阻塞
+- 審查方法論由 `ddd-reviewer` agent 定義自帶（部署在所有平台），任務 prompt 只需指定 review 範圍
+- Reviewer 自己有能力讀檔案、跑 git 指令，不需在 prompt 中重複說明
+- **Timeout 設定**：Review 執行時間通常 3-10 分鐘，複雜變更可能更久。xreview-runner.sh 內建 20 分鐘 timeout，但 Claude Code 的工具也有各自的 timeout 限制，派發時必須顯式設定：
+  - **Bash tool**（外部 reviewer）：預設 timeout 僅 120 秒，最大可設 600000ms（10 分鐘）。務必加上 `timeout: 600000`，否則會在 2 分鐘就被砍掉
+  - **Agent tool**（Claude reviewer）：預設 timeout 為 10 分鐘，可透過 `timeout` 參數延長
+  - 兩者都必須搭配 `run_in_background: true` 避免阻塞主流程
 - **安全性**：外部 CLI 一律用 stdin pipe 傳 prompt，嚴禁用命令列參數直接帶入
 - 若變更範圍太大，考慮按 milestone 拆分 review
 - 若某個 reviewer 超時或失敗且退化也失敗，先呈現已取得的結果，提示使用者
