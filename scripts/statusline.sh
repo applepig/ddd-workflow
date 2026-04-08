@@ -66,6 +66,7 @@ CYAN=$'\x1b[36m'
 # OAuth Usage API
 USAGE_API_URL="https://api.anthropic.com/api/oauth/usage"
 CACHE_MAX_AGE=60
+CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 # 允許測試覆蓋快取路徑和 credentials 路徑
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
@@ -97,7 +98,8 @@ getOAuthToken() {
   echo ""
 }
 
-# 呼叫 Usage API，帶快取機制
+# 呼叫 Usage API，帶快取 + throttle 防止多 session 同時打 API
+# 用 throttle 檔的 mtime 記錄上次 API 請求時間，CACHE_MAX_AGE 內不重複請求
 # 用法: fetchUsageAPI <oauth_token>
 # 回傳: JSON response 或空字串
 fetchUsageAPI() {
@@ -110,10 +112,11 @@ fetchUsageAPI() {
   fi
 
   local cache_file="$STATUSLINE_CACHE_FILE"
-  local cache_dir
+  local cache_dir throttle_file
   cache_dir="$(dirname "$cache_file")"
+  throttle_file="${cache_dir}/statusline-usage.throttle"
 
-  # 快取命中檢查：檔案存在且 mtime 在 CACHE_MAX_AGE 秒內
+  # 快取命中：cache 檔 mtime 在 CACHE_MAX_AGE 內
   if [[ -f "$cache_file" ]]; then
     local file_mtime now age
     file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || file_mtime=0
@@ -125,17 +128,35 @@ fetchUsageAPI() {
     fi
   fi
 
-  # 快取過期或不存在，呼叫 API
+  # 快取過期——檢查 throttle：若其他 session 近期已請求過，用舊快取
   mkdir -p "$cache_dir"
-  local response
-  local curl_exit
+  if [[ -f "$throttle_file" ]]; then
+    local throttle_mtime now throttle_age
+    throttle_mtime=$(stat -c %Y "$throttle_file" 2>/dev/null) || throttle_mtime=0
+    now=$(date +%s)
+    throttle_age=$(( now - throttle_mtime ))
+    if (( throttle_age < CACHE_MAX_AGE )); then
+      # 有人最近打過了但 cache 沒更新（API 可能失敗），用舊快取
+      if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"
+        return 0
+      fi
+      echo ""
+      return 0
+    fi
+  fi
+
+  # 標記：我要打 API 了
+  touch "$throttle_file"
+
+  # 呼叫 API
+  local response curl_exit
   response=$(curl --silent --max-time 5 \
     -H "Authorization: Bearer ${token}" \
     -H "anthropic-beta: oauth-2025-04-20" \
     "$USAGE_API_URL" 2>/dev/null) && curl_exit=0 || curl_exit=$?
 
   if [[ $curl_exit -eq 0 ]] && [[ -n "$response" ]]; then
-    # 驗證回傳是有效 JSON
     if echo "$response" | jq -e '.five_hour' > /dev/null 2>&1; then
       echo "$response" > "$cache_file"
       echo "$response"
@@ -143,10 +164,15 @@ fetchUsageAPI() {
     fi
   fi
 
-  # API 失敗：fallback 到舊快取
+  # API 失敗：fallback 到舊快取（不超過 CACHE_STALE_MAX_AGE）
   if [[ -f "$cache_file" ]]; then
-    cat "$cache_file"
-    return 0
+    local stale_mtime stale_age
+    stale_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || stale_mtime=0
+    stale_age=$(( $(date +%s) - stale_mtime ))
+    if (( stale_age < CACHE_STALE_MAX_AGE )); then
+      cat "$cache_file"
+      return 0
+    fi
   fi
 
   # 完全沒有資料
