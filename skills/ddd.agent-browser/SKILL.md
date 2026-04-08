@@ -1,20 +1,20 @@
 ---
-name: DDD.AgentBrowser
+name: ddd.agent-browser
 description: >
   E2E 除錯指南：用 agent-browser CLI 在 DDD 工作流中系統性除錯前端問題。
   Trigger: "debug E2E", "check the page", "why is the test failing",
   "open the browser", "take a screenshot", "inspect the DOM",
-  "E2E 失敗", "測試壞了", "檢查頁面", /DDD.agent-browser。
+  "E2E 失敗", "測試壞了", "檢查頁面", /ddd.agent-browser。
   E2E 測試失敗、需要視覺驗證 UI 行為、或追蹤前端問題時使用。
 ---
 
-# DDD:AgentBrowser — E2E 除錯說明書
+# ddd.agent-browser — E2E 除錯說明書
 
-在 DDD 工作流的開發階段（`/DDD.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，
+在 DDD 工作流的開發階段（`/ddd.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，
 用 `agent-browser` CLI 直接操作瀏覽器來定位問題。
 
-**與 `/DDD.e2e` 的分工**：`/DDD.e2e` 規劃與撰寫 E2E 測試案例；本 skill 是測試失敗後的除錯工具。
-測試跑不過 → 先用本 skill 除錯定位原因；需要新增或修改測試 → 用 `/DDD.e2e`。
+**與 `/ddd.e2e` 的分工**：`/ddd.e2e` 規劃與撰寫 E2E 測試案例；本 skill 是測試失敗後的除錯工具。
+測試跑不過 → 先用本 skill 除錯定位原因；需要新增或修改測試 → 用 `/ddd.e2e`。
 
 這份說明書不是瀏覽器自動化教學，而是**除錯流程指南**——幫你從「測試掛了」走到「找到根因」。
 
@@ -304,7 +304,7 @@ agent-browser eval "localStorage.clear()"
 
 ## 與 DDD 工作流的整合
 
-### 在 `/DDD.work` TDD 循環中使用
+### 在 `/ddd.work` TDD 循環中使用
 
 1. **Red 階段**：E2E 測試失敗時，用 agent-browser 確認預期行為和實際行為的差異
 2. **Green 階段**：實作後用 agent-browser 手動驗證，再跑測試確認

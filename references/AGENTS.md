@@ -68,16 +68,16 @@ docs/
 Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤、驗收。
 
 > 各階段的詳細步驟請參考對應的 skill：
-> `/DDD.plan`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xreview`。
-> E2E 測試用 `/DDD.e2e`，架構重構用 `/DDD.architect-refactor`，hook 設定用 `/DDD.create-hooks`。
+> `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
+> E2E 測試用 `/ddd.e2e`，架構重構用 `/ddd.architect-refactor`，hook 設定用 `/ddd.create-hooks`。
 
 ### E2E 測試的特殊處理
 
-E2E 測試由 `/DDD.e2e` skill 在 **main agent context** 中執行，不派給 subagent。
+E2E 測試由 `/ddd.e2e` skill 在 **main agent context** 中執行，不派給 subagent。
 
 原因：E2E 測試充滿需要使用者判斷的灰色地帶（頁面行為與 spec 不符、edge case 取捨、flaky test 的根因），subagent 無法暫停發問，會傾向縮減測試範圍來避開問題。保留在 main agent 確保每個判斷點都能跟使用者確認。
 
-`/DDD.e2e` 支援兩種模式：
+`/ddd.e2e` 支援兩種模式：
 - **Greenfield**：從 spec.md 驅動，提取驗收條件規劃測試案例
 - **Retrofit**：既有專案補 E2E，先探索 app 再分批規劃
 
@@ -181,11 +181,11 @@ import { createSession } from '../services/session'
 
 ## Cross Review 模型設定
 
-`/DDD.Xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
+`/ddd.xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
 
 | 角色 | CLI:模型 | 退化模型 | 備註 |
 |------|---------|----------|------|
 | 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | `opencode:github-copilot/gpt-5.3-codex` | 預設 |
-<!-- | 外部 Reviewer B | `gemini:gemini-3.1-pro-preview` | `gemini:gemini-2.5-pro` | 暫停：持續 429 rate limit | -->
+| 外部 Reviewer B | `gemini:gemini-3-pro-preview` | `gemini:gemini-2.5-pro` | |
 
 新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。

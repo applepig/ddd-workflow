@@ -1,14 +1,14 @@
 ---
-name: DDD.Xreview
+name: ddd.xreview
 description: >
   Cross review：派發多個 AI 模型獨立審查程式碼，交叉比對 findings 提升品質。
   Claude subagent 固定使用，外部模型清單見 AGENTS.md。
   Trigger: "review code", "cross review", "let's review", "check my changes",
-  "審查程式碼", "code review", "review 一下", /DDD.xreview。
+  "審查程式碼", "code review", "review 一下", /ddd.xreview。
   開發完成後、commit 或 push 前使用。
 ---
 
-# DDD:xreview — Cross Review
+# ddd.xreview — Cross Review
 
 使用多種獨立模型交叉審查程式碼變更。Claude subagent 固定參與，外部模型透過指定的 CLI 呼叫——具體使用哪些模型見 AGENTS.md 的「Cross Review 模型設定」。
 

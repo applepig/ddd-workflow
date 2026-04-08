@@ -1,13 +1,13 @@
 ---
-name: DDD.Plan
+name: ddd.plan
 description: >
   前置規劃：需求模糊時釐清方向、探索可能性，產出 plan.md。
   Trigger: "plan a feature", "clarify requirements", "figure out what to build",
-  "規劃功能", "釐清需求", "我有個想法", /DDD.plan。
+  "規劃功能", "釐清需求", "我有個想法", /ddd.plan。
   即使只是粗略描述概念，也應觸發此 skill 來定型方向。
 ---
 
-# DDD:plan — 前置規劃
+# ddd.plan — 前置規劃
 
 前置規劃階段。當需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
 
@@ -64,5 +64,5 @@ description: >
 
 ## 結束條件
 
-使用者確認方向後，引導使用者執行 `/DDD.spec`。
+使用者確認方向後，引導使用者執行 `/ddd.spec`。
 如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。
