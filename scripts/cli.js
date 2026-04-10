@@ -158,6 +158,11 @@ function deployGemini() {
   linkFile(join(SRC, 'references', 'AGENTS.md'), join(target, 'GEMINI.md'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(DIST, 'gemini', 'agents'), join(target, 'agents'), 'agent')
+  
+  const policies_dir = join(SRC, 'policies')
+  if (existsSync(policies_dir)) {
+    linkDir(policies_dir, join(target, 'policies'), 'policy')
+  }
 }
 
 function deployCodex() {
@@ -231,6 +236,7 @@ function undeployGemini() {
   unlinkIfOurs(join(HOME, '.gemini', 'GEMINI.md'), '~/.gemini/GEMINI.md')
   unlinkDirIfOurs(join(HOME, '.gemini', 'skills'))
   unlinkDirIfOurs(join(HOME, '.gemini', 'agents'))
+  unlinkDirIfOurs(join(HOME, '.gemini', 'policies'))
 }
 
 function undeployCodex() {
@@ -374,6 +380,7 @@ function testGemini() {
   if (!checkSymlink(join(HOME, '.gemini', 'GEMINI.md'), '~/.gemini/GEMINI.md')) ok = false
   countInstalledLinks(join(HOME, '.gemini', 'skills'), '~/.gemini/skills ddd*')
   countInstalledLinks(join(HOME, '.gemini', 'agents'), '~/.gemini/agents ddd*')
+  countInstalledLinks(join(HOME, '.gemini', 'policies'), '~/.gemini/policies ddd*')
   return ok
 }
 

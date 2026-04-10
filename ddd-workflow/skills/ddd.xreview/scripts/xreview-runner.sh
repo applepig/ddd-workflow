@@ -66,8 +66,12 @@ case "$cli" in
   gemini)
     # --approval-mode=plan enables Plan Mode (read-only, no file writes).
     # -m specifies model (e.g. gemini-2.5-pro, gemini-3.0-flash-preview).
+    # Load custom policy to allow git commands in plan mode.
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    policy_file="$script_dir/../../../policies/ddd.xreview.toml"
     timeout --foreground "$timeout_sec" "$cli_path" \
       --approval-mode=plan \
+      --admin-policy="$policy_file" \
       -m "$model" \
       < "$prompt_file" \
       2>&1 | tee "$output_file"
