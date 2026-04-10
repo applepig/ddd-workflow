@@ -1,43 +1,67 @@
 ---
-name: DDD.AgentBrowser
+name: ddd.agent-browser
 description: >
   E2E 除錯指南：用 agent-browser CLI 在 DDD 工作流中系統性除錯前端問題。
   Trigger: "debug E2E", "check the page", "why is the test failing",
   "open the browser", "take a screenshot", "inspect the DOM",
-  "E2E 失敗", "測試壞了", "檢查頁面", /DDD.agent-browser。
+  "E2E 失敗", "測試壞了", "檢查頁面", /ddd.agent-browser。
   E2E 測試失敗、需要視覺驗證 UI 行為、或追蹤前端問題時使用。
 ---
 
-# DDD:AgentBrowser — E2E 除錯說明書
+# ddd.agent-browser — E2E 除錯說明書
 
-在 DDD 工作流的開發階段（`/DDD.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，
+在 DDD 工作流的開發階段（`/ddd.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，
 用 `agent-browser` CLI 直接操作瀏覽器來定位問題。
 
-**與 `/DDD.e2e` 的分工**：`/DDD.e2e` 規劃與撰寫 E2E 測試案例；本 skill 是測試失敗後的除錯工具。
-測試跑不過 → 先用本 skill 除錯定位原因；需要新增或修改測試 → 用 `/DDD.e2e`。
+**與 `/ddd.e2e` 的分工**：`/ddd.e2e` 規劃與撰寫 E2E 測試案例；本 skill 是測試失敗後的除錯工具。
+測試跑不過 → 先用本 skill 除錯定位原因；需要新增或修改測試 → 用 `/ddd.e2e`。
 
 這份說明書不是瀏覽器自動化教學，而是**除錯流程指南**——幫你從「測試掛了」走到「找到根因」。
 
 ## 核心除錯循環
 
 ```
-測試失敗 → 重現場景 → 觀察狀態 → 定位根因 → 修正 → 驗證
+測試失敗 → 前置檢查 → 重現場景 → 觀察狀態 → 定位根因 → 修正 → 驗證
 ```
 
 每一步都有對應的 agent-browser 指令，按順序走就對了。
+
+## Step 0：前置檢查
+
+**不要用 `which agent-browser`** 檢查安裝——npm 全域安裝的工具不一定在 `which` 的搜尋路徑中。改用 `agent-browser tab` 一次完成兩件事：確認 CLI 可用、確認瀏覽器連線狀態。
+
+```bash
+# 確認 CLI 可用 + 瀏覽器已連線 + 查看現有 tab
+agent-browser tab
+```
+
+- 成功 → 會列出現有 tab，記下前景 tab 的 index
+- 失敗（command not found）→ 需要安裝 agent-browser
+- 失敗（連線錯誤）→ 需要先啟動瀏覽器或確認 CDP 連線
 
 ## Step 1：重現場景
 
 先把瀏覽器帶到測試失敗的那個畫面。
 
+> **⚠️ 避免用 `agent-browser open` 開新頁面**：`open` 會建立隱藏（背景）tab，導致後續截圖抓到空白畫面。優先重用 Step 0 看到的前景 tab。
+
 ```bash
-# 開啟目標頁面
-agent-browser open http://localhost:3000/target-page
+# ✅ 正確：用 open 在「現有前景 tab」中導航（tab 已存在時 open 是安全的）
+agent-browser tab                                    # 確認有前景 tab
+agent-browser open http://localhost:3000/target-page  # 在當前 tab 導航
 
-# 等頁面完全載入（別急著操作）
+# ✅ 正確：如果沒有任何 tab，用 tab new 建立可見 tab
+agent-browser tab new http://localhost:3000/target-page
+agent-browser tab 0                                   # 確保切到該 tab
+
+# ❌ 錯誤：沒有 tab 時直接 open（會建立隱藏 tab）
+agent-browser open http://localhost:3000/target-page   # → 截圖會失敗
+```
+
+導航後等頁面載入、拿 ref：
+
+```bash
 agent-browser wait --load networkidle
-
-# 拿到互動元素的 ref
 agent-browser snapshot -i
 ```
 
@@ -45,6 +69,7 @@ agent-browser snapshot -i
 
 ```bash
 # 首次登入並儲存狀態
+agent-browser tab                                    # 確認前景 tab 存在
 agent-browser open http://localhost:3000/login
 agent-browser snapshot -i
 agent-browser fill @e1 "test@example.com"
@@ -304,7 +329,7 @@ agent-browser eval "localStorage.clear()"
 
 ## 與 DDD 工作流的整合
 
-### 在 `/DDD.work` TDD 循環中使用
+### 在 `/ddd.work` TDD 循環中使用
 
 1. **Red 階段**：E2E 測試失敗時，用 agent-browser 確認預期行為和實際行為的差異
 2. **Green 階段**：實作後用 agent-browser 手動驗證，再跑測試確認

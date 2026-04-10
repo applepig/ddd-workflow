@@ -1,13 +1,13 @@
 ---
-name: DDD.Spec
+name: ddd.spec
 description: >
   撰寫規格書：產出包含 User Story、驗收條件、API 契約、ADR 的 spec.md。
   Trigger: "write a spec", "define requirements", "draft acceptance criteria",
-  "寫規格", "定義需求", "驗收條件", /DDD.spec。
+  "寫規格", "定義需求", "驗收條件", /ddd.spec。
   功能需要正式規格才能開始實作時使用。
 ---
 
-# DDD:spec — 規格制定
+# ddd.spec — 規格制定
 
 規格制定階段。根據需求（或 plan/research 的成果）撰寫正式的規格書。
 
@@ -42,7 +42,7 @@ digraph spec_flow {
     "呈現給使用者" [shape=box];
     "使用者確認？" [shape=diamond];
     "根據回饋修改" [shape=box];
-    "引導 /DDD.tasks" [shape=doublecircle];
+    "引導 /ddd.tasks" [shape=doublecircle];
 
     "準備工作" -> "探索 codebase";
     "探索 codebase" -> "需求分析";
@@ -55,7 +55,7 @@ digraph spec_flow {
     "呈現給使用者" -> "使用者確認？";
     "使用者確認？" -> "根據回饋修改" [label="no"];
     "根據回饋修改" -> "Spec self-review";
-    "使用者確認？" -> "引導 /DDD.tasks" [label="yes"];
+    "使用者確認？" -> "引導 /ddd.tasks" [label="yes"];
 }
 ```
 
@@ -133,7 +133,7 @@ digraph spec_flow {
 
 Self-review 通過後，向使用者呈現 spec：
 
-> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`。請審閱內容，有需要調整的地方告訴我。確認後我們就進入 `/DDD.tasks` 拆解任務。」
+> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`。請審閱內容，有需要調整的地方告訴我。確認後我們就進入 `/ddd.tasks` 拆解任務。」
 
 等待使用者回應。如果要求修改，改完後重跑 Self-Review。使用者確認後才結束。
 
@@ -144,4 +144,4 @@ Self-review 通過後，向使用者呈現 spec：
 
 ## 結束條件
 
-使用者確認規格後，引導使用者執行 `/DDD.tasks`。
+使用者確認規格後，引導使用者執行 `/ddd.tasks`。

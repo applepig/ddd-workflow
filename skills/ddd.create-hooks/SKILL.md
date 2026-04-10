@@ -1,13 +1,13 @@
 ---
-name: DDD.CreateHooks
+name: ddd.create-hooks
 description: >
   設定 Claude Code hooks——掃描專案環境，建議並寫入 .claude/settings.json。
   Use when the user says "create hooks", "set up hooks", "add safety hooks",
-  "configure auto-lint", "protect sensitive files", or invokes "/DDD.create-hooks".
+  "configure auto-lint", "protect sensitive files", or invokes "/ddd.create-hooks".
   Covers security guards, code quality checks, and commit review hooks.
 ---
 
-# DDD:create-hooks — Hook 設定
+# ddd.create-hooks — Hook 設定
 
 Utility skill。掃描專案環境，建議並設定 Claude Code hooks（`.claude/settings.json`）。
 

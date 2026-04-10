@@ -2,13 +2,13 @@
 name: ddd-developer
 description: >
   DDD 開發者 subagent——以 TDD 循環實作功能程式碼與測試。
-  Use this agent when dispatching implementation work during /DDD.work,
+  Use this agent when dispatching implementation work during /ddd.work,
   when a specific task needs autonomous implementation,
   or when test cases need to be written for existing or planned code.
   Examples:
 
   <example>
-  Context: /DDD.work 平行模式，coordinator 派發工作線給 worker
+  Context: /ddd.work 平行模式，coordinator 派發工作線給 worker
   user: "開始實作 milestone 3"
   assistant: "這個 milestone 有兩條平行工作線，我派發 ddd-developer agent 分別處理。"
   <commentary>

@@ -1,13 +1,13 @@
 ---
-name: DDD.Tasks
+name: ddd.tasks
 description: >
   任務拆解：將 spec.md 分解為 milestone + task checklist，產出 tasks.md。
   Trigger: "break down tasks", "create a task list", "split into milestones",
-  "拆任務", "建 task list", "規劃實作步驟", /DDD.tasks。
+  "拆任務", "建 task list", "規劃實作步驟", /ddd.tasks。
   spec.md 確認後、需要拆解為可測試的增量 milestone 時使用。
 ---
 
-# DDD:tasks — 任務拆解
+# ddd.tasks — 任務拆解
 
 任務拆解階段。將 spec.md 拆解為可執行、可測試的 milestone 與 task。
 
@@ -16,6 +16,14 @@ description: >
 嚴禁跳過平行評估——不分析就宣稱「不可平行」是偷懶不是決策。
 </HARD-GATE>
 
+## Scope Check
+
+開始拆解前，先檢查 spec 的範圍：
+
+- 若 spec 涵蓋**多個獨立子系統**（例如前台 + 後台管理 + 排程服務），應拆成獨立的 tasks.md——每份獨立可交付、可測試。
+- 若 spec 過大但子系統間有強依賴，標記出來並建議使用者在 spec 層級先拆分，再回來拆任務。
+- 若 spec 範圍合理（單一功能或緊密相關的功能群），直接進入拆解。
+
 ## Checklist
 
 你必須為以下每個項目建立 task 並依序完成：
@@ -23,7 +31,8 @@ description: >
 1. **讀取規格** — 讀取當前 sprint 的 spec.md，確認所有驗收條件
 2. **拆解任務** — 將功能拆成 milestone + task（見下方指引）
 3. **撰寫 tasks.md** — 按格式寫入檔案
-4. **任務審查** — 呈現給使用者，根據回饋調整，等待確認
+4. **Self-Review** — 依下方 Self-Review 清單自我檢查，修正問題
+5. **任務審查** — 呈現給使用者，根據回饋調整，等待確認
 
 ## 拆解指引
 
@@ -37,6 +46,7 @@ description: >
 
 決定 milestone 的粒度時，考慮以下原則：
 
+- **預期結果**：每個 milestone 必須寫明完成後的具體可觀察結果（例如：「User model 可建立、密碼可雜湊驗證」），讓驗收有明確標準。
 - **可展示原則**：每個 milestone 完成後，應能向使用者展示一個可觀察的進展（例如：新 API 端點可呼叫、頁面可渲染、資料可儲存）。
 - **時間範圍**：理想的 milestone 包含 2~6 個 task。太少（1 個 task）代表粒度太細不需要獨立 milestone；太多（>6 個 task）代表應再拆分。
 - **依賴鏈**：milestone 之間盡量減少依賴。如果 Milestone 2 的每個 task 都依賴 Milestone 1 的全部完成，這是合理的線性依賴；但若只依賴其中一個 task，考慮重新分組。
@@ -49,6 +59,7 @@ description: >
 # Tasks: 使用者登入功能
 
 ## Milestone 1: 資料層與介面契約（序列）
+> 預期結果：User model 可建立與查詢、密碼可雜湊與驗證、session 可 CRUD
 > 驗證方式：`vitest run server/models/ server/services/session/`
 - [ ] Task 1.1: 定義 LoginRequest/LoginResponse 型別與 API 契約
 - [ ] Task 1.2: 撰寫 User model 與 password hashing 測試 (Red)
@@ -57,6 +68,7 @@ description: >
 - [ ] Task 1.5: 實作 session store (Green)
 
 ## Milestone 2: API + 前端
+> 預期結果：使用者可透過前端表單登入，取得有效 session token
 > 介面契約已在 M1 確立，以下可平行派發。
 
 ### 🔀 可平行工作線
@@ -131,7 +143,7 @@ description: >
 
 用 `🔀 可平行工作線` 標記可同時派發的區塊，用 `🔗 匯合點` 標記合併後的驗證步驟。每條工作線用 `[A]`、`[B]` 等字母標識。格式範例見上方「好的拆解」。
 
-**每條工作線的 blockquote 是 worker 的上下文卡片**——`/DDD.work` 的 coordinator 會直接從這裡擷取資訊組裝 worker prompt，所以必須包含 agent 獨立作業所需的一切：
+**每條工作線的 blockquote 是 worker 的上下文卡片**——`/ddd.work` 的 coordinator 會直接從這裡擷取資訊組裝 worker prompt，所以必須包含 agent 獨立作業所需的一切：
 
 | 欄位 | 說明 | 必要性 |
 |------|------|--------|
@@ -150,10 +162,26 @@ description: >
 4. **評估合併成本**——若兩條線的合併需要大量調整，平行的效益可能不如預期。
 5. **決定工作線數量**——一般不超過 3 條，過多的平行線增加合併複雜度。
 
+## Self-Review
+
+撰寫完 tasks.md 後，以新鮮眼光對照 spec 自我檢查。這是你自己跑的 checklist，不是派 subagent。
+
+**1. Spec 覆蓋度**：逐條掃描 spec 的驗收條件，每條都能指向至少一個 task 嗎？列出遺漏。
+
+**2. Task 完整性掃描**：檢查是否有以下問題：
+- 模糊的 task 描述（「實作登入功能」而非「撰寫 POST /auth/login endpoint 測試 (Red)」）
+- 測試與實作混在同一個 task
+- 缺少 Red/Green 標記
+- milestone 缺少預期結果或驗證方式
+
+**3. 依賴一致性**：平行工作線之間的介面契約是否在分線前的 task 中確立？Milestone 之間的依賴方向是否合理——後面的 milestone 是否真的依賴前面的產出？
+
+發現問題直接修正，不需重新 review。若發現 spec 的驗收條件沒有對應 task，補上。
+
 ## 產出
 
 `docs/<編號>-<名稱>/tasks.md`
 
 ## 結束條件
 
-使用者確認任務規劃後，引導使用者執行 `/DDD.work`。
+使用者確認任務規劃後，引導使用者執行 `/ddd.work`。

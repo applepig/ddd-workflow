@@ -1,14 +1,14 @@
 ---
-name: DDD.Xreview
+name: ddd.xreview
 description: >
   Cross review：派發多個 AI 模型獨立審查程式碼，交叉比對 findings 提升品質。
   Claude subagent 固定使用，外部模型清單見 AGENTS.md。
   Trigger: "review code", "cross review", "let's review", "check my changes",
-  "審查程式碼", "code review", "review 一下", /DDD.xreview。
+  "審查程式碼", "code review", "review 一下", /ddd.xreview。
   開發完成後、commit 或 push 前使用。
 ---
 
-# DDD:xreview — Cross Review
+# ddd.xreview — Cross Review
 
 使用多種獨立模型交叉審查程式碼變更。Claude subagent 固定參與，外部模型透過指定的 CLI 呼叫——具體使用哪些模型見 AGENTS.md 的「Cross Review 模型設定」。
 
@@ -33,11 +33,12 @@ description: >
 
 ### 2. 組裝任務 Prompt 並寫入暫存檔
 
-將步驟 1 確認的範圍資訊組裝為任務 prompt，寫入暫存檔（`mktemp /tmp/xreview-XXXXXX.md`），避免在多個呼叫中重複嵌入。
+將步驟 1 確認的範圍資訊組裝為任務 prompt，寫入暫存檔，避免在多個呼叫中重複嵌入。
 
-審查方法論（立場、攻擊面、品質門檻、輸出格式）由各 reviewer 的 `ddd-reviewer` agent 定義自帶，任務 prompt 只需指定範圍：
+**必須用 Bash `cat` heredoc 一次完成建檔與寫入**——Write tool 要求先 Read，對 mktemp 空檔案多此一舉：
 
-```markdown
+```bash
+review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_file" << 'XREVIEW_EOF'
 請依照 ddd-reviewer 角色定義執行獨立 code review。
 
 審查範圍：
@@ -46,7 +47,11 @@ description: >
 - 變更：請執行 `<git diff 指令>` 取得
 
 先讀取 sprint 文件理解目標與驗收條件，再檢視程式碼變更。
+XREVIEW_EOF
+echo "$review_prompt_file"
 ```
+
+審查方法論（立場、攻擊面、品質門檻、輸出格式）由各 reviewer 的 `ddd-reviewer` agent 定義自帶，任務 prompt 只需指定範圍。
 
 ### 3. 平行派出 Reviewer
 
@@ -123,7 +128,28 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 <多方都認可的設計>
 ```
 
-### 6. 使用者決策
+### 6. Coordinator 驗證與評估
+
+報告彙整完成後，main agent 在呈現給使用者前，先自行驗證中～高嚴重度的 findings：
+
+**驗證流程**：
+
+1. 從交叉比對報告中篩出 Critical / Important 等級的 findings
+2. 逐一讀取 finding 引用的程式碼，確認問題是否真實存在
+3. 對每個 finding 標記判定：
+   - ✅ **確認**：問題存在，附上 coordinator 的修正建議與優先度
+   - ⚠️ **存疑**：無法確認或情境不明，保留給使用者判斷
+   - ❌ **False Positive**：問題不存在或 reviewer 誤讀，說明理由
+
+**評估原則**：
+
+- 只驗證中～高嚴重度，低嚴重度直接帶過不逐一驗證
+- 驗證時讀實際程式碼，不能只靠 reviewer 的描述做判斷
+- 如果多個 reviewer 都指出同一問題（共識問題），仍須驗證——共識不等於正確
+
+驗證完成後，將判定結果附加到報告的對應 finding 旁，再進入步驟 7 呈現給使用者。
+
+### 7. 使用者決策
 
 用 AskUserQuestion 向使用者確認：
 - 哪些建議要採納並修正？

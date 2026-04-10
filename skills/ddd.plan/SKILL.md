@@ -1,15 +1,20 @@
 ---
-name: DDD.Plan
+name: ddd.plan
 description: >
-  前置規劃：需求模糊時釐清方向、探索可能性，產出 plan.md。
-  Trigger: "plan a feature", "clarify requirements", "figure out what to build",
-  "規劃功能", "釐清需求", "我有個想法", /DDD.plan。
-  即使只是粗略描述概念，也應觸發此 skill 來定型方向。
+  前置規劃：既有專案中延伸/修改功能時，釐清方向、探索可能性，產出 plan.md。
+  適用於 brownfield——有既有 code 當錨點、要在現行架構上增修。
+  如果是新專案或新模組（greenfield），改用 /ddd.brainstorming。
+  Trigger: "plan a feature", "plan an extension", "clarify requirements",
+  "figure out how to extend", "規劃擴充", "規劃改動", "既有系統加功能",
+  "規劃功能", "釐清需求", /ddd.plan。
+  在既有 codebase 上做延伸時，即使只是粗略描述概念，也應觸發此 skill 來定型方向。
 ---
 
-# DDD:plan — 前置規劃
+# ddd.plan — 前置規劃（brownfield）
 
-前置規劃階段。當需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
+前置規劃階段。在既有專案中延伸或修改功能、需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
+
+**適用範圍**：brownfield——有既有 code 當錨點、要在現行架構上增修。如果是新專案或新模組，沒有既有 code 可以參考，改用 `/ddd.brainstorming`。
 
 <HARD-GATE>
 嚴禁撰寫程式碼或修改專案設定檔，直到 plan.md 獲使用者確認。
@@ -64,5 +69,5 @@ description: >
 
 ## 結束條件
 
-使用者確認方向後，引導使用者執行 `/DDD.spec`。
+使用者確認方向後，引導使用者執行 `/ddd.spec`。
 如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。

@@ -1,0 +1,6 @@
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = ["git diff", "git status", "git log", "git show"]
+decision = "allow"
+priority = 100
+modes = ["plan"]
