@@ -18,7 +18,8 @@ tests/e2e/
 │   └── <page-name>.ts
 ├── specs/               # 測試檔案
 │   └── <feature>.spec.ts
-└── setup/               # Global setup（auth.setup.ts）
+├── setup/               # Global setup（auth.setup.ts → storageState）
+│   └── auth.setup.ts    # 登入一次、存 storageState，後續測試重用
 ```
 
 ---
@@ -44,9 +45,10 @@ export class LoginPage {
   async login(email: string, password: string) {
     await this.email_input.fill(email)
     await this.password_input.fill(password)
-    const resp = this.page.waitForResponse('**/api/auth/login')
-    await this.submit_button.click()
-    await resp
+    await Promise.all([
+      this.page.waitForResponse('**/api/auth/login'),
+      this.submit_button.click(),
+    ])
   }
 }
 ```
@@ -74,6 +76,36 @@ async function seedUser(request: APIRequestContext) {
 ```
 
 原因：透過 UI 建立前置資料又慢又 fragile——UI 改了前置步驟就壞。API 直接操作資料層，只依賴 API 契約，更穩定。
+
+### 資料清除
+
+測試建立的資料必須清除，避免 CI 重複執行時測試間互相污染：
+
+```typescript
+test.afterEach(async ({ request }) => {
+  await request.delete('/api/test/cleanup')
+})
+```
+
+### Auth 認證策略（storageState）
+
+需要登入狀態的測試，用 Playwright `storageState` 避免每個測試重跑登入流程：
+
+```typescript
+// setup/auth.setup.ts
+import { test as setup } from '@playwright/test'
+
+setup('authenticate', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('test@example.com')
+  await page.getByLabel('Password').fill('password')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.waitForURL('/dashboard')
+  await page.context().storageState({ path: '.auth/user.json' })
+})
+```
+
+在 `playwright.config.ts` 中設定 `storageState: '.auth/user.json'`，所有測試自動帶入登入狀態。
 
 ---
 

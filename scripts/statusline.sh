@@ -20,6 +20,31 @@ _statusline_err() {
 }
 set -o pipefail
 
+# ─── Parent Process TTY Detection ────────────────────────────────────────────
+
+# 向上走 process tree，找到有 TTY 的祖先，用 stty size 讀取實際寬度
+# 回傳: 偵測到的 columns 數，或空字串（偵測失敗）
+_detect_term_cols() {
+  local pid=$$
+  local i
+  for i in $(seq 1 10); do
+    local ppid tty_dev
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || break
+    tty_dev=$(ps -o tty= -p "$ppid" 2>/dev/null | tr -d ' ') || break
+    if [[ "$tty_dev" != "?" && "$tty_dev" != "??" && -n "$tty_dev" ]]; then
+      local cols
+      cols=$(stty size < "/dev/$tty_dev" 2>/dev/null | awk '{print $2}')
+      if [[ -n "$cols" && "$cols" -gt 0 ]] 2>/dev/null; then
+        echo "$cols"
+        return 0
+      fi
+    fi
+    pid="$ppid"
+    [[ "$ppid" == "1" || "$ppid" == "0" || -z "$ppid" ]] && break
+  done
+  echo ""
+}
+
 # ─── 常數 ────────────────────────────────────────────────────────────────────
 
 BAR_WIDTH=25
@@ -41,6 +66,7 @@ CYAN=$'\x1b[36m'
 # OAuth Usage API
 USAGE_API_URL="https://api.anthropic.com/api/oauth/usage"
 CACHE_MAX_AGE=60
+CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 # 允許測試覆蓋快取路徑和 credentials 路徑
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
@@ -72,7 +98,8 @@ getOAuthToken() {
   echo ""
 }
 
-# 呼叫 Usage API，帶快取機制
+# 呼叫 Usage API，帶快取 + throttle 防止多 session 同時打 API
+# 用 throttle 檔的 mtime 記錄上次 API 請求時間，CACHE_MAX_AGE 內不重複請求
 # 用法: fetchUsageAPI <oauth_token>
 # 回傳: JSON response 或空字串
 fetchUsageAPI() {
@@ -85,10 +112,11 @@ fetchUsageAPI() {
   fi
 
   local cache_file="$STATUSLINE_CACHE_FILE"
-  local cache_dir
+  local cache_dir throttle_file
   cache_dir="$(dirname "$cache_file")"
+  throttle_file="${cache_dir}/statusline-usage.throttle"
 
-  # 快取命中檢查：檔案存在且 mtime 在 CACHE_MAX_AGE 秒內
+  # 快取命中：cache 檔 mtime 在 CACHE_MAX_AGE 內
   if [[ -f "$cache_file" ]]; then
     local file_mtime now age
     file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || file_mtime=0
@@ -100,17 +128,35 @@ fetchUsageAPI() {
     fi
   fi
 
-  # 快取過期或不存在，呼叫 API
+  # 快取過期——檢查 throttle：若其他 session 近期已請求過，用舊快取
   mkdir -p "$cache_dir"
-  local response
-  local curl_exit
+  if [[ -f "$throttle_file" ]]; then
+    local throttle_mtime now throttle_age
+    throttle_mtime=$(stat -c %Y "$throttle_file" 2>/dev/null) || throttle_mtime=0
+    now=$(date +%s)
+    throttle_age=$(( now - throttle_mtime ))
+    if (( throttle_age < CACHE_MAX_AGE )); then
+      # 有人最近打過了但 cache 沒更新（API 可能失敗），用舊快取
+      if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"
+        return 0
+      fi
+      echo ""
+      return 0
+    fi
+  fi
+
+  # 標記：我要打 API 了
+  touch "$throttle_file"
+
+  # 呼叫 API
+  local response curl_exit
   response=$(curl --silent --max-time 5 \
     -H "Authorization: Bearer ${token}" \
     -H "anthropic-beta: oauth-2025-04-20" \
     "$USAGE_API_URL" 2>/dev/null) && curl_exit=0 || curl_exit=$?
 
   if [[ $curl_exit -eq 0 ]] && [[ -n "$response" ]]; then
-    # 驗證回傳是有效 JSON
     if echo "$response" | jq -e '.five_hour' > /dev/null 2>&1; then
       echo "$response" > "$cache_file"
       echo "$response"
@@ -118,10 +164,15 @@ fetchUsageAPI() {
     fi
   fi
 
-  # API 失敗：fallback 到舊快取
+  # API 失敗：fallback 到舊快取（不超過 CACHE_STALE_MAX_AGE）
   if [[ -f "$cache_file" ]]; then
-    cat "$cache_file"
-    return 0
+    local stale_mtime stale_age
+    stale_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || stale_mtime=0
+    stale_age=$(( $(date +%s) - stale_mtime ))
+    if (( stale_age < CACHE_STALE_MAX_AGE )); then
+      cat "$cache_file"
+      return 0
+    fi
   fi
 
   # 完全沒有資料
@@ -415,27 +466,35 @@ line3_left=$(formatLabelValue "Dir:" "$dir_name" "$LEFT_COL_WIDTH")
 # 右欄
 line3_right=""
 if [[ -n "$git_branch" ]]; then
-  line3_right="branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
+  line3_right="Branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
 fi
 
 # ─── 輸出 ────────────────────────────────────────────────────────────────────
 
 SEP="${NBSP}|${NBSP}"
 
-# 偵測 terminal 寬度，允許環境變數覆蓋（方便測試）
-term_cols="${STATUSLINE_TERM_COLS:-$(tput cols 2>/dev/null)}" || term_cols=80
+# Fallback chain: Parent TTY detection → $STATUSLINE_TERM_COLS → tput cols → 80
+term_cols=$(_detect_term_cols)
+: "${term_cols:=${STATUSLINE_TERM_COLS:-}}"
+: "${term_cols:=$(tput cols 2>/dev/null)}"
 : "${term_cols:=80}"
 
-if (( term_cols < 60 )); then
+if (( term_cols < 100 )); then
   # ─── Compact 模式：單行輸出 ──────────────────────────────────────────────
-  # 格式: Opus 4.6 | CTX 22% | USG 84% | RES 10m
+  # 格式: Opus 4.6 | Context 8% | Usage 84% | Reset 10m
   compact_sep=" | "
 
   # CTX 色彩：0-60% 綠、60-80% 橘、80%+ 紅
   compact_ctx_color=$(colorByPct "$ctx_pct")
 
-  # USG 色彩：0-60% 綠、60-80% 橘、80%+ 紅
-  compact_usg_color=$(colorByPct "$json_used_pct")
+  # USG 色彩：對齊完整版 Session bar（0-79% 藍、80-89% 橘、90%+ 紅）
+  if (( json_used_pct >= 90 )); then
+    compact_usg_color="$RED"
+  elif (( json_used_pct >= 80 )); then
+    compact_usg_color="$YELLOW"
+  else
+    compact_usg_color="$CYAN"
+  fi
 
   # RES：只顯示最精簡的倒數（不上色）
   if (( json_resets_at > 0 && json_resets_at > now )); then
@@ -452,9 +511,9 @@ if (( term_cols < 60 )); then
   fi
 
   output="${RST}${model_short}"
-  output+="${compact_sep}CTX ${compact_ctx_color}${ctx_pct}%${RST}"
-  output+="${compact_sep}USG ${compact_usg_color}${json_used_pct}%${RST}"
-  output+="${compact_sep}RES ${compact_res}"
+  output+="${compact_sep}Context ${compact_ctx_color}${ctx_pct}%${RST}"
+  output+="${compact_sep}Usage ${compact_usg_color}${json_used_pct}%${RST}"
+  output+="${compact_sep}Reset ${compact_res}"
 
   echo -n "$output"
 else

@@ -1,17 +1,20 @@
 ---
 name: DDD.AgentBrowser
 description: >
-  E2E 除錯說明書——用 agent-browser CLI 在 DDD 工作流中系統性地除錯前端問題。
-  Use when E2E tests fail, when you need to visually verify UI behavior, debug
-  form submissions, inspect page state, or trace frontend issues during "/DDD.work".
-  Also use when the user says "debug E2E", "check the page", "why is the test failing",
-  "open the browser", "take a screenshot", "inspect the DOM", or invokes "/DDD.agent-browser".
+  E2E 除錯指南：用 agent-browser CLI 在 DDD 工作流中系統性除錯前端問題。
+  Trigger: "debug E2E", "check the page", "why is the test failing",
+  "open the browser", "take a screenshot", "inspect the DOM",
+  "E2E 失敗", "測試壞了", "檢查頁面", /DDD.agent-browser。
+  E2E 測試失敗、需要視覺驗證 UI 行為、或追蹤前端問題時使用。
 ---
 
 # DDD:AgentBrowser — E2E 除錯說明書
 
 在 DDD 工作流的開發階段（`/DDD.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，
 用 `agent-browser` CLI 直接操作瀏覽器來定位問題。
+
+**與 `/DDD.e2e` 的分工**：`/DDD.e2e` 規劃與撰寫 E2E 測試案例；本 skill 是測試失敗後的除錯工具。
+測試跑不過 → 先用本 skill 除錯定位原因；需要新增或修改測試 → 用 `/DDD.e2e`。
 
 這份說明書不是瀏覽器自動化教學，而是**除錯流程指南**——幫你從「測試掛了」走到「找到根因」。
 
@@ -172,53 +175,7 @@ agent-browser click @e1           # 用新的 ref
 
 ## Step 4：進階除錯工具
 
-### 錄製操作過程
-
-```bash
-# 開始錄影
-agent-browser record start debug-session.webm
-
-# 執行操作...
-agent-browser open http://localhost:3000/form
-agent-browser snapshot -i
-agent-browser fill @e1 "test"
-agent-browser click @e3
-
-# 停止錄影
-agent-browser record stop
-```
-
-### Playwright Trace
-
-```bash
-# 開始 trace（記錄每一步的 DOM 快照、網路請求、console）
-agent-browser trace start
-
-# 執行操作...
-
-# 停止並儲存
-agent-browser trace stop debug-trace.zip
-
-# 用 Playwright Trace Viewer 分析
-npx playwright show-trace debug-trace.zip
-```
-
-### 效能分析
-
-```bash
-agent-browser profiler start
-# 執行操作...
-agent-browser profiler stop profile.json
-```
-
-### 元素高亮（headed 模式）
-
-```bash
-# 用視覺化方式確認元素位置
-agent-browser --headed open http://localhost:3000/page
-agent-browser snapshot -i
-agent-browser highlight @e3
-```
+錄影（`record`）、Playwright Trace（`trace`）、效能分析（`profiler`）、元素高亮（`highlight`）等進階工具詳見 `references/agent-browser-advanced.md`。
 
 ## Step 5：語義定位器（備用方案）
 
@@ -323,6 +280,26 @@ agent-browser screenshot mobile.png
 
 # 恢復桌面尺寸
 agent-browser set viewport 1920 1080
+```
+
+### 場景 F：Auth / Session 狀態問題
+
+```bash
+# 1. 檢查 cookies
+agent-browser cookies
+
+# 2. 檢查 localStorage
+agent-browser storage local
+
+# 3. 驗證 token
+agent-browser eval "localStorage.getItem('token')"
+
+# 4. 檢查 sessionStorage
+agent-browser storage session
+
+# 5. 清除登入狀態重新測試
+agent-browser cookies clear
+agent-browser eval "localStorage.clear()"
 ```
 
 ## 與 DDD 工作流的整合
