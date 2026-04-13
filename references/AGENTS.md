@@ -186,12 +186,4 @@ import { createSession } from '../services/session'
 
 ## Cross Review 模型設定
 
-`/ddd.xreview` 使用的 reviewer 模型清單。所有 reviewer（含 Claude）統一由 orchestrator 派發：Claude 透過 `claude -p --agent ddd-reviewer` 呼叫，外部模型透過指定 CLI 呼叫。
-
-| 角色 | CLI:模型 | 備註 |
-|------|---------|------|
-| Claude Reviewer | `claude:claude-sonnet-4-6` | 預設，可替換成其他 Claude 模型 |
-| 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | 預設 |
-| 外部 Reviewer B | `gemini:gemini-3-pro-preview` | |
-
-新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。失敗時直接標示失敗並呈現已取得結果，不做退化重試（實測退化模型品質不足，徒增等待時間）。
+`/ddd.xreview` 的 reviewer 模型清單在 `~/.config/ddd-workflow/xreview.json`（由 `npm run deploy` 部署預設值，已存在則保留使用者設定）。新增/移除 reviewer 直接編輯該 JSON 檔即可，無需動本表。臨時覆蓋可在 orchestrator command 後接 `cli:model` 位置參數。失敗時直接標示失敗並呈現已取得結果，不做退化重試。
