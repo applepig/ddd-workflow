@@ -76,16 +76,16 @@ Monitor({
 Monitor 期間，orchestrator 會以「每行一事件」形式回傳：
 
 ```
-START claude:claude-sonnet-4-6
-START opencode:github-copilot/gpt-5.4
-START gemini:gemini-3-pro-preview
+START claude:claude-sonnet-4-6 /tmp/xreview-<runid>-claude_claude-sonnet-4-6.log
+START opencode:github-copilot/gpt-5.4 /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.log
+START gemini:gemini-3-pro-preview /tmp/xreview-<runid>-gemini_gemini-3-pro-preview.log
 DONE claude:claude-sonnet-4-6 /tmp/xreview-<runid>-claude_claude-sonnet-4-6.log
 FAIL gemini:gemini-3-pro-preview exit_code=124 log=/tmp/xreview-<runid>-gemini_gemini-3-pro-preview.log
 DONE opencode:github-copilot/gpt-5.4 /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.log
 ALL_DONE
 ```
 
-每個事件以 task notification 送達。記錄每個 DONE / FAIL 事件對應的 `<spec>` 與 `<log-path>`，等收到 `ALL_DONE` 即可進入下一步。
+每個事件以 task notification 送達。START 也帶 `<log-path>`，方便在 review 進行中即時 peek 該 reviewer 的進度。記錄每個 DONE / FAIL 事件對應的 `<spec>` 與 `<log-path>`，等收到 `ALL_DONE` 即可進入下一步。
 
 **事件收集與 fallback 處理**：
 
@@ -96,8 +96,8 @@ events = {}              # spec -> { status, log_path, exit_code? }
 seen_all_done = false
 
 for each notification line in Monitor stream:
-  if line starts with "START <spec>":
-    events[spec] = { status: "running" }
+  if line starts with "START <spec> <log-path>":
+    events[spec] = { status: "running", log_path: <log-path> }
   elif line starts with "DONE <spec> <log-path>":
     events[spec] = { status: "done", log_path: <log-path> }
   elif line starts with "FAIL <spec> exit_code=<n> log=<log-path>":
@@ -201,7 +201,7 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 - Reviewer 自己有能力讀檔案、跑 git 指令，不需在 prompt 中重複說明
 - **Timeout**：
   - Monitor 上限 3600000ms（1 小時）—— orchestrator 整體
-  - orchestrator 內部對每個 reviewer 預設 1500 秒（25 分鐘）safety net，可用 `XREVIEW_PER_TIMEOUT` env var 調整
+  - orchestrator 內部對每個 reviewer 固定 3000 秒（50 分鐘）safety net（寫死，與 runner 對齊）
 - **安全性**：orchestrator 對外部 CLI 一律 stdin pipe，prompt 內容不出現在 command line
 - 若變更範圍太大，考慮按 milestone 拆分 review
 - **暫存檔清理**：所有 reviewer 完成後，執行 `rm -f "$review_prompt_file"`；log 檔保留在 `/tmp/xreview-*` 直到系統清理

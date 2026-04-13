@@ -73,6 +73,28 @@
 - [x] `npm run build && npm run deploy && npm test` 驗證 opencode agent 名稱對齊
 - [ ] 重跑一次 cross review 確認不再出現 `agent "ddd.xreviewer" not found`（留待下次 cross review 自然驗證）
 
+## M4.6 第二輪 + 第三輪 cross review 修正
+
+### 第二輪（commit 後 review 24751b2，sonnet only）
+
+- [x] cleanup re-entry guard（`_cleanup_ran`）+ conditional sleep（pgids 非空才 sleep）
+- [x] trap 改 `INT: cleanup; exit 130` / `TERM: cleanup; exit 143` / `EXIT: cleanup`（ALL_DONE 不再誤 emit）
+- [x] 測試 poll helper 取代 fixed sleep
+- [x] START 事件加 log path
+- [x] 移除 dead code slug_of（變為真正被使用）
+
+### 第三輪（review uncommitted 修正，opus + gpt-5.4）
+
+- [x] Parent shell 預建 log 檔寫 meta header（`[xreview] START / log= / ---`），setsid body 改 `>>` append
+- [x] Invalid spec 的 START/FAIL log path 一致（同一 /tmp 檔，內容為 `XREVIEW_ERROR: invalid spec format`）
+- [x] Timeout 寫死 3000s，移除 `XREVIEW_PER_TIMEOUT` env var；orchestrator 傳給 runner
+- [x] 補 external CLI dispatch 測試（opencode + gemini happy path，共 +7 asserts）
+- [x] poll 失敗真 FAIL（移除 `|| true`，assert mock_pids count 精確等於 expected）
+- [x] 移除 runner.sh 的 error grep heuristic（解決 review 正文含 Error 字樣被誤判為 CLI 失敗）
+- [x] AGENTS.md「Cross Review 模型設定」段落更新舊敘事（orchestrator 統一派發 + 新增 Claude Reviewer 表格列）
+
+測試：orchestrator 52/52、runner 21/21、npm test 全平台綠。
+
 ## M5 扶正（M4.5 通過後）
 
 - [ ] 將 `ddd.xreview2` 的內容覆蓋 `ddd.xreview`：
