@@ -57,6 +57,10 @@ export const OPENCODE_DENY_LIST = [
 export const AGENT_OVERRIDES = {
   'ddd-reviewer': {
     opencode: {
+      // 將 opencode 平台的 agent 名稱與輸出檔名對齊 xreview-runner.sh 使用的
+      // `--agent ddd.xreviewer`，避免 fallback 到 default agent 而失去
+      // 正確的 system prompt 與 permission 限制。
+      name: 'ddd.xreviewer',
       mode: 'primary',
       permission: {
         bash: {
@@ -360,8 +364,11 @@ export async function build() {
     writeFileSync(join(gemini_dir, `${stem}.md`), gemini_out)
 
     // OpenCode：.md
+    // 若 override 指定了 opencode.name（例如 ddd-reviewer → ddd.xreviewer），
+    // 輸出檔名也要跟著改，讓平台引用名稱與 frontmatter `name` 一致。
     const opencode_out = convertToOpencode(frontmatter, body, agent_name)
-    writeFileSync(join(opencode_dir, `${stem}.md`), opencode_out)
+    const opencode_stem = AGENT_OVERRIDES[agent_name]?.opencode?.name ?? stem
+    writeFileSync(join(opencode_dir, `${opencode_stem}.md`), opencode_out)
 
     // Codex：.toml
     const codex_out = convertToCodex(frontmatter, body, agent_name)

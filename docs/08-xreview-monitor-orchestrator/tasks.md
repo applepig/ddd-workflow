@@ -30,13 +30,50 @@
 
 ## M4 實戰驗證（並存階段）
 
-- [ ] 用 `/ddd.xreview2` 對當前 sprint 變更（含 orchestrator + 文件包）跑一次實際 review
-- [ ] 驗證事件流順序、log path 可讀、整合報告正確
-- [ ] 驗證 GPT 長 review（目標 >10 分鐘）不再被砍
-- [ ] 確認 Claude reviewer 透過 `claude -p --agent` 路徑也能正常產出
-- [ ] works.md 記錄實戰結果與遇到的 pitfall
+- [x] 用 `/ddd.xreview2` 對當前 sprint 變更跑一次實際 review（haiku/gpt-5-mini/gemini-3-flash，<3 分鐘完成）
+- [x] 驗證事件流順序、log path 可讀、整合報告正確
+- [x] 確認 Claude reviewer 透過 `claude -p --agent` 路徑也能正常產出
+- [ ] 驗證 GPT 長 review（目標 >10 分鐘）不再被砍 — 第一輪用快速模型，未觸發 long review；待後續用 gpt-5.4 等慢模型再驗
+- [x] works.md 記錄實戰結果（含 cross review findings）
 
-## M5 扶正（Validation 通過後）
+## M4.5 修正（Cross Review 共識問題）
+
+依使用者決策（2026-04-13）：全部修正 + opencode runner agent 名整合。
+
+### P1 — Cleanup PGID + grace period（必修）
+
+- [x] `ddd.xreview2/scripts/xreview-orchestrator.sh`：spawn 子 shell 改用 `setsid` 隔離 process group
+- [x] `cleanup()` 改為：取 pgid → `kill -TERM -- -$pgid` → grace period（~2 秒）→ `kill -KILL -- -$pgid`
+- [x] 修正 comment 描述（之前 comment 說「kill process group」但實作是 kill PID，誤導）
+- [x] **意外發現並修正**：`timeout` 預設會把 child 放新 PGID，破壞 setsid 隔離；改用 `timeout --foreground` 才能讓 PGID 結構保留
+
+### P2 — Cleanup 整合測試（必修）
+
+- [x] `xreview-orchestrator.test.sh` 新增 case：spawn 長 sleep mock → SIGTERM orchestrator → 用 `pgrep` / `ps` 驗證 mock 已被清除
+- [x] 測試 SIGINT（Ctrl-C 模擬）行為
+- [x] 文件中說明 SIGKILL 不可 trap 的本質限制（works.md 已記、SKILL.md 補一行、orchestrator/test 檔頭 comment 也標）
+
+### P3 — SKILL.md 改善（應修）
+
+- [x] 新增 `ddd.xreview2/scripts/run-orchestrator.sh` wrapper：接收 prompt file + specs，內部 exec orchestrator
+- [x] `SKILL.md` 步驟 3 改為呼叫 wrapper（避免 Monitor JSON 內 quoting）
+- [x] `SKILL.md` 步驟 4 補「沒收到 ALL_DONE 怎麼辦」fallback 描述（用 stream-end notification 兜底）
+- [x] `SKILL.md` 步驟 4 加事件收集 pseudo-code（events_map → 等 ALL_DONE 或 stream-end → for each DONE Read log）
+
+### P4 — 防禦性小修補（可選但一起做）
+
+- [x] runid 加 `${RANDOM}`：`runid="$$-$(date +%s)-${RANDOM}"`
+- [x] cli regex 驗證：`^[a-z0-9_-]+$`，model regex：`^[A-Za-z0-9._/:-]+$`，不符合 emit FAIL
+
+### Pre-existing — opencode runner agent 名整合
+
+- [x] `scripts/build.js`：在 `AGENT_OVERRIDES['ddd-reviewer'].opencode` 加 `name: 'ddd.xreviewer'`
+- [x] `scripts/build.js`：file output naming 用 override.name 優先（若有），輸出 `dist/opencode/agents/ddd.xreviewer.md`
+- [x] `scripts/build.test.js`：補測 override.name 生效（5 個新 case）
+- [x] `npm run build && npm run deploy && npm test` 驗證 opencode agent 名稱對齊
+- [ ] 重跑一次 cross review 確認不再出現 `agent "ddd.xreviewer" not found`（留待下次 cross review 自然驗證）
+
+## M5 扶正（M4.5 通過後）
 
 - [ ] 將 `ddd.xreview2` 的內容覆蓋 `ddd.xreview`：
   ```bash
