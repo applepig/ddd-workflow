@@ -56,7 +56,7 @@ echo "$review_prompt_file"
 
 ```
 Monitor({
-  command: "bash ~/.claude/skills/ddd.xreview2/scripts/xreview-orchestrator.sh \"$review_prompt_file\" claude:claude-sonnet-4-6 opencode:github-copilot/gpt-5.4 gemini:gemini-3-pro-preview",
+  command: "bash ~/.claude/skills/ddd.xreview2/scripts/run-orchestrator.sh $review_prompt_file claude:claude-sonnet-4-6 opencode:github-copilot/gpt-5.4 gemini:gemini-3-pro-preview",
   timeout_ms: 3600000,
   persistent: false,
   description: "xreview2 平行派 N 個 reviewer"
@@ -65,6 +65,8 @@ Monitor({
 
 **設定要點**：
 
+- 使用 `run-orchestrator.sh` wrapper（thin exec 到 `xreview-orchestrator.sh`）——避免在 Monitor `command` JSON 字串內對 `$prompt_file` 做雙引號 escape，減少 copy-paste 出錯
+- `$review_prompt_file` 由 `mktemp /tmp/xreview-XXXXXX.md` 產生，預設不含空白；若自訂路徑含空白或特殊字元，請改為 `\"$review_prompt_file\"` 並相應 escape
 - `timeout_ms: 3600000`（1 小時）—— Monitor 上限，繞過 Bash 10 分鐘 cap
 - `persistent: false` —— orchestrator 自然 exit 即結束 watch
 - Claude 端用 `claude:<model>`，`<model>` 從 AGENTS.md 設定（預設 `claude-sonnet-4-6`，可調整）
@@ -84,6 +86,43 @@ ALL_DONE
 ```
 
 每個事件以 task notification 送達。記錄每個 DONE / FAIL 事件對應的 `<spec>` 與 `<log-path>`，等收到 `ALL_DONE` 即可進入下一步。
+
+**事件收集與 fallback 處理**：
+
+採用 events_map 追蹤每個 reviewer 狀態：
+
+```pseudo
+events = {}              # spec -> { status, log_path, exit_code? }
+seen_all_done = false
+
+for each notification line in Monitor stream:
+  if line starts with "START <spec>":
+    events[spec] = { status: "running" }
+  elif line starts with "DONE <spec> <log-path>":
+    events[spec] = { status: "done", log_path: <log-path> }
+  elif line starts with "FAIL <spec> exit_code=<n> log=<log-path>":
+    events[spec] = { status: "fail", exit_code: <n>, log_path: <log-path> }
+  elif line == "ALL_DONE":
+    seen_all_done = true
+    break
+
+# Fallback：若 stream 因 timeout / 異常結束（收到 stream-end notification
+# 但尚未看到 ALL_DONE），仍以已收到的 events_map 為準。
+#   - 沒收到 START 的 reviewer → status = "unknown"
+#   - 已 START 但無 DONE/FAIL → status = "incomplete"
+
+for spec where events[spec].status == "done":
+  Read events[spec].log_path  # 整合到報告
+for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
+  在報告中標明失敗原因（exit_code / timeout / 未啟動）
+```
+
+**沒收到 ALL_DONE 的情境**：
+
+- Monitor `timeout_ms` 達到（1 小時）→ orchestrator 被 SIGKILL，cleanup trap 來不及執行
+- 系統異常（OOM、shell crash 等）
+
+兩種情境皆以 stream-end notification 兜底，不阻塞流程；仍有部分 reviewer 的 log 可讀就整合上去，其餘標記為不完整交給使用者決定是否重跑。
 
 ### 5. 失敗處理
 
@@ -167,6 +206,7 @@ ALL_DONE
 - 若變更範圍太大，考慮按 milestone 拆分 review
 - **暫存檔清理**：所有 reviewer 完成後，執行 `rm -f "$review_prompt_file"`；log 檔保留在 `/tmp/xreview-*` 直到系統清理
 - **Statusline 殘留**：Monitor 結束後 statusline 偶爾顯示 task 殘留，是 UI 顯示延遲，不影響實際清理
+- **SIGKILL 限制**：Monitor 強制 kill 或外部 `kill -9` 時，orchestrator 的 cleanup trap 不會執行——子 reviewer process 由各自 PGID 隔離，但需依賴 OS 在 session 結束時收尾。一般不會殘留，但若 statusline 或 `ps` 顯示子程序殘留，請手動 `pkill -f xreview-orchestrator`
 
 ## 前提條件
 
