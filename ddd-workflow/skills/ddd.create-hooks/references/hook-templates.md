@@ -76,13 +76,13 @@ exit 0
 
 ### 自動 Lint/Format
 
-- **matcher**: `Write|Edit|MultiEdit`
+- **matcher**: `Write|Edit|MultiEdit|write_file|replace`
 - **用途**: 對被修改的檔案執行專案的 lint/format 工具
 - **handler type**: `command`
 
 ```json
 {
-  "matcher": "Write|Edit|MultiEdit",
+  "matcher": "Write|Edit|MultiEdit|write_file|replace",
   "hooks": [{
     "type": "command",
     "command": "bash .claude/hooks/auto-format.sh"
