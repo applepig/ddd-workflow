@@ -186,10 +186,11 @@ import { createSession } from '../services/session'
 
 ## Cross Review 模型設定
 
-`/ddd.xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
+`/ddd.xreview` 使用的 reviewer 模型清單。所有 reviewer（含 Claude）統一由 orchestrator 派發：Claude 透過 `claude -p --agent ddd-reviewer` 呼叫，外部模型透過指定 CLI 呼叫。
 
 | 角色 | CLI:模型 | 備註 |
 |------|---------|------|
+| Claude Reviewer | `claude:claude-sonnet-4-6` | 預設，可替換成其他 Claude 模型 |
 | 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | 預設 |
 | 外部 Reviewer B | `gemini:gemini-3-pro-preview` | |
 

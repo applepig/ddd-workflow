@@ -5,15 +5,18 @@
 # Supported CLIs: opencode, gemini, codex
 # Backward compatible: <model> without colon is treated as opencode:<model>
 #
-# This script intentionally avoids content/quality heuristics.
-# It only adds a timeout, preserves the CLI's own stdout/stderr output,
-# and upgrades explicit error markers into a non-zero exit.
+# This script intentionally avoids content/quality heuristics. It only adds
+# a timeout, preserves the CLI's own stdout/stderr output, and preserves the
+# CLI's own exit code (no content inspection). Review text discussing errors
+# must not be mistaken for a runner failure.
 
 set -uo pipefail
 
 prompt_file="${1:?Usage: xreview-runner.sh <prompt-file> <cli:model> [timeout]}"
 cli_spec="${2:?Usage: xreview-runner.sh <prompt-file> <cli:model> [timeout]}"
-timeout_sec="${3:-1200}"
+# Default matches orchestrator's hard-coded 3000s. If orchestrator passes a
+# value, that wins; if runner is invoked directly, we still use the same cap.
+timeout_sec="${3:-3000}"
 
 if [[ ! -f "$prompt_file" ]]; then
   echo "XREVIEW_ERROR: prompt file not found: $prompt_file" >&2
@@ -46,10 +49,8 @@ if [[ -z "$cli_path" ]]; then
   exit 1
 fi
 
-output_file=$(mktemp /tmp/xreview-output-XXXXXX.log)
-trap 'rm -f "$output_file"' EXIT
-
-# Dispatch to the appropriate CLI
+# Dispatch to the appropriate CLI. stderr merged into stdout so the caller
+# captures a single stream; exit code is the CLI's own (no content inspection).
 case "$cli" in
   opencode)
     # Merge stderr into stdout to avoid TTY-related hangs when stderr is redirected
@@ -61,7 +62,7 @@ case "$cli" in
       --agent ddd.xreviewer \
       --model "$model" \
       < "$prompt_file" \
-      2>&1 | tee "$output_file"
+      2>&1
     ;;
   gemini)
     # --approval-mode=plan enables Plan Mode (read-only, no file writes).
@@ -74,7 +75,7 @@ case "$cli" in
       --admin-policy="$policy_file" \
       -m "$model" \
       < "$prompt_file" \
-      2>&1 | tee "$output_file"
+      2>&1
     ;;
   codex)
     # codex exec is the non-interactive subcommand.
@@ -86,10 +87,10 @@ case "$cli" in
       --ephemeral \
       --model "$model" \
       - < "$prompt_file" \
-      2>&1 | tee "$output_file"
+      2>&1
     ;;
 esac
-rc=${PIPESTATUS[0]}
+rc=$?
 
 if [[ $rc -eq 124 ]]; then
   echo "XREVIEW_ERROR: timed out after ${timeout_sec}s (cli: $cli, model: $model)" >&2
@@ -97,10 +98,4 @@ if [[ $rc -eq 124 ]]; then
 elif [[ $rc -ne 0 ]]; then
   echo "XREVIEW_ERROR: $cli exited with code $rc (model: $model)" >&2
   exit "$rc"
-fi
-
-# Check merged output for error markers
-if grep -Eq '^(ERROR |[[:space:]]*Error:|[[:alnum:]_]+Error:)' "$output_file"; then
-  echo "XREVIEW_ERROR: $cli reported an error (model: $model)" >&2
-  exit 1
 fi
