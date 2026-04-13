@@ -82,15 +82,11 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
 
 > `xreview-runner.sh` 是精簡的 shell proxy：包 timeout、根據 `<cli>:<model>` 格式分發到對應 CLI、失敗時補 `XREVIEW_ERROR` summary。各 CLI 的詳細呼叫慣例見 `references/cli-adapters.md`。
 
-### 4. 失敗處理與退化
+### 4. 失敗處理
 
 **失敗判定**：Bash exit code 非零，或輸出含 `XREVIEW_ERROR` marker。不需對 reviewer 內容做語意判斷。
 
-**退化策略**：
-
-1. 查 AGENTS.md 表格中該模型的「退化模型」欄位
-2. 有退化模型 → 重試一次，替換 model 參數
-3. 無退化模型或退化也失敗 → 在報告中標示失敗，呈現已取得的結果
+**處理**：直接在報告中標示該 reviewer 失敗，呈現已取得的其他 reviewer 結果。不做退化重試（實測退化模型品質不足，徒增等待時間，反而拖慢決策）。
 
 ### 5. 整合與呈現
 
@@ -168,7 +164,7 @@ bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
   - 兩者都必須搭配 `run_in_background: true` 避免阻塞主流程
 - **安全性**：外部 CLI 一律用 stdin pipe 傳 prompt，嚴禁用命令列參數直接帶入
 - 若變更範圍太大，考慮按 milestone 拆分 review
-- 若某個 reviewer 超時或失敗且退化也失敗，先呈現已取得的結果，提示使用者
+- 若某個 reviewer 超時或失敗，先呈現已取得的結果，提示使用者該 reviewer 失敗
 - **暫存檔清理**：所有 reviewer 完成後，執行 `rm -f "$review_prompt_file"` 清理暫存檔
 
 ## 前提條件

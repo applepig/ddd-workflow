@@ -188,9 +188,9 @@ import { createSession } from '../services/session'
 
 `/ddd.xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
 
-| 角色 | CLI:模型 | 退化模型 | 備註 |
-|------|---------|----------|------|
-| 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | `opencode:github-copilot/gpt-5.3-codex` | 預設 |
-| 外部 Reviewer B | `gemini:gemini-3-pro-preview` | `gemini:gemini-2.5-pro` | |
+| 角色 | CLI:模型 | 備註 |
+|------|---------|------|
+| 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | 預設 |
+| 外部 Reviewer B | `gemini:gemini-3-pro-preview` | |
 
-新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。
+新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。失敗時直接標示失敗並呈現已取得結果，不做退化重試（實測退化模型品質不足，徒增等待時間）。
