@@ -308,3 +308,47 @@ gpt-5.4 實際成功產出完整 review（log 完整可讀），但被 runner �
 **手動 sanity**：
 - Valid spec：log 頂部有 `[xreview] START <spec> at <iso-date>` / `[xreview] log=<path>` / `[xreview] ---` 三行 meta header，setsid body 正確 append 在 `---` 之後
 - Invalid spec：START 與 FAIL log path 完全一致，檔案含 `XREVIEW_ERROR: invalid spec format` 明確錯誤訊息
+
+---
+
+## 2026-04-13（深夜）M5 扶正 + M6 雙模 / 配置中心化
+
+### 起點：跨 CLI 支援度評估
+
+使用者問：v2 是否能跑在 opencode / gemini-cli 上？
+
+結論：bash script 平台中立，但 Monitor tool 是 Claude Code 專屬。其他 CLI 的 bash tool 沒有 1 小時上限的對應機制——直接跑 orchestrator 會「事件流變成最後一次性 dump、無法即時 peek」+「受 host bash timeout 限制」。
+
+### 設計轉折一：雙模 orchestrator
+
+CC 走 streaming（純事件流給 Monitor），其他 CLI 走 blocking（事件流 + ALL_DONE 後 footer 列出 log 路徑）。實作要點：
+
+- mode 偵測：`XREVIEW_MODE` 覆寫 → `CLAUDECODE` env → 預設 blocking
+- subshell 寫 `<log>.status` sidecar，parent 不 re-parse 自己 stdout
+- footer 用 `[STATUS]  spec  ->  log` 風格，明示讓 caller agent「Read 這些檔案」
+- streaming 行為完全不變（向後相容 Monitor 消費者）
+
+陷阱：開發中編輯 setsid body 內的 single-quoted 字串時，加入帶 `'` 的英文註解（"parent's"）會提前關閉字串導致 syntax error。改寫成不含撇號的句子。
+
+### 設計轉折二：模型清單搬到 config
+
+使用者提案：模型清單寫在 AGENTS.md 表格 → 每次對話都吃 token + 模型認知負擔。改放 `~/.config/ddd-workflow/xreview.json`，CLI 參數可一次性覆蓋。
+
+實作：
+
+- orchestrator 加 config fallback：CLI 無 spec → 讀 `$XDG_CONFIG_HOME/ddd-workflow/xreview.json` → `jq -r '.reviewers[]?'`
+- `cli.js` 加 `deployConfig()`：copy 而非 symlink（使用者可自由編輯）+ if not exists（不覆蓋既有設定）
+- 預設清單把 Claude reviewer 從 `claude-sonnet-4-6` 升到 `claude-opus-4-6`
+- AGENTS.md「Cross Review 模型設定」段落從整張表縮成一段話指向 config 路徑
+- SKILL.md Monitor command 範例不再 hard-code spec，靠 config 即可
+
+### 扶正
+
+`trash-put ddd.xreview && mv ddd.xreview2 ddd.xreview`，更新 SKILL.md frontmatter（name / description / 移除「測試版」字眼）、orchestrator footer 字串、test header 註解。
+
+### 結果
+
+- 測試：orchestrator 52 → **79/79**（淨增 27：footer + mode + config fallback + CLI 覆蓋 + 空/無效 config）
+- `npm run deploy && npm test` 全平台綠（10 個 skill，xreview2 消失）
+- `~/.config/ddd-workflow/xreview.json` 部署完成，重 deploy 不覆蓋
+- AGENTS.md 「Cross Review 模型設定」段落從 11 行縮成 1 行

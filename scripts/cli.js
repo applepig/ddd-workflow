@@ -132,6 +132,32 @@ function linkDir(source_dir, target_dir, label) {
 
 // ─── Deploy ──────────────────────────────────────────────────────────────────
 
+/**
+ * 部署 xreview config 模板到 ~/.config/ddd-workflow/xreview.json。
+ * 已存在則保留使用者設定（model 清單視為個人偏好，不強制覆蓋）。
+ * 注意：用 copy 而非 symlink，使用者可自由編輯不影響 repo。
+ */
+function deployConfig() {
+  log('=== config ===')
+  const config_dir = join(HOME, '.config', 'ddd-workflow')
+  const config_target = join(config_dir, 'xreview.json')
+  const config_source = join(SRC, 'config', 'xreview.json')
+
+  if (!existsSync(config_source)) {
+    warn(`config 模板不存在: ${config_source}，跳過`)
+    return
+  }
+
+  if (existsSync(config_target)) {
+    log(`  ⚪ ${config_target} 已存在，保留使用者設定`)
+    return
+  }
+
+  mkdirSync(config_dir, { recursive: true })
+  writeFileSync(config_target, readFileSync(config_source, 'utf-8'))
+  log(`  ✅ 建立 ${config_target}`)
+}
+
 function deployClaude() {
   log('=== claude ===')
   const target = join(HOME, '.claude')
@@ -456,6 +482,8 @@ function main() {
       }
       log(`來源: ${SRC} (subtree)`)
       log(`目標: ${targets.join(', ')}`)
+      console.log('')
+      deployConfig()
       console.log('')
       for (const t of targets) { deployers[t](); console.log('') }
       log('deploy 完成。請重啟各 agent CLI 以載入新設定。')

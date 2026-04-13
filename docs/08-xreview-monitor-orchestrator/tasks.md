@@ -95,22 +95,27 @@
 
 測試：orchestrator 52/52、runner 21/21、npm test 全平台綠。
 
-## M5 扶正（M4.5 通過後）
+## M5 扶正
 
-- [ ] 將 `ddd.xreview2` 的內容覆蓋 `ddd.xreview`：
-  ```bash
-  rm -rf ddd-workflow/skills/ddd.xreview
-  mv ddd-workflow/skills/ddd.xreview2 ddd-workflow/skills/ddd.xreview
-  # 編輯 SKILL.md 把 name / trigger / 標題改回 ddd.xreview
-  ```
-- [ ] 移除 SKILL.md 開頭的「測試版」警語、恢復完整 trigger phrases
-- [ ] `npm run deploy && npm test` 確認 11 個 skill（不再有 ddd.xreview2）
-- [ ] works.md 記錄扶正完成
+- [x] 將 `ddd.xreview2` 的內容覆蓋 `ddd.xreview`（`trash-put` + `mv`）
+- [x] 移除 SKILL.md 開頭的「測試版」警語、恢復完整 trigger phrases
+- [x] `npm run deploy && npm test` 全平台綠（10 個 skill，不再有 ddd.xreview2）
+- [x] works.md 記錄扶正完成
+
+## M6 雙模 + 配置中心化（追加）
+
+- [x] orchestrator 加 mode 偵測：`CLAUDECODE` → streaming、其他 → blocking、`XREVIEW_MODE` 可覆寫
+- [x] blocking 模式 footer：`ALL_DONE` 後列出每個 reviewer 的 `[STATUS]` + log path
+- [x] subshell 寫 `<log>.status` sidecar 讓 footer 不需要 re-parse stdout
+- [x] config fallback：CLI 無 spec → 讀 `$XDG_CONFIG_HOME/ddd-workflow/xreview.json`
+- [x] `ddd-workflow/config/xreview.json` 模板（claude-opus-4-6 為預設）
+- [x] `cli.js` 加 `deployConfig()`：copy if not exists，保留使用者自訂
+- [x] AGENTS.md 「Cross Review 模型設定」段落從表格縮成一段話指向 config 路徑
+- [x] SKILL.md Monitor command 不再 hard-code spec 列表（改為依賴 config）
+- [x] 補測試：blocking footer / streaming 不出 footer / config resolution / CLI 覆蓋 / 空或無效 config（共 +12 asserts，總計 79/79）
 
 ## Commit 計畫
 
-- 階段 1（現在）：M1 + M2 + M3 一起 commit（docs/08 + orchestrator + tests + ddd.xreview2 + 順手清理）
-- 階段 2（M4 通過後）：M4 結果寫進 works.md，commit
-- 階段 3（M5）：扶正 commit
-
-每個 commit 前由使用者確認。
+- 階段 1（已 commit ed80973）：M1 + M2 + M3
+- 階段 2（已 commit 24751b2 / e17e35a）：M4 結果 + cross review findings
+- 階段 3（現在）：M5 扶正 + M6 雙模/配置中心化
