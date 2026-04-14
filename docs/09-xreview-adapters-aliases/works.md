@@ -649,3 +649,105 @@ Coordinator 決定「現在就修 3 項，合進 sprint 09」——派 ddd-devel
 - Commit 1（已 done，b5e5c60）：M7 implementation checkpoint
 - Commit 2（已 done，57d688e）：fix $final race
 - Commit 3（本條）：opencode 3 Important findings 全修 + tasks/works 收尾
+
+---
+
+## 2026-04-14 (afternoon) — Post-sprint xreview hotfix
+
+Sprint 09 全收尾後，coordinator 跑一輪正式 cross review（opus / gpt-5.4 / gemini-3-pro）驗證 M7 成果。產出兩個實質 finding + 一個意外暴露的 P0。
+
+### Cross review 結果摘要
+
+| Reviewer | 狀態 | Finding |
+|---|---|---|
+| claude:opus | transport RETURN, final 空 | 暴露 P0（見下） |
+| opencode:gpt-5.4 | 2 Important（信心高） | I1 orchestrator 重複 spec race / I2 gemini `.response` 漏 plan 檔 |
+| gemini:gemini-3-pro | APPROVED | 無阻擋問題，一個 dead code non-blocking |
+
+Coordinator 驗證：I1 確認真實、I2 模型相依（gemini-flash 會、gemini-3-pro 不會，延後觀察）、dead code 為刻意保留。
+
+### P0 追根因：claude plan mode + Bash 互斥
+
+log `xreview-...-claude_claude-opus-4-6.log:487` 關鍵訊息：
+
+```
+[DEBUG] Bash tool permission denied
+```
+
+組合：
+- `claude.sh:68` 用 `--permission-mode plan`
+- `ddd-reviewer.md` tools 含 `Bash`，review 流程第一步就是 `git --no-pager diff` 取變更
+- Claude Code plan mode **一律禁 Bash**，連 read-only 命令也擋（官方 Issue #13067 feature request 已知限制，尚未釋出 allowlist）
+- Issue #2058 證實 Claude Code permission system 不支援 per-mode allowlist
+
+**結論**：plan mode 與 ddd-reviewer 流程根本互斥。過去 haiku 同現象（works.md `### 第二輪 e2e` 記錄）為同一根因。
+
+### Hotfix 方案選擇
+
+評估三條路（參考 WebSearch + Claude Code 官方 docs）：
+
+| 方案 | 做法 | 取捨 |
+|---|---|---|
+| A. 改 permission-mode | `plan` → `default`（吃 user/local settings allow rules） | 相依本機設定，CI 環境可能要補 `--allowedTools`；實作最簡 |
+| B. Adapter 預備 diff | adapter 先跑 git diff 存檔、agent tools 拿掉 Bash | 最安全，但改動三處檔案 |
+| C. Plan mode + allowlist | 查無此能力 | **不可行**（Issue #13067 未釋出） |
+
+使用者決策：採 **A**（最小變更）。正式要 commit 前會先跑 hotfix 驗證 final 有內容。
+
+### Hotfix 實作（ddd-developer）
+
+**Task 1 — claude.sh mode 修正**
+- line 68：`--permission-mode plan` → `--permission-mode default`
+- line 72 jq filter：`'.result // empty'` → `'if type=="array" then (map(select(.type=="result")) | last // .[-1]).result else .result end // empty'`
+- **計畫外順帶修隱藏 bug**：ddd-developer 實測發現 `claude -p --output-format json` 在 plan 與 default mode 都回 **JSON array**（envelope 流），不是 single object。原 jq filter `.result` 從 M7 起就錯，但被 plan mode 下 Bash 被拒的 transport 失敗遮蓋（final 反正永遠空，jq 對錯沒差）。Hotfix 順手修
+- haiku 驗證：exit 0、final.txt 153 bytes、內容正確（agent 跑 pwd + git log 回傳）
+
+**Task 2 — orchestrator dedupe**
+- `xreview-orchestrator.sh:211` 之後加 dedupe block（alias resolve 完、validation loop 前）
+- 用 bash associative array 保留首次出現、後續重複跳過，警告到 **stderr**（不污染 stdout event stream）
+- `XREVIEW_WARN: deduped duplicate spec: <spec>`
+- `xreview-orchestrator.test.sh` 新增 `M8 dedupe` 測試區塊：6 assertion 涵蓋 exit code / event count / WARN 方向 / 檔案單一性
+- Red → Green 照流程，既有測試 142 → 148 passed
+
+**Task 3 — 文件對齊（coordinator）**
+- `cli-adapters.md` table row 20：claude 抽取描述改為「stdout 多為 JSON array of envelopes，舊版可能回單一 object」
+- `cli-adapters.md` §Read-Only 機制：說明從 plan 改為 default 的原因（含 Issue #13067 引用）
+- `cli-adapters.md` §輸出格式與 Final 抽取：說明 array 取 `type=="result"` 最後一筆的邏輯
+- `claude.sh` 檔頭 comment（line 10-14）同步更新
+
+### 驗收
+
+- adapters.test.sh：114 passed（111 → 114，新增 3 assertion 涵蓋 array extraction / permission-mode plan 防回歸 / final 內容）
+- xreview-orchestrator.test.sh：148 passed（142 → 148，新增 6 M8 dedupe assertion）
+- cli-adapters.md 靜態字串 assertion 仍綠
+
+### 延後項
+
+- **I2 gemini `.response` 漏 plan 檔**：僅 flash 觸發，3-pro 目前 OK。納入觀察清單，若使用者切 flash 再處理
+- **CI 環境 allow rules**：default mode 相依使用者 user/local settings；若要跑 CI 需補 `--allowedTools "Bash(git --no-pager:*,...)"` 顯式授權。目前只針對 coordinator 本機環境
+
+### 第二輪 xreview e2e（hotfix 驗收）
+
+用 haiku / gpt-5-mini / flash 小模型跑一輪 cross review（review 對象為 uncommitted hotfix diff）：
+
+| Reviewer | final size | 結論 |
+|---|---|---|
+| claude:haiku | **7299 bytes** | Approve（0 Critical / 2 Imp：bash 4.0+ 標註 / CI caveat）|
+| opencode:gpt-5-mini | 14810 bytes | Block 1 Critical + 3 Imp |
+| gemini:gemini-flash | 0 bytes FAIL | model 404——config alias value `gemini-flash` 非 gemini CLI 認得的字串（應為 `flash` 或全名）|
+
+**主驗收**：claude:haiku 從第一輪的 0 bytes 變 7299 bytes，claude adapter hotfix 證實有效。Gemini flash 失敗是 config alias 層問題（見下），非 hotfix regression。
+
+**Coordinator 驗證 gpt-5-mini findings**：
+
+- 🔴 Critical（default mode 安全邊界下放）→ **降格為 caveat**：本機 coordinator 環境早有 allow rules，default mode 即恢復 claude permission system 本來的設計。使用者已明確選 A' 並接受此假設。
+- 🟡 Imp1 jq fallback（擴加 `.content`/`.text`）→ **False positive**：claude `.result` 是穩定 string contract，YAGNI。
+- 🟡 Imp2 dedupe whitespace normalize → **False positive**：specs 來源（bash argv / jq parse）已預正規化。
+- 🟡 Imp3 M8 測試 N>2 參數化 → **Nice-to-have**，列 watch item。
+
+**Coordinator 採納的補強**（使用者裁示「加 inline comment 就好，不改邏輯」）：
+
+- `claude.sh`：`--permission-mode default` 上方加 4 行 comment 記錄 why default / Issue #13067 + #2058 / CI caveat
+- `xreview-orchestrator.sh`：`declare -A _seen_specs=()` 上方加 bash 4.0+ 相依 comment
+
+Config 旁支待使用者自行調整：`~/.config/ddd-workflow/xreview.json` 的 `pro`/`flash` alias value 要從 `gemini-pro`/`gemini-flash` 改回 gemini CLI native alias `pro`/`flash` 或完整 model id，否則 gemini reviewer 持續 404。

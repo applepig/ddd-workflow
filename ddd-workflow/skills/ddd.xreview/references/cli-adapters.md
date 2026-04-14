@@ -17,7 +17,7 @@
 
 | CLI | Final 抽取 | Verbose 去處 |
 |-----|-----------|--------------|
-| claude | `--output-format json`（stdout 為單一 JSON object） → `jq -r '.result // empty' > $final_out`；另用 `--debug-file <tmp>` 接 verbose，adapter 結束前 `cat` 該 tmp 到 stderr 後刪除 | stderr（含 debug-file 被重播的內容）|
+| claude | `--output-format json`（stdout 多為 JSON array of envelopes，舊版可能回單一 object） → jq filter 兼容兩種形態抽 `.result`（array 情況取 `type=="result"` 最後一筆）寫入 `$final_out`；另用 `--debug-file <tmp>` 接 verbose，adapter 結束前 `cat` 該 tmp 到 stderr 後刪除 | stderr（含 debug-file 被重播的內容）|
 | codex | `-o "$final_out"` 讓 CLI 直接把純 text 寫入 final；ADR-12 流程會先用 python3 + tomllib 讀 `ddd-reviewer.toml` 的 `developer_instructions`，prepend 到一份 mktemp effective prompt 再 pipe 進 `codex exec` | stderr（CLI 進度輸出）|
 | gemini | `--output-format json` → `jq -r '.response // empty' > $final_out` | stderr（CLI log）|
 | opencode | `--format json` 吐 ndjson event stream → `tee /dev/stderr` 把原始 ndjson 複製到 stderr 供除錯，再 `jq -rs 'map(select(.type=="text")) \| map(.part.text) \| join("")' > $final_out` 抽出所有 text part | stderr（tee 複製的 ndjson）|
@@ -195,7 +195,7 @@ claude -p \
   --agent ddd-reviewer \
   --model "$model" \
   --no-session-persistence \
-  --permission-mode plan \
+  --permission-mode default \
   --output-format json \
   --debug-file "$debug_file" \
   < prompt.md
@@ -207,13 +207,13 @@ claude -p \
 
 ### Read-Only 機制
 
-`--permission-mode plan` 套用 Plan Mode——技術層面禁止修改專案檔案，讀取操作自動批准。
+`--permission-mode default` 搭配使用者本機 user/local settings 的 allow rules 控管可執行命令。曾短暫採用 `--permission-mode plan`，但 Claude Code plan mode 一律禁 Bash（官方 issue #13067 已知限制），導致 ddd-reviewer 無法跑 `git --no-pager diff` 取變更、final 恆空。改為 default mode 後，Bash 受使用者 settings 中的細粒度 allowlist（如 `Bash(git --no-pager:*)`）保護。
 
 ### 輸出格式與 Final 抽取
 
-`adapters/claude.sh` 用 `--output-format json` 讓 stdout 變成單一 JSON object，`.result` 欄位為 agent 最終訊息。adapter 流程：
+`adapters/claude.sh` 用 `--output-format json`，stdout 多為 JSON array of envelopes（舊版可能回單一 object）；agent 最終訊息為 array 中最後一筆 `type=="result"` 元素的 `.result`。adapter 流程：
 
-1. pipeline：`claude ... | jq -r '.result // empty' > $final_out`，用 `PIPESTATUS[0]` 保留 CLI 自己的 rc
+1. pipeline：jq filter 兼容 array/object 兩種形態抽 `.result` 寫入 `$final_out`，用 `PIPESTATUS[0]` 保留 CLI 自己的 rc
 2. `--debug-file <tmp>` 把 CLI 的 verbose trace 寫到臨時 sidecar，adapter 結束前 `cat` 這份 sidecar 到 stderr（前綴一行 `=== claude --debug-file content ===`）讓 orchestrator `.log` 仍有完整除錯資訊，然後 `rm -f` 清掉 sidecar
 3. stderr 自然流向 orchestrator 的 log，不做 `exec 2>&1` merge
 
