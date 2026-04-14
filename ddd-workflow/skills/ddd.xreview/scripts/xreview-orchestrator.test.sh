@@ -141,13 +141,13 @@ rc=$?
 assert_exit_code "claude reviewer exits 0" "$rc" 0
 assert_contains "claude START emitted" "$output" "START claude:claude-haiku-4-5-20251001"
 assert_contains "START emits log path" "$output" "START claude:claude-haiku-4-5-20251001 /tmp/xreview-"
-assert_contains "claude DONE emitted" "$output" "DONE claude:claude-haiku-4-5-20251001 /tmp/xreview-"
+assert_contains "claude DONE emitted" "$output" "RETURN claude:claude-haiku-4-5-20251001 /tmp/xreview-"
 assert_contains "ALL_DONE emitted" "$output" "ALL_DONE"
 assert_not_contains "no FAIL for happy path" "$output" "FAIL"
 
 # Verify log file has meta header written by parent shell (so main agent can
 # Read the log safely immediately after seeing START, without racing setsid).
-done_log_path=$(echo "$output" | grep -E "^DONE " | head -1 | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+done_log_path=$(echo "$output" | grep -E "^RETURN " | head -1 | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
 if [[ -n "$done_log_path" && -f "$done_log_path" ]]; then
   if grep -q '^\[xreview\] START claude:claude-haiku-4-5-20251001 ' "$done_log_path"; then
     ((PASS++)); echo "  PASS: log file starts with meta START header"
@@ -189,7 +189,7 @@ assert_exit_code "multi reviewers exits 0" "$rc" 0
 
 # All STARTs should appear before any DONE (deterministic since main shell
 # emits all STARTs synchronously before the parallel section runs)
-first_done_line=$(echo "$output" | grep -nE "^DONE " | head -1 | cut -d: -f1)
+first_done_line=$(echo "$output" | grep -nE "^RETURN " | head -1 | cut -d: -f1)
 last_start_line=$(echo "$output" | grep -nE "^START " | tail -1 | cut -d: -f1)
 if [[ -n "$first_done_line" && -n "$last_start_line" && \
       "$last_start_line" -lt "$first_done_line" ]]; then
@@ -200,7 +200,7 @@ else
 fi
 
 start_count=$(count_lines_matching "$output" "START ")
-done_count=$(count_lines_matching "$output" "DONE ")
+done_count=$(count_lines_matching "$output" "RETURN ")
 all_done_count=$(count_lines_matching "$output" "ALL_DONE")
 
 [[ "$start_count" -eq 3 ]] && { ((PASS++)); echo "  PASS: 3 START events"; } || \
@@ -250,7 +250,7 @@ echo "--- Test: log file actually written ---"
 # ============================================================
 
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "claude:log-test-model" 2>&1)
-log_path=$(echo "$output" | grep -E "^DONE " | sed -E 's/.*log=//; s/^DONE [^ ]+ //')
+log_path=$(echo "$output" | grep -E "^RETURN " | sed -E 's/.*log=//; s/^RETURN [^ ]+ //')
 
 if [[ -n "$log_path" && -f "$log_path" ]]; then
   ((PASS++)); echo "  PASS: log file exists at $log_path"
@@ -278,12 +278,12 @@ assert_exit_code "opencode reviewer exits 0" "$rc" 0
 assert_contains "opencode START emitted with log path" "$output" \
   "START opencode:gpt-5-mini /tmp/xreview-"
 assert_contains "opencode DONE emitted with log path" "$output" \
-  "DONE opencode:gpt-5-mini /tmp/xreview-"
+  "RETURN opencode:gpt-5-mini /tmp/xreview-"
 assert_contains "ALL_DONE emitted for opencode run" "$output" "ALL_DONE"
 assert_not_contains "no FAIL for opencode happy path" "$output" "FAIL"
 
 # Cleanup opencode log file.
-opencode_log=$(echo "$output" | grep -E "^DONE opencode:" | \
+opencode_log=$(echo "$output" | grep -E "^RETURN opencode:" | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
 [[ -n "$opencode_log" ]] && rm -f "$opencode_log"
 
@@ -298,10 +298,10 @@ assert_exit_code "gemini reviewer exits 0" "$rc" 0
 assert_contains "gemini START emitted with log path" "$output" \
   "START gemini:gemini-3-flash /tmp/xreview-"
 assert_contains "gemini DONE emitted with log path" "$output" \
-  "DONE gemini:gemini-3-flash /tmp/xreview-"
+  "RETURN gemini:gemini-3-flash /tmp/xreview-"
 assert_not_contains "no FAIL for gemini happy path" "$output" "FAIL"
 
-gemini_log=$(echo "$output" | grep -E "^DONE gemini:" | \
+gemini_log=$(echo "$output" | grep -E "^RETURN gemini:" | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
 [[ -n "$gemini_log" ]] && rm -f "$gemini_log"
 
@@ -359,11 +359,11 @@ invalid_model_log=$(echo "$output" | grep -E "^FAIL claude:bad model! " | \
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" \
   "bad/cli:x" "claude:claude-haiku-4-5-20251001" 2>&1)
 assert_contains "valid spec runs despite sibling invalid" "$output" \
-  "DONE claude:claude-haiku-4-5-20251001"
+  "RETURN claude:claude-haiku-4-5-20251001"
 assert_contains "invalid sibling still FAILs" "$output" "FAIL bad/cli:x"
 
 # Cleanup both log files from the mixed run.
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp"
 done
@@ -522,10 +522,10 @@ rc=$?
 
 assert_exit_code "blocking mode exits 0" "$rc" 0
 assert_contains "blocking emits ALL_DONE" "$output" "ALL_DONE"
-assert_contains "blocking footer header" "$output" "=== Cross Review Summary (2 reviewers: 2 done) ==="
+assert_contains "blocking footer header" "$output" "=== Cross Review Summary (2 reviewers: 2 returned) ==="
 assert_contains "blocking footer Read instruction" "$output" "Read these log files"
-assert_contains "blocking footer DONE row for a" "$output" "[DONE]      claude:blocking-a"
-assert_contains "blocking footer DONE row for b" "$output" "[DONE]      claude:blocking-b"
+assert_contains "blocking footer DONE row for a" "$output" "[RETURN]    claude:blocking-a"
+assert_contains "blocking footer DONE row for b" "$output" "[RETURN]    claude:blocking-b"
 assert_contains "blocking footer Next instruction" "$output" "Next: Read each log above"
 
 # Footer rows must appear AFTER ALL_DONE, not before (Monitor consumers should
@@ -539,7 +539,7 @@ else
 fi
 
 # Cleanup logs from blocking-mode test.
-for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 
@@ -562,7 +562,7 @@ cp "$MOCK_DIR/claude-fail" "$MOCK_DIR/claude"
 output=$(PATH="$MOCK_DIR:$PATH" XREVIEW_MODE=blocking bash "$ORCH" "$PROMPT_FILE" \
   "claude:fail-test" 2>&1)
 assert_contains "blocking footer FAIL row" "$output" "[FAIL=7]  claude:fail-test"
-assert_contains "blocking footer counts failure" "$output" "1 reviewers: 0 done, 1 failed"
+assert_contains "blocking footer counts failure" "$output" "1 reviewers: 0 returned, 1 failed"
 
 # Restore happy claude mock for any future tests.
 cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
@@ -575,7 +575,7 @@ MOCK_EOF
 chmod +x "$MOCK_DIR/claude"
 
 # Cleanup logs.
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -591,7 +591,7 @@ assert_not_contains "streaming has no summary header" "$output" "Cross Review Su
 assert_not_contains "streaming has no Next instruction" "$output" "Next: Read each log"
 
 # Cleanup.
-for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 
@@ -620,7 +620,7 @@ output=$(PATH="$MOCK_DIR:$PATH" env -u XREVIEW_MODE -u CLAUDECODE \
 assert_contains "no CLAUDECODE → footer appears" "$output" "Cross Review Summary"
 
 # Cleanup any logs from the two env tests.
-for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 
@@ -648,12 +648,12 @@ output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
 rc=$?
 
 assert_exit_code "config-resolved run exits 0" "$rc" 0
-assert_contains "config spec a was dispatched" "$output" "DONE claude:cfg-model-a"
-assert_contains "config spec b was dispatched" "$output" "DONE claude:cfg-model-b"
+assert_contains "config spec a was dispatched" "$output" "RETURN claude:cfg-model-a"
+assert_contains "config spec b was dispatched" "$output" "RETURN claude:cfg-model-b"
 assert_contains "config-resolved ALL_DONE" "$output" "ALL_DONE"
 
 # Cleanup logs from this run.
-for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 rm -rf "$cfg_xdg"
@@ -681,13 +681,13 @@ rc=$?
 
 assert_exit_code "alias-hit config run exits 0" "$rc" 0
 assert_contains "alias-hit claude START uses resolved spec" "$output" "START claude:opus /tmp/xreview-"
-assert_contains "alias-hit opencode DONE uses resolved spec" "$output" "DONE opencode:github-copilot/gpt-5.4 /tmp/xreview-"
-assert_contains "alias-hit gemini DONE uses resolved spec" "$output" "DONE gemini:flash /tmp/xreview-"
-assert_contains "alias-hit footer uses resolved spec" "$output" "[DONE]      claude:opus"
+assert_contains "alias-hit opencode DONE uses resolved spec" "$output" "RETURN opencode:github-copilot/gpt-5.4 /tmp/xreview-"
+assert_contains "alias-hit gemini DONE uses resolved spec" "$output" "RETURN gemini:flash /tmp/xreview-"
+assert_contains "alias-hit footer uses resolved spec" "$output" "[RETURN]    claude:opus"
 assert_not_contains "alias-hit raw reviewer name hidden from events" "$output" "START opus"
-assert_not_contains "alias-hit raw reviewer name hidden from footer" "$output" "[DONE]      opus"
+assert_not_contains "alias-hit raw reviewer name hidden from footer" "$output" "[RETURN]    opus"
 
-alias_log=$(echo "$output" | grep -E "^DONE claude:opus " | \
+alias_log=$(echo "$output" | grep -E "^RETURN claude:opus " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
 if [[ -n "$alias_log" && "$alias_log" == *"claude_opus.log" ]]; then
   ((PASS++)); echo "  PASS: alias-hit log filename uses resolved spec slug"
@@ -702,7 +702,7 @@ else
   ((FAIL++)); echo "  FAIL: alias-hit status sidecar missing ($alias_status)"
 fi
 
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -736,7 +736,7 @@ else
   ((FAIL++)); echo "  FAIL: alias-miss log filename did not keep raw spec slug ($miss_log)"
 fi
 
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -759,11 +759,11 @@ output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
 rc=$?
 
 assert_exit_code "no-aliases config run exits 0" "$rc" 0
-assert_contains "no-aliases full spec stays raw" "$output" "DONE claude:no-alias-a"
+assert_contains "no-aliases full spec stays raw" "$output" "RETURN claude:no-alias-a"
 assert_contains "no-aliases short spec stays raw" "$output" "START unknown-short /tmp/xreview-"
 assert_contains "no-aliases short spec fails as raw unknown cli" "$output" "FAIL unknown-short exit_code=1 log=/tmp/xreview-"
 
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -788,11 +788,11 @@ CFG_EOF
 output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
   bash "$ORCH" "$PROMPT_FILE" "5.4" 2>&1)
 
-assert_contains "CLI alias resolved to full spec" "$output" "DONE opencode:github-copilot/gpt-5.4"
+assert_contains "CLI alias resolved to full spec" "$output" "RETURN opencode:github-copilot/gpt-5.4"
 assert_not_contains "config reviewer ignored when CLI alias present" "$output" "gemini:pro"
-assert_not_contains "raw CLI alias not shown in events" "$output" "DONE 5.4"
+assert_not_contains "raw CLI alias not shown in events" "$output" "RETURN 5.4"
 
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -825,11 +825,11 @@ rc=$?
 
 assert_exit_code "default short reviewers run exits 0" "$rc" 0
 assert_contains "default short reviewer claude resolved" "$output" "START claude:opus /tmp/xreview-"
-assert_contains "default short reviewer opencode resolved" "$output" "DONE opencode:github-copilot/gpt-5.4 /tmp/xreview-"
-assert_contains "default short reviewer gemini resolved" "$output" "DONE gemini:pro /tmp/xreview-"
-assert_contains "default short reviewer footer uses resolved spec" "$output" "[DONE]      gemini:pro"
+assert_contains "default short reviewer opencode resolved" "$output" "RETURN opencode:github-copilot/gpt-5.4 /tmp/xreview-"
+assert_contains "default short reviewer gemini resolved" "$output" "RETURN gemini:pro /tmp/xreview-"
+assert_contains "default short reviewer footer uses resolved spec" "$output" "[RETURN]    gemini:pro"
 
-default_log=$(echo "$output" | grep -E "^DONE gemini:pro " | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+default_log=$(echo "$output" | grep -E "^RETURN gemini:pro " | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
 default_status="${default_log%.log}.status"
 if [[ -f "$default_status" ]]; then
   ((PASS++)); echo "  PASS: default short reviewer status sidecar uses resolved spec slug"
@@ -837,7 +837,7 @@ else
   ((FAIL++)); echo "  FAIL: default short reviewer status sidecar missing ($default_status)"
 fi
 
-for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
   sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
@@ -856,10 +856,10 @@ CFG_EOF
 output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
   bash "$ORCH" "$PROMPT_FILE" "claude:cli-wins" 2>&1)
 
-assert_contains "CLI-arg spec dispatched" "$output" "DONE claude:cli-wins"
+assert_contains "CLI-arg spec dispatched" "$output" "RETURN claude:cli-wins"
 assert_not_contains "config spec ignored when CLI args present" "$output" "should-not-run"
 
-for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 rm -rf "$cfg_xdg"
@@ -890,6 +890,256 @@ assert_contains "malformed JSON FAIL message" "$output" \
   "FAIL orchestrator config_empty_or_invalid"
 
 rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: orchestrator enforces outer timeout (ADR-6, M6.1, M6.2) ---"
+# ============================================================
+# After M5.1, timeout lives at the orchestrator layer, not in adapters.
+# Mock a claude that sleeps longer than the injected timeout. Orchestrator
+# should SIGTERM it via `timeout --foreground` and report exit_code=124 via FAIL.
+#
+# M6.1 (F1): timeout(1) only SIGTERMs its direct child (bash adapter), so
+# the CLI grandchild becomes an orphan that keeps burning quota. The
+# orchestrator must sweep its own pgid on rc==124 to kill stragglers.
+# M6.2 (F2): log must contain XREVIEW_ERROR marker so the step 7.1 peek
+# protocol classifies a timed-out reviewer as content-layer failure rather
+# than a half-finished review.
+
+# Sentinel file lets us check whether the mock CLI process survives the
+# orchestrator's timeout sweep.
+mock_pid_file=$(mktemp /tmp/xreview-mock-claude-pid-XXXXXX)
+rm -f "$mock_pid_file"  # mock writes it; we just want a unique path
+
+# M6 cross-review F4: mock noisily prints >10 lines after registering its PID,
+# so if the orchestrator appended the timeout marker BEFORE sweeping, the
+# marker would be pushed out of `tail -n 10`. We assert the marker still lands
+# within the tail window, which only holds if marker is appended AFTER sweep.
+cat > "$MOCK_DIR/claude" << MOCK_EOF
+#!/usr/bin/env bash
+cat > /dev/null
+echo \$\$ > "$mock_pid_file"
+# Flood the log so a pre-sweep marker would be pushed out of tail -n 10.
+for i in \$(seq 1 30); do
+  echo "MOCK_NOISE_LINE_\$i"
+done
+sleep 20
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+output=$(PATH="$MOCK_DIR:$PATH" XREVIEW_TIMEOUT_SEC=1 \
+  bash "$ORCH" "$PROMPT_FILE" "claude:slow-model" 2>&1)
+rc=$?
+
+assert_exit_code "orchestrator exits 0 even on reviewer timeout" "$rc" 0
+assert_contains "orchestrator emits FAIL with exit_code=124" "$output" \
+  "FAIL claude:slow-model exit_code=124"
+assert_contains "orchestrator still emits ALL_DONE after timeout" "$output" "ALL_DONE"
+
+# F1: mock CLI process must NOT survive the orchestrator's pgid sweep.
+mock_pid=""
+[[ -f "$mock_pid_file" ]] && mock_pid=$(cat "$mock_pid_file" 2>/dev/null | tr -d ' \n')
+if [[ -z "$mock_pid" ]]; then
+  ((FAIL++)); echo "  FAIL: mock claude never wrote PID sentinel — test setup broken"
+elif kill -0 "$mock_pid" 2>/dev/null; then
+  ((FAIL++)); echo "  FAIL: F1 — mock claude PID $mock_pid still alive after orchestrator timeout (orphan)"
+  kill -KILL "$mock_pid" 2>/dev/null || true
+else
+  ((PASS++)); echo "  PASS: F1 — mock claude killed by orchestrator pgid sweep"
+fi
+rm -f "$mock_pid_file"
+
+# F2 / F4: log must contain the timeout marker within the final `tail -n 10`
+# window — that's the exact window step 7.1's peek protocol inspects. Strong
+# assertion guards against the marker being pushed out by orphan buffered
+# writes during the TERM→KILL grace period.
+timeout_log=$(echo "$output" | grep -oE '/tmp/xreview-[^ ]+\.log' | head -1)
+if [[ -n "$timeout_log" ]] && [[ -f "$timeout_log" ]]; then
+  if grep -q "XREVIEW_ERROR: orchestrator timeout" "$timeout_log"; then
+    ((PASS++)); echo "  PASS: F2 — log contains 'XREVIEW_ERROR: orchestrator timeout' marker"
+  else
+    ((FAIL++)); echo "  FAIL: F2 — log $timeout_log missing 'XREVIEW_ERROR: orchestrator timeout' marker"
+  fi
+
+  if tail -n 10 "$timeout_log" | grep -q "XREVIEW_ERROR: orchestrator timeout"; then
+    ((PASS++)); echo "  PASS: F4 — marker lands within step 7.1 peek window (tail -n 10)"
+  else
+    ((FAIL++)); echo "  FAIL: F4 — marker exists but outside tail -n 10 (pushed out by orphan noise)"
+    echo "     tail -n 10 of $timeout_log:"
+    tail -n 10 "$timeout_log" | sed 's/^/       /'
+  fi
+else
+  ((FAIL++)); echo "  FAIL: F2 — could not locate timeout reviewer's log file from output"
+fi
+
+# Cleanup the timed-out reviewer's log artifacts.
+for lp in $(echo "$output" | grep -E "^(START|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+
+# Restore happy claude mock.
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CLAUDE_CALLED args=$*"
+cat
+echo "MOCK_CLAUDE_DONE"
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+# ============================================================
+echo "--- Test: stdin mode — prompt read from stdin, no positional file arg (M6.4) ---"
+# ============================================================
+# Coordinator should only need a single Monitor call — no pre/post Bash for
+# mktemp/rm. When orchestrator is invoked with no positional prompt file
+# (or with "-" sentinel), it slurps stdin into its own tmpfile and rms on exit.
+
+# Use a mock claude that echoes the prompt file path and content so we can
+# verify the stdin bytes actually reached the adapter/CLI.
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CLAUDE_CALLED args=$*"
+# Adapter pipes prompt file as stdin; echo each line back with a marker.
+while IFS= read -r line; do
+  echo "MOCK_CLAUDE_STDIN: $line"
+done
+echo "MOCK_CLAUDE_DONE"
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+stdin_output=$(PATH="$MOCK_DIR:$PATH" \
+  bash "$ORCH" "-" "claude:stdin-test" <<< "HELLO-FROM-STDIN" 2>&1)
+rc=$?
+
+assert_exit_code "stdin mode exits 0" "$rc" 0
+assert_contains "stdin mode emits START" "$stdin_output" "START claude:stdin-test"
+assert_contains "stdin mode emits RETURN" "$stdin_output" "RETURN claude:stdin-test"
+
+# The mock CLI wrote the stdin content into the log. Verify we can find it.
+stdin_log=$(echo "$stdin_output" | grep -E "^RETURN " | head -1 | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+if [[ -n "$stdin_log" && -f "$stdin_log" ]]; then
+  if grep -q "MOCK_CLAUDE_STDIN: HELLO-FROM-STDIN" "$stdin_log"; then
+    ((PASS++)); echo "  PASS: stdin content reached CLI via internal tmpfile"
+  else
+    ((FAIL++)); echo "  FAIL: stdin content missing from reviewer log"
+    head -10 "$stdin_log"
+  fi
+  rm -f "$stdin_log" "${stdin_log%.log}.status"
+else
+  ((FAIL++)); echo "  FAIL: could not locate log path from RETURN event"
+fi
+
+# Verify no xreview-prompt-* tmpfile leaked after exit (orchestrator trap should rm it).
+leaked=$(find /tmp -maxdepth 1 -name 'xreview-prompt-*' -newer "$MOCK_DIR" 2>/dev/null)
+if [[ -z "$leaked" ]]; then
+  ((PASS++)); echo "  PASS: stdin mode cleaned up internal tmpfile"
+else
+  ((FAIL++)); echo "  FAIL: stdin mode leaked tmpfile(s): $leaked"
+  rm -f $leaked
+fi
+
+# ============================================================
+echo "--- Test: stdin mode with no positional args at all (uses config reviewers) ---"
+# ============================================================
+# `bash orch < prompt.txt` with nothing else should also work — stdin for
+# prompt, config for reviewers.
+
+cfg_dir_stdin=$(mktemp -d)
+mkdir -p "$cfg_dir_stdin/ddd-workflow"
+cat > "$cfg_dir_stdin/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["claude:cfg-stdin-model"]
+}
+CFG_EOF
+
+noargs_output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_dir_stdin" \
+  bash "$ORCH" <<< "NOARGS-STDIN-CONTENT" 2>&1)
+rc=$?
+
+assert_exit_code "no-args stdin mode exits 0" "$rc" 0
+assert_contains "no-args stdin uses config reviewer" "$noargs_output" \
+  "RETURN claude:cfg-stdin-model"
+
+# Cleanup logs from this run
+for lp in $(echo "$noargs_output" | grep -E "^(START|RETURN|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-' | sort -u); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_dir_stdin"
+
+# ============================================================
+echo "--- Test: stdin mode — early EXIT trap cleans tmpfile on validation failure (M6.4, codex F2) ---"
+# ============================================================
+# stdin mode mktemps and registers an early EXIT trap BEFORE cleanup() is
+# defined. If validation (config missing / empty / invalid mode) exits between
+# the early trap and the main cleanup() registration, the early trap is the
+# only thing keeping the tmpfile from leaking. Previously untested — codex
+# (gpt-5.4) pointed this out during M6 cross review.
+
+# Snapshot current xreview-prompt-* files so we can diff before/after.
+before_prompts=$(find /tmp -maxdepth 1 -name 'xreview-prompt-*.md' 2>/dev/null | wc -l)
+
+# Empty config forces early-exit at the "config_empty_or_invalid" branch.
+cfg_empty_dir=$(mktemp -d)
+mkdir -p "$cfg_empty_dir/ddd-workflow"
+cat > "$cfg_empty_dir/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": []
+}
+CFG_EOF
+
+# Run stdin mode with no CLI reviewer specs and the empty config. This
+# mktemps the prompt tmpfile (registering the early trap), then exits 1 at
+# the config validation step — well before cleanup() gets the chance to run.
+early_output=$(XDG_CONFIG_HOME="$cfg_empty_dir" \
+  bash "$ORCH" <<< "EARLY-TRAP-PROMPT" 2>&1)
+early_rc=$?
+
+assert_exit_code "empty config exits 1 (validation path)" "$early_rc" 1
+assert_contains "empty config emits FAIL reason" "$early_output" \
+  "FAIL orchestrator config_empty_or_invalid"
+
+after_prompts=$(find /tmp -maxdepth 1 -name 'xreview-prompt-*.md' 2>/dev/null | wc -l)
+if [[ "$after_prompts" -eq "$before_prompts" ]]; then
+  ((PASS++)); echo "  PASS: early EXIT trap rm'd the stdin-mode tmpfile (no leak on validation fail)"
+else
+  leaked=$(find /tmp -maxdepth 1 -name 'xreview-prompt-*.md' 2>/dev/null)
+  ((FAIL++)); echo "  FAIL: stdin tmpfile leaked on validation fail (before=$before_prompts after=$after_prompts)"
+  echo "     leaked paths: $leaked"
+  # Clean up to avoid contaminating other tests.
+  find /tmp -maxdepth 1 -name 'xreview-prompt-*.md' -newer "$MOCK_DIR" -delete 2>/dev/null || true
+fi
+
+rm -rf "$cfg_empty_dir"
+
+# ============================================================
+echo "--- Test: backward compat — positional prompt file still works (M6.4) ---"
+# ============================================================
+# Restore happy mock for safety, then verify old calling convention.
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CLAUDE_CALLED args=$*"
+cat
+echo "MOCK_CLAUDE_DONE"
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+bc_output=$(PATH="$MOCK_DIR:$PATH" \
+  bash "$ORCH" "$PROMPT_FILE" "claude:backcompat-model" 2>&1)
+rc=$?
+
+assert_exit_code "backward compat exits 0" "$rc" 0
+assert_contains "backward compat RETURN emitted" "$bc_output" \
+  "RETURN claude:backcompat-model"
+
+# Cleanup
+for lp in $(echo "$bc_output" | grep -E "^RETURN " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
 
 # ============================================================
 echo ""

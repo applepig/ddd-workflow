@@ -161,6 +161,14 @@ import { createSession } from '../services/session'
 * Commit 需使用者明確同意，測試通過不等於提交授權
 * 每個 milestone 完成後應立即準備 commit，方便獨立 review
 
+### Worktree 路徑約定
+
+手動 `git worktree add` 時，路徑一律建在 `$PROJECT_ROOT/.worktrees/<branch-name>/`，並把 `/.worktrees` 加進根目錄 `.gitignore`。這個約定確保：
+
+- worktree 天然在 project root 之下，opencode / gemini 等 CLI 的 workspace sandbox 不會擋路（sandbox 預設只放行當前 project）
+- 單一 convention 比「各 CLI 各自加放行 flag」簡單
+- 不與 Claude Code `Agent({ isolation: "worktree" })` 硬編碼的 `.claude/worktree/*` 衝突——那是 harness 自動行為，本約定指的是**手動**建 worktree 時的建議位置
+
 ## 工具偏好
 
 優先使用更快、更現代的 CLI 工具：

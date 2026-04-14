@@ -321,6 +321,50 @@ Coordinator 在 SKILL.md 步驟 7（整合與呈現之前）需主動 peek 每�
 - 相容既有 `.gitignore` 實務（在 `.gitignore` 加 `/worktree` 即可）
 - 不影響 Claude Code 的 `.claude/worktree/*` 行為——那是 harness 自動行為，本約定指的是「手動建 worktree 時的建議位置」
 
+### ADR-10：Orchestrator stdin mode（次要路徑）＋ Monitor command 內嵌 rm（主要路徑）
+
+最終決策：orchestrator 支援兩種 prompt 輸入，但**主要使用路徑**（coordinator + Monitor）採用後者，stdin mode 只供直接 shell 呼叫或未來 Monitor 支援真正 stdin 時使用：
+
+- **File mode + Monitor command 內嵌 rm（主要）**：coordinator 先用 Bash tool `mktemp` 產生 prompt 檔並寫入，然後 Monitor command 以 `bash orchestrator.sh $path; rc=$?; rm -f $path; exit $rc` 形式傳檔案路徑。prompt 檔路徑會出現在 Monitor argv，但 prompt **內容**不會。
+- **Stdin mode（次要）**：無位置參數或首位 `-` sentinel 時 orchestrator 自己 mktemp + 讀 stdin + EXIT trap 清理。
+
+**設計沿革**（M6.4 + M6 cross review F5）：
+
+原 M6.4 只引入 stdin mode 並把 SKILL.md 範例改成 Monitor heredoc，期望省掉 coordinator 的 `mktemp` Bash call 且把 prompt 完全隔離於 command line。cross review（opencode 信心高）指出：**heredoc 仍屬 Monitor 的 `command` shell 字串**，該字串整段會成為 Monitor spawn 的 bash 之 argv／process listing 可見內容，因此 prompt 實際上還是曝光在 command line——與 SKILL.md 明文「嚴禁在 command line 暴露 prompt 內容」衝突。
+
+Monitor tool 的 schema 檢查（fields 僅 `command / description / timeout_ms / persistent`）確認 Monitor 無獨立 stdin 參數。因此：
+
+- Monitor 主要路徑必須走 file mode：prompt 寫檔、command 傳路徑、尾端 `rm` 清理
+- `rc=$?; rm -f $path; exit $rc` 保證 orchestrator 的 exit code 透出給 Monitor 判讀、prompt 檔無論成敗都清
+- Stdin mode 保留作為直接 shell 呼叫的便利（`echo ... | bash orch.sh`）及未來 Monitor 支援真 stdin 時的升級通路
+- SKILL.md 明確禁止在 Monitor 場景使用 stdin 路徑
+
+此 ADR 取代 M6.4 初版設計——stdin mode 程式碼保留（還是有獨立價值），但使用定位改為次要路徑。
+
+介面選項比較：
+
+- (a) 純 stdin（無 backward compat）：最乾淨但打破既有 file-path 用法與測試
+- (b) 純 argv `--prompt-string <str>`：避免 stdin 不透明度但 prompt 變成 argv 的一部分（回到 command line 曝光）
+- (c) **混合（採用）**：無位置參數或 `-` → stdin mode；有位置參數 → file mode。保留 backward compat，兩條路徑並存
+
+背景：M5.5 端到端結束後使用者觀察到 SKILL.md 步驟 2 / 步驟 6 要求 coordinator 跑三次 Bash tool call（`mktemp` / heredoc write / `rm`）才能派一次 xreview，且 prompt file 路徑會出現在 Monitor command line 的 argv。內化後：
+
+- Coordinator 只需單一 Monitor call，heredoc 直接 pipe prompt 到 orchestrator stdin
+- Prompt 路徑不再出現在 command line（argv 只剩 orchestrator 路徑 + 可選 reviewer specs）
+- 暫存檔由 orchestrator EXIT trap 清理，不依賴 coordinator 事後 `rm`
+
+介面選項比較：
+
+- (a) 純 stdin（無 backward compat）：最乾淨但打破既有 file-path 用法與測試
+- (b) 純 argv `--prompt-string <str>`：避免 stdin 不透明度但 prompt 變成 argv 的一部分（回到 command line 曝光）
+- (c) **混合（採用）**：無位置參數或 `-` → stdin mode；有位置參數 → file mode。保留 backward compat，新用法覆蓋主要路徑
+
+理由：
+
+- 混合方案讓既有 `adapters.test.sh` / `xreview-orchestrator.test.sh` 對 file mode 的 assertion 全部繼續有效（零遷移成本）
+- `-` 作為 stdin sentinel 讓「stdin + CLI reviewer specs」可共存（`bash orch - claude:opus gemini:pro`），無歧義
+- EXIT trap 整合進既有 `cleanup()` 函數，INT / TERM / 正常退出三條路徑都保證清理
+
 ### ADR-9：Adapter 放行 sandbox：opencode 用 `OPENCODE_PERMISSION` env var、gemini 用 `--include-directories` flag
 
 決策：opencode 和 gemini adapter 在呼叫 CLI 時主動放行 `/tmp`、`$HOME/.config`、當前 worktree 路徑。

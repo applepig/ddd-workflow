@@ -115,8 +115,8 @@
 - [x] Task 4.4: 更新 `ddd-workflow/skills/ddd.xreview/references/cli-adapters.md`——所有 `xreview-runner.sh` 引用改為 `adapters/<cli>.sh`（檢查檔案開頭、各 CLI 段落、使用範例）
 - [x] Task 4.5: 跑 `npm run deploy`，觀察 stdout 無錯誤
 - [x] Task 4.6: 跑 `npm test` 驗 symlink 完整性全綠（含 adapters/ 的 symlink 結構）
-- [ ] Task 4.7: 手動端到端——對當前 sprint 的 git diff 派一次 real xreview（3 個 reviewer）；驗證 (a) 3 個都收到 `DONE`、(b) event stream 顯示 resolved 真名如 `START claude:opus`、(c) 報告引用的 log filename 含真名 slug
-- [ ] Task 4.8: Self check：所有 spec 驗收條件逐條確認 ✓；若有遺漏補 task 回歸處理
+- [x] Task 4.7: 手動端到端——對當前 sprint 的 git diff 派一次 real xreview（3 個 reviewer）；驗證 (a) 3 個都收到 `RETURN`（M5.2 改名）、(b) event stream 顯示 resolved 真名如 `START claude:opus`、(c) 報告引用的 log filename 含真名 slug。於 M5.5 端到端驗證一併達成
+- [x] Task 4.8: Self check：所有 spec 驗收條件逐條確認 ✓；若有遺漏補 task 回歸處理（M5.5.3 合併處理）
 
 ---
 
@@ -146,31 +146,31 @@ M1.2、M5.4 是值得平行的區塊。若 coordinator 判斷 4 個 adapter / M5
 
 ### M5.1 Timeout 上移到 orchestrator（ADR-6）
 
-- [ ] Task 5.1.1 (Red)：於 `xreview-orchestrator.test.sh` 新增測試：mock adapter 故意 sleep 超過 `timeout_val`，預期 orchestrator raise `FAIL ... exit_code=124 ...`
-- [ ] Task 5.1.2 (Red)：於 `adapters.test.sh` 刪除原有的 timeout 124 測試（4 個 adapter 各一個），改為 assert「adapter 不處理 timeout，rc 純透傳」
-- [ ] Task 5.1.3 (Green)：`xreview-orchestrator.sh:307` 改為 `timeout --foreground "$timeout_val" bash "$adapter" "$prompt_file" "$model" >> "$log" 2>&1`
-- [ ] Task 5.1.4 (Green)：`adapters/claude.sh` 移除 `timeout --foreground "$timeout_sec"` 與 `rc == 124 → XREVIEW_ERROR: timed out` 區塊，保留 `command -v` 與 `exec 2>&1`
-- [ ] Task 5.1.5 (Green)：`adapters/opencode.sh` 同上
-- [ ] Task 5.1.6 (Green)：`adapters/gemini.sh` 同上
-- [ ] Task 5.1.7 (Green)：`adapters/codex.sh` 同上
-- [ ] Task 5.1.8 (Refactor)：檢查 adapter 介面註解——`timeout-seconds` 參數還要不要收？若保留需加註「目前未用、為未來擴充」；若拿掉則 orchestrator 呼叫端也少傳一個
-- [ ] Task 5.1.9：跑 `bash adapters.test.sh` + `bash xreview-orchestrator.test.sh` 全綠
+- [x] Task 5.1.1 (Red)：於 `xreview-orchestrator.test.sh` 新增測試：mock adapter 故意 sleep 超過 `timeout_val`，預期 orchestrator raise `FAIL ... exit_code=124 ...`
+- [x] Task 5.1.2 (Red)：於 `adapters.test.sh` 刪除原有的 timeout 124 測試（4 個 adapter 各一個），改為 assert「adapter 不處理 timeout，rc 純透傳」
+- [x] Task 5.1.3 (Green)：`xreview-orchestrator.sh` setsid body 改為 `timeout --foreground "$timeout_val" bash "$adapter" ...`；同時加 `XREVIEW_TIMEOUT_SEC` env var 讓測試能注入小 timeout
+- [x] Task 5.1.4 (Green)：`adapters/claude.sh` 移除 `timeout --foreground "$timeout_sec"` 與 `rc == 124 → XREVIEW_ERROR: timed out` 區塊，保留 `command -v` 與 `exec 2>&1`
+- [x] Task 5.1.5 (Green)：`adapters/opencode.sh` 同上
+- [x] Task 5.1.6 (Green)：`adapters/gemini.sh` 同上
+- [x] Task 5.1.7 (Green)：`adapters/codex.sh` 同上
+- [x] Task 5.1.8 (Refactor)：adapter 3rd arg 保留但 header 註為「accepted but ignored, ADR-6: timeout is enforced by orchestrator」，orchestrator 呼叫端簽名不變
+- [x] Task 5.1.9：跑 `bash adapters.test.sh` + `bash xreview-orchestrator.test.sh` 全綠（58 + 107 passed）
 
 ### M5.2 事件命名：DONE → RETURN（ADR-7）
 
-- [ ] Task 5.2.1 (Red)：`xreview-orchestrator.test.sh` 全域把 assert 裡的 `DONE` 改為 `RETURN`（搜 `DONE[^_]` 避免動到 `ALL_DONE`）
-- [ ] Task 5.2.2 (Green)：`xreview-orchestrator.sh` 的 `echo "DONE $spec $log"` 改為 `echo "RETURN $spec $log"`
-- [ ] Task 5.2.3：跑 test 驗證全綠
-- [ ] Task 5.2.4：`SKILL.md` 步驟 4（事件收集）把 `DONE` 全部改 `RETURN`、補說明「RETURN = transport OK，未必 content OK」
-- [ ] Task 5.2.5：`SKILL.md` 步驟 5（失敗處理）把 `DONE` 改 `RETURN`
-- [ ] Task 5.2.6：`SKILL.md` 步驟 7（Coordinator 驗證）在開頭加一條：「先 peek 每個 RETURN 對應的 log 尾 10 行。若含 `FAIL:` / `XREVIEW_ERROR:` / agent 自陳失敗，標為 content-layer 失敗，不納入有效 review。」
-- [ ] Task 5.2.7：`ddd-reviewer` agent 若有 `DONE:` 收尾格式的指令，檢查是否需要同步（agent 自己回報的 `DONE:` 是 content-layer 語意，不是 transport，保留不動）
+- [x] Task 5.2.1 (Red)：`xreview-orchestrator.test.sh` 全域把 assert 裡的 `DONE` 改為 `RETURN`（搜 `DONE[^_]` 避免動到 `ALL_DONE`）；footer row 字串從 `[DONE]      ` 改為 `[RETURN]    `；summary 文字從 `N done` 改為 `N returned`
+- [x] Task 5.2.2 (Green)：`xreview-orchestrator.sh` 的 `echo "DONE $spec $log"` 改為 `echo "RETURN $spec $log"`；footer 同步改用 `[RETURN]` 與 `returned` 字樣
+- [x] Task 5.2.3：跑 test 驗證全綠（107 passed）
+- [x] Task 5.2.4：`SKILL.md` 步驟 4 事件範例與 events_map pseudo 改用 `RETURN`，新增「事件語意」段落說明 RETURN/FAIL/ALL_DONE 三層
+- [x] Task 5.2.5：`SKILL.md` 步驟 5 失敗處理改用 RETURN 並補「content-layer 失敗由步驟 7 peek 過濾」
+- [x] Task 5.2.6：`SKILL.md` 步驟 7 前置加上「7.1 Content layer 過濾」子段，定義 `tail -n 10` peek 協議與 4 類判斷規則（`FAIL:` / `XREVIEW_ERROR:` / 自陳失敗 / 空 log）
+- [x] Task 5.2.7：`ddd-reviewer` agent 的 `DONE:` 收尾是 content-layer 語意（agent 自陳成功），與 orchestrator transport 層 `RETURN` 正交，保留不動
 
 ### M5.3 Worktree 路徑約定（ADR-8）
 
-- [ ] Task 5.3.1：`ddd-workflow/references/AGENTS.md` 加一段「worktree 建議路徑」——位置建議放在「角色分工」與「DDD 工作流」之間的合適段落
-- [ ] Task 5.3.2：`ddd-workflow/skills/ddd.work/SKILL.md` 的 Phase 2 派發段落若有提到 worktree 位置，呼應本約定；沒提到就補一行
-- [ ] Task 5.3.3：根目錄 `.gitignore` 檢查是否已有 `/.worktrees`；沒有就補
+- [x] Task 5.3.1：`ddd-workflow/references/AGENTS.md` 於 Git 段落下加 `### Worktree 路徑約定`，說明 `$PROJECT_ROOT/.worktrees/<branch>/` 與與 Claude Code `.claude/worktree/*` 的區別
+- [x] Task 5.3.2：`ddd-workflow/skills/ddd.work/SKILL.md` 的 Phase 2 派發段落加入 blockquote 呼應 AGENTS.md 的 convention
+- [x] Task 5.3.3：根目錄 `.gitignore` 加入 `/.worktrees/`
 
 ### M5.4 Adapter sandbox 放行（ADR-9）
 
@@ -180,30 +180,102 @@ M1.2、M5.4 是值得平行的區塊。若 coordinator 判斷 4 個 adapter / M5
 > 範圍：`ddd-workflow/skills/ddd.xreview/scripts/adapters/opencode.sh` + `adapters.test.sh` 對應測試
 > 介面契約：adapter 呼叫時把 `OPENCODE_PERMISSION` env var 設為 inline JSON（放行 `/tmp/**` 和 `~/.config/ddd-workflow/**`），不需要暫存檔、無 trap cleanup
 > 驗證：mock opencode 捕捉 `OPENCODE_PERMISSION` env var 字串，驗 JSON 包含正確 pattern
-- [ ] Task 5.4.A.1 (Red)：`adapters.test.sh` 新增 opencode sandbox 測試（mock 側錄 `OPENCODE_PERMISSION` env 並用 jq assert `external_directory` 含 `/tmp/**` 與 `~/.config/ddd-workflow/**`）
-- [ ] Task 5.4.A.2 (Green)：實作 opencode adapter 的 `OPENCODE_PERMISSION` env var 機制（單行 inline JSON）
+- [x] Task 5.4.A.1 (Red)：`adapters.test.sh` 新增 opencode sandbox 測試（mock 側錄 `OPENCODE_PERMISSION` env 並用 jq assert `external_directory` 含 `/tmp/**` 與 `~/.config/ddd-workflow/**`）
+- [x] Task 5.4.A.2 (Green)：實作 opencode adapter 的 `OPENCODE_PERMISSION` env var 機制（單行 inline JSON）
 
 **[B] adapters/gemini.sh** — `isolation: worktree`
 > 範圍：`ddd-workflow/skills/ddd.xreview/scripts/adapters/gemini.sh` + `adapters.test.sh` 對應測試
 > 介面契約：呼叫加 `--include-directories /tmp,$HOME/.config`
 > 驗證：mock gemini assert 收到正確 flag
-- [ ] Task 5.4.B.1 (Red)：`adapters.test.sh` 新增 gemini sandbox 測試（assert flag 字串存在）
-- [ ] Task 5.4.B.2 (Green)：實作 gemini adapter 的 `--include-directories` 參數
+- [x] Task 5.4.B.1 (Red)：`adapters.test.sh` 新增 gemini sandbox 測試（assert flag 字串存在）
+- [x] Task 5.4.B.2 (Green)：實作 gemini adapter 的 `--include-directories` 參數
 
 #### 🔗 匯合點 / codex 驗證
 
-- [ ] Task 5.4.C.1：手動跑一次 codex reviewer（用 sprint diff），觀察是否撞 workspace 限制。若無 → 記在 works.md「已驗證不需要」；若有 → 補 Task 5.4.C.2 實作對應放行
+- [ ] Task 5.4.C.1：手動跑一次 codex reviewer（用 sprint diff），觀察是否撞 workspace 限制。**developer 無法在 session 內實跑 codex CLI，轉交 coordinator 於 M5.5 端到端驗證時順便判斷**；若撞限制再補 Task 5.4.C.2。codex.sh header 已標註 sandbox 放行狀態待驗證
 - [ ] Task 5.4.C.2（條件式）：視 5.4.C.1 結果補 codex adapter 的 sandbox flag
-- [ ] Task 5.4.D：跑完整 `bash adapters.test.sh` + `bash xreview-orchestrator.test.sh` 全綠
+- [x] Task 5.4.D：跑完整 `bash adapters.test.sh` + `bash xreview-orchestrator.test.sh` 全綠（58 + 107 passed）
 
 ### M5.5 端到端重跑 Task 4.7
 
-- [ ] Task 5.5.1：`npm run deploy`、`npm test` 全綠
-- [ ] Task 5.5.2：對 sprint diff（或已 commit 的 M5 變更）重派 xreview，驗：
-  - (a) 3 個 reviewer 都 `RETURN`
-  - (b) 每個 log 尾都是真 review 內容（不含 `FAIL:`）
-  - (c) event stream 顯示 resolved 真名
-  - (d) log filename 含真名 slug
-  - (e) coordinator 驗證步驟（步驟 7）能正確 peek log 尾、不誤判
-- [ ] Task 5.5.3 (Self check)：逐條檢查 spec M5 驗收條件，若有遺漏補 task 回歸
-- [ ] Task 5.5.4：勾選 Task 4.7 / Task 4.8 完成狀態（前 sprint 的尾巴）
+- [x] Task 5.5.1：`npm run deploy`、`npm test` 全綠（2026-04-14 執行）
+- [x] Task 5.5.2：對 M5 uncommitted 變更派 xreview，5 項驗收全達成：
+  - (a) 3 個 reviewer 都 `RETURN` ✅
+  - (b) 每個 log 尾都是真 review 內容（不含 `FAIL:`）✅
+  - (c) event stream 顯示 resolved 真名（`claude:claude-opus-4-6` / `opencode:github-copilot/gpt-5.4` / `gemini:gemini-3-pro-preview`）✅
+  - (d) log filename 含真名 slug ✅
+  - (e) 步驟 7.1 peek 過濾可正確運作 ✅
+- [x] Task 5.5.3 (Self check)：spec M5 驗收條件逐條確認；發現 3 個 post-review findings 轉為 M6（見下）
+- [x] Task 5.5.4：勾選 Task 4.7 / Task 4.8
+
+---
+
+## M6: Cross review findings 修復 + orchestrator UX 改善
+
+> 背景：M5.5 端到端 xreview 產生 3 個 findings（F1 process leak、F2 timeout log marker、F3 XDG）；使用者另追加新需求（M6.4）把 prompt tmp file 管理內化到 orchestrator，降低 coordinator 的 tool call 次數。
+> 預期結果：4 條改善全部落地、`adapters.test.sh` / `xreview-orchestrator.test.sh` 全綠、重跑一次端到端驗證 F1 修復（mock CLI 真的被 kill）。
+> 驗證方式：unit tests + 一次實跑 xreview 觀察 timeout 路徑是否乾淨收尾、coordinator 是否只需單次 Monitor call。
+
+### M6.1 修 F1：timeout 外層化造成 CLI orphan（Critical，claude + opencode 共識）
+
+**背景**：`setsid bash → timeout --foreground → bash adapter → CLI binary` 結構下，`timeout(1)` 只 SIGTERM 直接子（bash adapter）；adapter 死後 CLI 成為 orphan，被 init 收養，繼續吃 token quota。cleanup trap 只在使用者 INT/TERM 中斷 orchestrator 時有效，timeout 觸發路徑不會清理 pgid 內 orphan。
+
+**方案 A（推薦）**：adapter 最後一行改 `exec "$cli_path" ... < "$prompt_file"`。被 timeout 監控的就是 CLI 本體，SIGTERM 直達。失去 adapter 的「rc≠0 錯誤轉寫」訊息，但 orchestrator 已 emit `FAIL ... exit_code=N`，重複價值低。
+
+**方案 B（保守）**：orchestrator 加 `--kill-after=5`，setsid 子 shell 收到 124 時 `kill -TERM 0; sleep 1; kill -KILL 0` 清自己 pgid。保留 adapter 後處理區塊。
+
+- [x] Task 6.1.1（決策）：採 Method B（orchestrator pgid sweep），adapter 保留不動；理由：保留 adapter 的 rc 訊息與「可獨立 bash 執行」便利性，F1 的治本方案在 orchestrator 層就能解
+- [x] Task 6.1.2 (Red)：`xreview-orchestrator.test.sh` 的 timeout test 用 mock sentinel 寫 `$$` 到 tmp 檔，timeout 觸發後 `kill -0` 驗 mock claude 真的消失
+- [x] Task 6.1.3 (Green)：setsid body 內 rc==124 時掃 `pgrep -g $BASHPID` 排除自己後 SIGTERM，sleep 1 再 SIGKILL 殘存
+- [x] Task 6.1.4：test 全綠（orchestrator 118 passed）
+
+### M6.2 修 F2：timeout 觸發時 log 沒 marker，違反步驟 7.1 peek 協議（Important，opencode 指出）
+
+**背景**：現在 rc==124 時只 emit event，log 尾是**半截 review 內容**——非空、不含 `FAIL:` / `XREVIEW_ERROR:`，會被步驟 7.1 的 4 類過濾判為**有效 review**，誤導 coordinator。
+
+- [x] Task 6.2.1 (Red)：timeout test 新增 assert：log 含 `XREVIEW_ERROR: orchestrator timeout` 字樣
+- [x] Task 6.2.2 (Green)：orchestrator rc==124 時 `echo "XREVIEW_ERROR: orchestrator timeout after ${timeout_val}s" >> "$log"`（在 pgid sweep 前先 append）
+- [x] Task 6.2.3：test 全綠（合併在 M6.1 一起驗）
+
+### M6.3 修 F3：XDG_CONFIG_HOME 硬編碼（claude 指出，低優先）
+
+**背景**：`opencode.sh` 的 `~/.config/ddd-workflow/**` 與 `gemini.sh` 的 `$HOME/.config` 寫死，不 honor `XDG_CONFIG_HOME`。orchestrator 本身有正確用 `${XDG_CONFIG_HOME:-$HOME/.config}`，adapter 沒對齊。
+
+- [x] Task 6.3.1（opencode）：`config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"` + `jq -nc --arg cfg_glob ...` 組 OPENCODE_PERMISSION JSON
+- [x] Task 6.3.2（gemini）：`--include-directories "/tmp,$config_dir"`
+- [x] Task 6.3.3：adapters.test.sh 新增兩條 XDG override test（opencode JSON 含 `/xdg/override/ddd-workflow/**`；gemini argv 含 `/xdg/override`）。既有 `~/.config/...` key assertion 改為絕對路徑 `${HOME}/.config/...`
+
+### M6.4 新需求：orchestrator 內化 prompt 檔管理
+
+**背景（使用者 2026-04-14 追加）**：目前 SKILL.md 步驟 2 要求 coordinator 用 Bash tool 跑 `mktemp` + heredoc write，步驟 6 後另外 `rm`。這迫使 coordinator 多兩次 Bash tool call，也讓 prompt 路徑在 Monitor command 裡曝光。orchestrator 內化可以：
+
+- 讓 coordinator 只需單一 Monitor call，prompt 內容經由 stdin（或 argv `--prompt-string`）傳入
+- orchestrator 自己 `mktemp` + `trap EXIT cleanup` 管理暫存檔
+- prompt 內容不出現在 Monitor command line（更安全）
+
+**介面設計選項**：
+- (a) stdin：`bash xreview-orchestrator.sh < prompt.md` 或 `echo "..." | bash xreview-orchestrator.sh`——最 unix-y，但需要 Monitor 支援 stdin 傳遞
+- (b) argv：新增 `--prompt-string <string>` flag，orchestrator 偵測到就內部 mktemp。保留舊用法 `bash orchestrator.sh <prompt-file>` 相容
+- (c) **混合（推薦）**：`bash orchestrator.sh` 無位置參數時讀 stdin，有位置參數時仍當 file path（backward compat）
+
+- [x] Task 6.4.1（spec）：ADR-10 寫入 spec.md，選 (c) 混合介面（stdin + file backward compat，`-` 作 stdin sentinel）
+- [x] Task 6.4.2 (Red)：新增 3 組測試——stdin with `-` sentinel + specs、no-args stdin 讀 config reviewers、backward compat positional file
+- [x] Task 6.4.3 (Green)：orchestrator 頂部判斷 `$# -eq 0 || $1 == "-"` 進 stdin mode，mktemp + 早期 EXIT trap；主 cleanup() 也包進 `rm -f "$_tmp_prompt_file"`，覆蓋 INT/TERM/正常退出三條路徑
+- [x] Task 6.4.4：SKILL.md 步驟 2 改寫——Monitor command 以 heredoc pipe prompt 到 orchestrator stdin，orchestrator 端 `-` 搭配 reviewer spec 位置參數可同時覆蓋清單
+- [x] Task 6.4.5：SKILL.md 注意事項「暫存檔清理」bullet 改為說明 orchestrator EXIT trap 自動處理
+- [x] Task 6.4.6：unit test 全綠（118 passed）；e2e 驗證在 M6.6
+
+### M6.5 codex sandbox 驗證（延續 M5.4.C）
+
+- [ ] Task 6.5.1：手動派一次 codex reviewer（加入 4 個 reviewer 的端到端 xreview），觀察是否撞 workspace 限制
+- [ ] Task 6.5.2（條件式）：若撞限制，補 `codex.sh` 的 sandbox 放行機制（flag / env var 視 codex CLI 支援）
+
+### M6.6 端到端驗證
+
+- [ ] Task 6.6.1：重跑一次端到端 xreview（4 reviewer 含 codex），驗：
+  - (a) 4 個都 RETURN（含 codex）
+  - (b) log 尾都是真 review 內容
+  - (c) coordinator 不需要任何 Bash call（完成步驟 2 + 步驟 6 全在 Monitor 內）
+  - (d) 手動觸發 timeout（模擬超時）驗 F1/F2 修復（CLI 真消失 + log 有 marker）
+- [ ] Task 6.6.2：Self check + 勾選所有 task
+- [ ] Task 6.6.3：commit M6 變更

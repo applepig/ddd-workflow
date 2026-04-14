@@ -150,6 +150,8 @@ description: >
     description: "[X] <工作線標題>"
 ```
 
+> **Worktree 路徑**：Claude Code `isolation: "worktree"` 自動建在 `.claude/worktree/*`。若需**手動**建 worktree（例如獨立 sprint branch），遵循 AGENTS.md 的 Git 段落約定，一律放在 `$PROJECT_ROOT/.worktrees/<branch-name>/`，避免 opencode / gemini 等 CLI 的 workspace sandbox 擋路。
+
 派發完畢後，立即輸出狀態表：
 
 ```markdown

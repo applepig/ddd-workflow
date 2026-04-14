@@ -8,9 +8,17 @@
 #
 # Stdout event stream (one event per line):
 #   START <cli:model> <log-path>
-#   DONE <cli:model> <log-path>
+#   RETURN <cli:model> <log-path>
 #   FAIL <cli:model> exit_code=<n> log=<log-path>
 #   ALL_DONE
+#
+# Event semantics (ADR-7):
+#   RETURN = transport layer success (CLI exit 0). Does NOT guarantee the log
+#            contains a real review — the agent may have emitted "FAIL:" or
+#            "XREVIEW_ERROR:" content while exiting normally. Coordinator MUST
+#            peek the log tail before treating the reviewer as valid.
+#   FAIL   = transport layer failure (CLI exit non-zero, timeout 124, etc).
+#   ALL_DONE = fan-out complete (reached end of reviewer loop).
 #
 # Each reviewer's full output is written to /tmp/xreview-<runid>-<slug>.log
 # The log path is emitted on START so callers can tail it during the review.
@@ -31,7 +39,7 @@
 #     their own `timeout` safety net fires or they finish naturally.
 #
 # Output modes:
-#   - streaming (default when CLAUDECODE=1): pure event stream — START / DONE /
+#   - streaming (default when CLAUDECODE=1): pure event stream — START / RETURN /
 #     FAIL / ALL_DONE only. Designed for Claude Code's Monitor tool which
 #     turns each line into a notification.
 #   - blocking (default for everything else): same event stream, but after
@@ -45,8 +53,27 @@
 
 set -uo pipefail
 
-prompt_file="${1:?Usage: xreview-orchestrator.sh <prompt-file> [<cli:model>...]}"
-shift
+# M6.4: stdin mode. When invoked with no positional prompt file (or "-" sentinel),
+# slurp stdin into a managed tmpfile. This lets coordinator issue a single
+# Monitor call with the prompt piped in (heredoc / echo), no pre/post Bash tool
+# calls for mktemp + rm. The early trap guarantees cleanup even if validation
+# below exits before the main cleanup() function is registered.
+_tmp_prompt_file=""
+if [[ $# -eq 0 || "${1:-}" == "-" ]]; then
+  _tmp_prompt_file="$(mktemp /tmp/xreview-prompt-XXXXXX.md)" || {
+    echo "FAIL orchestrator mktemp_failed"
+    echo "ALL_DONE"
+    exit 1
+  }
+  trap '[[ -n "$_tmp_prompt_file" && -f "$_tmp_prompt_file" ]] && rm -f "$_tmp_prompt_file"' EXIT
+  cat > "$_tmp_prompt_file"
+  prompt_file="$_tmp_prompt_file"
+  # Drop the "-" sentinel if present so remaining args are all specs.
+  [[ "${1:-}" == "-" ]] && shift
+else
+  prompt_file="$1"
+  shift
+fi
 specs=("$@")
 
 # Validate prompt file early — fail fast before touching config or env.
@@ -112,9 +139,11 @@ adapter_dir="$script_dir/adapters"
 runid="$$-$(date +%s)-${RANDOM}"
 
 # Per-reviewer hard timeout: 50 minutes. Well within Monitor's 1hr cap but
-# long enough for deep-reasoning models (opus, gemini-pro). Hard-coded to
-# keep the contract simple; bump this if future models need more.
-per_reviewer_timeout=3000
+# long enough for deep-reasoning models (opus, gemini-pro). Overridable via
+# XREVIEW_TIMEOUT_SEC for tests; production always uses the default.
+# ADR-6: timeout is enforced here (orchestrator layer) via `timeout --foreground`,
+# NOT inside adapters. Adapters stay pure passthroughs.
+per_reviewer_timeout="${XREVIEW_TIMEOUT_SEC:-3000}"
 
 resolve_spec() {
   local spec="$1"
@@ -216,6 +245,11 @@ cleanup() {
   fi
 
   wait 2>/dev/null || true
+
+  # M6.4: remove the stdin-mode tmpfile if we created one. Runs on every exit
+  # path (normal, INT, TERM) via the traps below; supersedes the early trap
+  # registered before cleanup() was defined.
+  [[ -n "$_tmp_prompt_file" && -f "$_tmp_prompt_file" ]] && rm -f "$_tmp_prompt_file"
 }
 
 # INT/TERM: run cleanup and exit with conventional signal exit codes (128+N).
@@ -232,7 +266,7 @@ slug_of() {
 }
 
 # Fan out: each reviewer runs in a background subshell that emits its own
-# DONE/FAIL event. START is emitted up-front from the main shell so the
+# RETURN/FAIL event. START is emitted up-front from the main shell so the
 # event stream's leading section is deterministic, and includes the log path
 # so the caller can tail/peek the reviewer's output while it runs.
 #
@@ -301,11 +335,39 @@ for spec in "${valid_specs[@]:-}"; do
         >> "$log"
       rc=1
     else
-      # Delegate all per-CLI quirks (command lookup / timeout / stdin piping /
-      # flags) to the thin adapter. Append (>>) to preserve the parent-written
-      # meta header.
-      bash "$adapter" "$prompt_file" "$model" "$timeout_val" >> "$log" 2>&1
+      # Delegate per-CLI quirks (command lookup / stdin piping / flags) to the
+      # thin adapter. Timeout is enforced here (ADR-6) via `timeout --foreground`
+      # so new adapters automatically inherit the safety net. `--foreground`
+      # keeps the child in our process group so setsid-based cleanup still works.
+      # Append (>>) to preserve the parent-written meta header.
+      timeout --foreground "$timeout_val" \
+        bash "$adapter" "$prompt_file" "$model" "$timeout_val" >> "$log" 2>&1
       rc=$?
+
+      # M6.1 (F1): timeout(1) only SIGTERMs its direct child (bash adapter).
+      # The CLI grandchild becomes an orphan that keeps burning quota. Sweep
+      # our pgid (we are the setsid leader, pgid == BASHPID) to kill any
+      # remaining process. Exclude self so we can finish writing status/event.
+      # M6.2 (F2, tightened by M6 cross review F4): append the timeout marker
+      # AFTER the sweep finishes, not before. Otherwise CLI orphans still alive
+      # during the 1-second TERM grace period can flush buffered output into
+      # the same log fd, pushing the marker out of the step 7.1 tail -n 10
+      # peek window and letting a timed-out log pass as valid review.
+      if [[ $rc -eq 124 ]]; then
+        sweep_pgid="$BASHPID"
+        for orphan in $(pgrep -g "$sweep_pgid" 2>/dev/null); do
+          [[ "$orphan" -eq "$sweep_pgid" ]] && continue
+          kill -TERM "$orphan" 2>/dev/null || true
+        done
+        sleep 1
+        for orphan in $(pgrep -g "$sweep_pgid" 2>/dev/null); do
+          [[ "$orphan" -eq "$sweep_pgid" ]] && continue
+          kill -KILL "$orphan" 2>/dev/null || true
+        done
+        # All orphans are dead; nothing else can write to $log now. Append
+        # the marker last so it always lands in the final tail -n 10 window.
+        echo "XREVIEW_ERROR: orchestrator timeout after ${timeout_val}s" >> "$log"
+      fi
     fi
 
     # Sidecar status file lets the parent shell render a blocking-mode footer
@@ -313,8 +375,11 @@ for spec in "${valid_specs[@]:-}"; do
     # shell fd 1, not back through any capturable channel here).
     echo "$rc" > "${log%.log}.status"
 
+    # RETURN = transport OK (CLI exit 0). Content validity (did the agent
+    # actually produce a review?) is the coordinator responsibility — see
+    # SKILL.md step 7 for the log-tail peek protocol.
     if [[ $rc -eq 0 ]]; then
-      echo "DONE $spec $log"
+      echo "RETURN $spec $log"
     else
       echo "FAIL $spec exit_code=$rc log=$log"
     fi
@@ -349,7 +414,7 @@ if [[ "$mode" == "blocking" ]]; then
     if [[ -f "$status_file" ]]; then
       rc="$(cat "$status_file" 2>/dev/null || echo "?")"
       if [[ "$rc" == "0" ]]; then
-        rows+=("[DONE]      $spec  ->  $log")
+        rows+=("[RETURN]    $spec  ->  $log")
         ((done_count++))
       else
         rows+=("[FAIL=$rc]  $spec  ->  $log")
@@ -364,7 +429,10 @@ if [[ "$mode" == "blocking" ]]; then
   done
 
   total=${#specs[@]}
-  status_summary="$done_count done"
+  # ADR-7: "returned" mirrors the RETURN event — transport OK, content
+  # validity still to be confirmed by coordinator. Avoids "done" which could
+  # be misread as "review content is complete".
+  status_summary="$done_count returned"
   [[ $fail_count -gt 0 ]] && status_summary="$status_summary, $fail_count failed"
   [[ $unknown_count -gt 0 ]] && status_summary="$status_summary, $unknown_count unknown"
 
