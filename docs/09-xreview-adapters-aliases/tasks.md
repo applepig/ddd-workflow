@@ -278,4 +278,90 @@ M1.2、M5.4 是值得平行的區塊。若 coordinator 判斷 4 個 adapter / M5
   - (c) coordinator 不需要任何 Bash call（完成步驟 2 + 步驟 6 全在 Monitor 內）
   - (d) 手動觸發 timeout（模擬超時）驗 F1/F2 修復（CLI 真消失 + log 有 marker）
 - [ ] Task 6.6.2：Self check + 勾選所有 task
-- [ ] Task 6.6.3：commit M6 變更
+- [x] Task 6.6.3：commit M5+M6 變更（checkpoint 10437f8，含 sprint 10 plan 種子；M6.5 / M6.6 未勾項目 roll 進 M7 端到端一起驗）
+
+---
+
+## M7: Adapter JSON schema 雙輸出（ADR-11 + ADR-12）
+
+> 背景：M5.5 端到端時單一 codex reviewer log 可達 5329 行 / 356KB。2026-04-14 smoke test 揭露根因：adapter 的 `exec 2>&1` 把 CLI 原生分離的 stderr（verbose trace）硬 merge 進 stdout（final message），orchestrator 再 redirect 成單檔。拿掉 merge 並用各 CLI 的 JSON output flag 抽 final，一次解決 verbose/final 分離問題。
+> 預期結果：4 個 adapter 各自輸出 `.final.txt`（乾淨 agent 最終訊息）+ `.log`（verbose trace 除錯用）；SKILL.md 步驟 7.1 從 tail peek 改為 Read `.final.txt`；codex 正確套用 ddd-reviewer 角色。
+> 驗證方式：`bash adapters.test.sh` + `bash xreview-orchestrator.test.sh` 全綠；4 reviewer 端到端，4 個 `.final.txt` 都短乾淨可直接 Read。
+
+### M7.1 adapter 雙輸出介面升級
+
+介面契約更新：第 3 arg 從 `<timeout-seconds>`（ADR-6 起 ignored）改為 `<final-out-file>`。4 個 adapter 同步升級。
+
+#### 🔀 可平行工作線
+
+**[A] adapters/claude.sh** — `isolation: worktree`
+> 範圍：`claude.sh` + `adapters.test.sh` claude 段
+> 介面：`bash claude.sh <prompt> <model> <final-out>`；移除 `exec 2>&1`；改用 `--output-format json` + `--debug-file "$log_dir/$base.verbose"`；stdout 單 JSON 物件由 adapter `jq -r '.result' > "$final_out"` 抽純文字
+> 驗證：mock claude 吐 `{"result":"REVIEW_TEXT",...}` JSON 到 stdout、吐 verbose 到 --debug-file；assert `<final-out>` 只有 `REVIEW_TEXT`
+- [x] Task 7.1.A.1 (Red)：adapters.test.sh claude 段新增雙輸出 assertion（final 內容 + stderr/debug-file 分離）
+- [x] Task 7.1.A.2 (Green)：實作 claude.sh 雙輸出（移除 `exec 2>&1`、加 `--output-format json --debug-file`、adapter 內 jq 抽 `.result`）
+
+**[B] adapters/codex.sh** — `isolation: worktree`
+> 範圍：`codex.sh` + `adapters.test.sh` codex 段
+> 介面：`bash codex.sh <prompt> <model> <final-out>`；移除 `exec 2>&1`；加 `-o "$final_out"`；stderr 自然分離為 verbose
+> ADR-12：adapter 先用 `python3 -c 'import tomllib; ...'` 讀 `~/.codex/agents/ddd-reviewer.toml` 的 `developer_instructions`，concat 到 prompt 前；讀取失敗時降級（原 prompt + warning 到 stderr）
+> 驗證：mock codex 吐 final 到 `-o` 指定檔、吐 verbose 到 stderr；mock toml 驗 prepend；toml 不存在時驗 graceful degradation
+- [x] Task 7.1.B.1 (Red)：adapters.test.sh codex 段新增雙輸出 + prepend + degradation 三組 assertion
+- [x] Task 7.1.B.2 (Green)：實作 codex.sh 雙輸出 + developer_instructions prepend
+
+**[C] adapters/gemini.sh** — `isolation: worktree`
+> 範圍：`gemini.sh` + `adapters.test.sh` gemini 段
+> 介面：`bash gemini.sh <prompt> <model> <final-out>`；移除 `exec 2>&1`；改用 `--output-format json`；adapter `jq -r '.response' > "$final_out"`；stderr 自然分離
+> 驗證：mock gemini 吐 `{"session_id":"...","response":"REVIEW",...}` JSON；assert `<final-out>` 只有 `REVIEW`
+- [x] Task 7.1.C.1 (Red)：adapters.test.sh gemini 段新增雙輸出 assertion
+- [x] Task 7.1.C.2 (Green)：實作 gemini.sh 雙輸出
+
+**[D] adapters/opencode.sh** — `isolation: worktree`
+> 範圍：`opencode.sh` + `adapters.test.sh` opencode 段
+> 介面：`bash opencode.sh <prompt> <model> <final-out>`；移除 `exec 2>&1`；改用 `--format json`；stdout ndjson 用 `tee "$verbose_side" | jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")' > "$final_out"` 分流
+> 驗證：mock opencode 吐 ndjson 含 `{"type":"text","part":{"type":"text","text":"REVIEW"}}`；assert `<final-out>` 是 `REVIEW`，verbose 側保有全 ndjson
+- [x] Task 7.1.D.1 (Red)：adapters.test.sh opencode 段新增 ndjson 分流 assertion
+- [x] Task 7.1.D.2 (Green)：實作 opencode.sh 雙輸出
+
+#### 🔗 匯合點
+
+- [x] Task 7.1.E：4 adapter 合併後跑完整 `bash adapters.test.sh` 全綠（90 passed；M7.2 後分檔為 common + 4 per-CLI + runner）
+
+### M7.2 Orchestrator 配套
+
+- [x] Task 7.2.1 (Red)：`xreview-orchestrator.test.sh` 新增測試：`RETURN <spec> <log> <final>` 事件格式含第 3 欄；`FAIL` 事件同步帶 `final=<path>`；assert `.final.txt` 與 `.log` 同 slug
+- [x] Task 7.2.2 (Red)：新增測試：cleanup trap 不刪 `.final.txt`（與 `.log` 同生命週期）
+- [x] Task 7.2.3 (Green)：setsid body 計算 `final_file="${log%.log}.final.txt"` 並傳給 adapter 第 3 arg
+- [x] Task 7.2.4 (Green)：Event emit 改為 `RETURN $spec $log $final` / `FAIL $spec exit_code=$rc log=$log final=$final`
+- [x] Task 7.2.5 (Green)：blocking-mode footer 加一欄 `[FINAL]` 顯示 `.final.txt` 路徑（保持 12-char 對齊）
+- [x] Task 7.2.6：test 全綠（orchestrator 138 passed / adapters 90 passed）
+
+### M7.3 SKILL.md 步驟 7.1 改寫
+
+- [x] Task 7.3.1：步驟 7.1 peek 協議從「`tail -n 10 <log>` + 4 類字串判斷」改為「Read `<final.txt>`」
+- [x] Task 7.3.2：判斷規則簡化為 2 類——空 `.final.txt` → content-layer 失敗；非空 → findings 驗證
+- [x] Task 7.3.3：步驟 4 事件範例、步驟 6 整合與呈現、步驟 7 Coordinator 驗證段落全對齊新 event schema（`RETURN <spec> <log> <final>`）
+- [x] Task 7.3.4：references/cli-adapters.md 更新：記錄每家 CLI 的 JSON flag 與 final 抽取方式（claude `.result` / codex `-o` / gemini `.response` / opencode `jq text parts`）
+
+### M7.4 端到端驗證
+
+- [x] Task 7.4.1：`npm run deploy` + `npm test` 全綠
+- [ ] Task 7.4.2：派 4 reviewer 實跑 xreview（claude / opencode / gemini / codex），驗收條件：
+  - (a) 4 個都 `RETURN`
+  - (b) 4 個 `.final.txt` 都短乾淨（<2000 tokens，可直接 Read）且含實質 review findings
+  - (c) 4 個 `.log` 保有完整 verbose trace（除錯可追）
+  - (d) codex `.final.txt` 反映 ddd-reviewer 角色語氣（攻擊面/品質門檻等）
+  - (e) gemini `.final.txt` 非空（`.response` 有內容）
+- [ ] Task 7.4.3：Self check：M7 所有驗收條件逐條打勾；spec 中 M7 / ADR-11 / ADR-12 條文同步勾選
+- [ ] Task 7.4.4：commit M7 變更
+
+---
+
+## 平行度決策摘要（M7 追加）
+
+| Milestone | 平行度 | 理由 |
+|-----------|-------|------|
+| M7.1 adapter 雙輸出 | 🔀 4 線平行 | 4 個 adapter 檔案獨立、介面契約固定、每家 JSON schema 互不干擾 |
+| M7.2 orchestrator | 序列 | 集中在 orchestrator 單檔 + 對應 test |
+| M7.3 docs | 序列 | SKILL.md 單檔連動改 |
+| M7.4 端到端 | 序列 | 依賴前三個 milestone 完成 |

@@ -83,18 +83,23 @@ Monitor 期間，orchestrator 會以「每行一事件」形式回傳：
 START claude:claude-sonnet-4-6 /tmp/xreview-<runid>-claude_claude-sonnet-4-6.log
 START opencode:github-copilot/gpt-5.4 /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.log
 START gemini:gemini-3-pro-preview /tmp/xreview-<runid>-gemini_gemini-3-pro-preview.log
-RETURN claude:claude-sonnet-4-6 /tmp/xreview-<runid>-claude_claude-sonnet-4-6.log
-FAIL gemini:gemini-3-pro-preview exit_code=124 log=/tmp/xreview-<runid>-gemini_gemini-3-pro-preview.log
-RETURN opencode:github-copilot/gpt-5.4 /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.log
+RETURN claude:claude-sonnet-4-6 /tmp/xreview-<runid>-claude_claude-sonnet-4-6.log /tmp/xreview-<runid>-claude_claude-sonnet-4-6.final.txt
+FAIL gemini:gemini-3-pro-preview exit_code=124 log=/tmp/xreview-<runid>-gemini_gemini-3-pro-preview.log final=/tmp/xreview-<runid>-gemini_gemini-3-pro-preview.final.txt
+RETURN opencode:github-copilot/gpt-5.4 /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.log /tmp/xreview-<runid>-opencode_github-copilot_gpt-5.4.final.txt
 ALL_DONE
 ```
 
-每個事件以 task notification 送達。START 也帶 `<log-path>`，方便在 review 進行中即時 peek 該 reviewer 的進度。記錄每個 RETURN / FAIL 事件對應的 `<spec>` 與 `<log-path>`，等收到 `ALL_DONE` 即可進入下一步。
+每個事件以 task notification 送達。START 只帶 `<log-path>`（final 此時尚未產生）；RETURN / FAIL 則同時帶 `<log-path>` 與 `<final-path>`。兩檔語意分工（ADR-11）：
 
-**事件語意（ADR-7）**：
+- **`.log`**：verbose trace——adapter stderr、CLI debug、envelope echo、orchestrator meta header 全進這裡。主要用途是除錯。
+- **`.final.txt`**：agent 最終訊息——adapter 用各自的 JSON 抽取機制（詳見 `references/cli-adapters.md`）過濾雜訊後寫入。**這是 coordinator 整合報告時 Read 的主要入口**。
 
-- **RETURN**：transport 層成功（CLI exit 0）。**不保證 log 內容是真 review**——agent 可能因 sandbox 限制、rate limit、context 超載等原因回覆「我做不到」的文字但 CLI 正常退出。需要 coordinator 在步驟 7 主動 peek log 尾判斷內容是否有效。
-- **FAIL**：transport 層失敗（exit code 非零 / timeout 124 / unknown CLI）。log 檔仍可讀，可能含部分輸出或錯誤訊息。
+orchestrator 會在派工前 pre-create 空 `.final.txt`，所以不論 adapter 是否寫成功，coordinator 都能安全 Read。記錄每個 RETURN / FAIL 事件對應的 `<spec>`、`<log-path>` 與 `<final-path>`，等收到 `ALL_DONE` 即可進入下一步。
+
+**事件語意（ADR-7 + ADR-11）**：
+
+- **RETURN**：transport 層成功（CLI exit 0）。**不保證 `.final.txt` 內容是真 review**——agent 可能因 sandbox 限制、rate limit、context 超載等原因 CLI 正常退出但 final 被寫成空字串（JSON 無 `.result` / `.response` 欄位時 `jq -r` 輸出空）。需要 coordinator 在步驟 7 主動 Read `.final.txt` 判斷內容是否有效。
+- **FAIL**：transport 層失敗（exit code 非零 / timeout 124 / unknown CLI）。`.log` 與 `.final.txt` 仍可讀，但 final 多半為空；log 可能含部分輸出或錯誤訊息供除錯。
 - **ALL_DONE**：fan-out 完成（orchestrator 跑到 reviewer loop 末尾）。
 
 **事件收集與 fallback 處理**：
@@ -102,16 +107,16 @@ ALL_DONE
 採用 events_map 追蹤每個 reviewer 狀態：
 
 ```pseudo
-events = {}              # spec -> { status, log_path, exit_code? }
+events = {}              # spec -> { status, log_path, final_path?, exit_code? }
 seen_all_done = false
 
 for each notification line in Monitor stream:
   if line starts with "START <spec> <log-path>":
     events[spec] = { status: "running", log_path: <log-path> }
-  elif line starts with "RETURN <spec> <log-path>":
-    events[spec] = { status: "returned", log_path: <log-path> }   # transport OK, content TBD
-  elif line starts with "FAIL <spec> exit_code=<n> log=<log-path>":
-    events[spec] = { status: "fail", exit_code: <n>, log_path: <log-path> }
+  elif line starts with "RETURN <spec> <log-path> <final-path>":
+    events[spec] = { status: "returned", log_path: <log-path>, final_path: <final-path> }   # transport OK, content TBD
+  elif line starts with "FAIL <spec> exit_code=<n> log=<log-path> final=<final-path>":
+    events[spec] = { status: "fail", exit_code: <n>, log_path: <log-path>, final_path: <final-path> }
   elif line == "ALL_DONE":
     seen_all_done = true
     break
@@ -122,9 +127,9 @@ for each notification line in Monitor stream:
 #   - 已 START 但無 RETURN/FAIL → status = "incomplete"
 
 for spec where events[spec].status == "returned":
-  Read events[spec].log_path  # 整合到報告（在步驟 7 進一步驗證內容是否有效）
+  Read events[spec].final_path  # 整合到報告（在步驟 7 進一步驗證內容是否有效）
 for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
-  在報告中標明失敗原因（exit_code / timeout / 未啟動）
+  在報告中標明失敗原因（exit_code / timeout / 未啟動），需要除錯時再 Read log_path
 ```
 
 **沒收到 ALL_DONE 的情境**：
@@ -136,16 +141,16 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 
 ### 5. 失敗處理
 
-- **RETURN**：CLI transport 成功（exit 0）。log 檔可能含完整 review 報告，也可能是 agent 自陳失敗——需要在步驟 7 peek log 尾判斷。
-- **FAIL**：transport 失敗（exit code 非零 / timeout / unknown CLI）。`log` 欄位仍然可讀，可能含部分輸出或錯誤訊息。
+- **RETURN**：CLI transport 成功（exit 0）。`.final.txt` 可能含完整 review 報告，也可能是空字串（agent 自陳失敗、JSON 抽取失敗、CLI 秒退）——需要在步驟 7 Read `.final.txt` 判斷。
+- **FAIL**：transport 失敗（exit code 非零 / timeout / unknown CLI）。`log` 與 `final` 欄位仍然可讀；final 多半為空，log 可能含部分輸出或錯誤訊息。
 - **沒收到任何 RETURN**：所有 reviewer 都 transport 失敗——直接告知使用者，不嘗試退化。
-- **收到 RETURN 但 content 無效**：步驟 7 的 log peek 會把這類標為 content-layer 失敗。若全部 reviewer 都是 content-layer 失敗，等同「沒收到任何有效 review」。
+- **收到 RETURN 但 `.final.txt` 為空**：步驟 7 的 final peek 會把這類標為 content-layer 失敗。若全部 reviewer 都是 content-layer 失敗，等同「沒收到任何有效 review」。
 
 不做退化重試。實測退化模型（gemini-2.5-pro）品質不足，徒增等待。
 
 ### 6. 整合與呈現
 
-先執行步驟 7 的 log peek 過濾 content-layer 失敗，再對每個**有效** reviewer 的 `<log-path>` 用 Read tool 讀取完整輸出，整合成交叉比對報告：
+先執行步驟 7.1 的 final peek 過濾 content-layer 失敗，再對每個**有效** reviewer 的 `<final-path>` 用 Read tool 讀取完整 review，整合成交叉比對報告。若某份 final 內容可疑（例如格式明顯殘缺、疑似被截斷），可回頭 Read 同一 reviewer 的 `<log-path>` 看 verbose trace 確認根因，但這是 fallback，不是主要資料源。
 
 ```markdown
 # Cross Review 報告
@@ -183,19 +188,19 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 
 **7.1 Content layer 過濾（先做）**
 
-收到 `RETURN` 只代表 CLI transport 成功，**不代表 log 內容是真的 review**。Agent 可能因 workspace sandbox 擋路、rate limit 429、context 超載等原因寫出「我做不到」的文字並正常退出（exit 0）。這類 case orchestrator 無從偵測，必須由 coordinator 主動過濾。
+收到 `RETURN` 只代表 CLI transport 成功，**不代表 `.final.txt` 內容是真的 review**。Agent 可能因 workspace sandbox 擋路、rate limit 429、context 超載等原因 CLI 正常退出（exit 0）但最終訊息是空字串或空白——adapter 從 JSON `.result` / `.response` 抽取時 `jq -r` 會輸出空字串，此時 `.final.txt` 為空。這類 case orchestrator 無從偵測（transport 層是成功的），必須由 coordinator 主動過濾。
 
 對每個收到 `RETURN` 的 reviewer：
 
-1. Read 對應 log 檔的尾 10 行（`tail -n 10 <log-path>` 或 Read tool limit）
-2. 若 log 尾出現以下任一字樣，標記為 **content-layer 失敗**，不納入有效 review：
-   - `FAIL:` 開頭（reviewer agent 自陳任務失敗——ddd-reviewer 定義的 FAIL 協議）
-   - `XREVIEW_ERROR:` 字樣（adapter 或 CLI 回報的異常訊息，如 sandbox denial）
-   - 明顯的 agent 自陳失敗敘述（「無法讀取」、「存取被拒」、「cannot access」、「sandbox denied」等）
-   - 整個 log 幾乎空白（CLI 秒退 0 但什麼也沒寫）
-3. 通過 peek 的才進入下一步的 findings 驗證
+1. Read 對應 `<final-path>`（orchestrator 已 pre-create，Read 一定會成功，不會噴 file-not-found）
+2. 判斷 2 類：
+   - **空 `.final.txt`**（檔案大小 0 或僅空白）→ 標記為 **content-layer 失敗**，不納入有效 review；來源 spec 列入報告狀態欄（標「失敗（內容為空）」），但不納入交叉比對
+   - **非空 `.final.txt`** → 進步驟 7.2 findings 驗證
+3. 若內容判讀可疑（例如 final 非空但疑似被截斷、或 agent 在 final 中自陳失敗），才回頭 Read 同一 reviewer 的 `<log-path>` 看 verbose trace 確認根因
 
-若所有 `RETURN` reviewer 都被過濾為 content-layer 失敗，等同「沒有有效 review」——直接告知使用者不做退化嘗試。
+`.log` 作為除錯次要資源：M2 之前的舊流程依賴 `tail -n 10 <log>` + 關鍵字（`FAIL:` / `XREVIEW_ERROR:` / 失敗敘述）做 4 類判斷，現已由 adapter 的 JSON 抽取取代——transport-level 錯誤訊息（`XREVIEW_ERROR:` 等）現在只會進 `.log`，不會污染 `.final.txt`，所以 final peek 只需看「空 / 非空」。
+
+若所有 `RETURN` reviewer 的 `.final.txt` 都為空，等同「沒有有效 review」——直接告知使用者不做退化嘗試。
 
 **7.2 Findings 驗證**
 
@@ -231,10 +236,10 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 - **Timeout**（ADR-6 單層制）：
   - Monitor 上限 3600000ms（1 小時）—— orchestrator 整體
   - 每個 reviewer 預設 3000 秒（50 分鐘）safety net，由 orchestrator 外層的 `timeout --foreground` 強制，adapter 本身不做 timeout；測試可用 `XREVIEW_TIMEOUT_SEC` env var 注入短 timeout 觸發 124 路徑
-  - timeout 觸發時 orchestrator 會 sweep 自己 pgid 殺掉 CLI orphan（M6.1 F1），sweep 結束後 append `XREVIEW_ERROR: orchestrator timeout after Ns` 到 log 尾供步驟 7.1 peek 判讀（M6.2 F2 / M6 cross review F4）
+  - timeout 觸發時 orchestrator 會 sweep 自己 pgid 殺掉 CLI orphan（M6.1 F1），sweep 結束後 append `XREVIEW_ERROR: orchestrator timeout after Ns` 到 log 尾供事後 debug（M6.2 F2 / M6 cross review F4）；該情境 CLI rc 為 124，orchestrator 會發 `FAIL exit_code=124` 事件，步驟 7.1 的 final peek 會看到空 `.final.txt` 把它標為失敗，不會誤判成有效 review
 - **安全性**：orchestrator 對外部 CLI 一律 stdin pipe，prompt 內容不出現在 reviewer CLI 的 argv；coordinator 透過 Bash mktemp + Monitor command 傳檔案路徑，prompt 內容也不出現在 Monitor shell 的 argv
 - 若變更範圍太大，考慮按 milestone 拆分 review
-- **暫存檔清理**：Monitor command 尾巴內嵌 `rm -f $review_prompt_file` 在 orchestrator 結束後自動清掉；log 檔（`/tmp/xreview-<runid>-*.log`）保留以便事後 peek / 驗證，直到系統清理。若 orchestrator 被 SIGKILL 或使用者直接中斷，暫存 prompt 檔可能殘留於 `/tmp`，非機敏時可忽略；確需即時清理請手動 `rm`
+- **暫存檔清理**：Monitor command 尾巴內嵌 `rm -f $review_prompt_file` 在 orchestrator 結束後自動清掉 prompt；reviewer 產出的 `.log` 與 `.final.txt`（`/tmp/xreview-<runid>-*.{log,final.txt}`）皆保留以便事後 peek / 驗證，直到系統清理。兩者都需要保留——`.final.txt` 是 coordinator 的 Read 主要入口，`.log` 是除錯時的 fallback。若 orchestrator 被 SIGKILL 或使用者直接中斷，暫存 prompt 檔可能殘留於 `/tmp`，非機敏時可忽略；確需即時清理請手動 `rm`
 - **Statusline 殘留**：Monitor 結束後 statusline 偶爾顯示 task 殘留，是 UI 顯示延遲，不影響實際清理
 - **SIGKILL 限制**：Monitor 強制 kill 或外部 `kill -9` 時，orchestrator 的 cleanup trap 不會執行——子 reviewer process 由各自 PGID 隔離，但需依賴 OS 在 session 結束時收尾。一般不會殘留，但若 statusline 或 `ps` 顯示子程序殘留，請手動 `pkill -f xreview-orchestrator`
 

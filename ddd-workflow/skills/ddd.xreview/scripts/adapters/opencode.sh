@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # opencode.sh — xreview adapter for OpenCode CLI
 #
-# Interface: bash opencode.sh <prompt-file> <model> [<timeout-seconds>]
-# The 3rd arg is accepted but ignored (ADR-6: timeout is enforced by the
-# orchestrator).
+# Interface: bash opencode.sh <prompt-file> <model> <final-out-file>
+#
+# The 3rd arg is the final-output file (ADR-11). OpenCode emits an ndjson
+# event stream on stdout (--format json); adapter tees the raw ndjson to
+# stderr (for the orchestrator log) while piping it through jq to extract
+# just the text-event `.part.text` fragments into $final_out.
 #
 # Sandbox (ADR-9): OpenCode's workspace sandbox blocks paths outside the
 # project root. We set OPENCODE_PERMISSION inline to allow reading the prompt
@@ -13,21 +16,23 @@
 # needed, and the user's global OpenCode config is unaffected.
 
 set -uo pipefail
-exec 2>&1
 
-prompt_file="${1:?Usage: opencode.sh <prompt-file> <model> [<timeout-seconds>]}"
-model="${2:?Usage: opencode.sh <prompt-file> <model> [<timeout-seconds>]}"
+prompt_file="${1:?Usage: opencode.sh <prompt-file> <model> <final-out-file>}"
+model="${2:?Usage: opencode.sh <prompt-file> <model> <final-out-file>}"
+final_out="${3:?Usage: opencode.sh <prompt-file> <model> <final-out-file>}"
 
 if [[ ! -f "$prompt_file" ]]; then
-  echo "XREVIEW_ERROR: prompt file not found: $prompt_file"
+  echo "XREVIEW_ERROR: prompt file not found: $prompt_file" >&2
   exit 1
 fi
 
 cli_path="$(command -v opencode 2>/dev/null)" || true
 if [[ -z "$cli_path" ]]; then
-  echo "XREVIEW_ERROR: cli not found: opencode (install it first)"
+  echo "XREVIEW_ERROR: cli not found: opencode (install it first)" >&2
   exit 1
 fi
+
+: > "$final_out"
 
 # Build inline permission JSON via jq so the config glob can interpolate the
 # resolved $XDG_CONFIG_HOME (or $HOME/.config fallback) without quoting hazards.
@@ -38,16 +43,25 @@ permission_json="$(jq -nc \
   --arg cfg_glob "${config_dir}/ddd-workflow/**" \
   '{external_directory: ({"/tmp/**":"allow"} + {($cfg_glob):"allow"})}')"
 
+# ndjson stdout → tee to stderr (verbose side) → jq to final-out.
+# jq -rs slurps the whole stream into an array, selects text events, and joins
+# their .part.text. PIPESTATUS[0] preserves the CLI's rc regardless of jq.
+set +o pipefail
 OPENCODE_PERMISSION="$permission_json" \
   "$cli_path" run \
   --print-logs \
   --log-level ERROR \
   --agent ddd.xreviewer \
   --model "$model" \
-  < "$prompt_file"
-rc=$?
+  --format json \
+  < "$prompt_file" \
+  | tee /dev/stderr \
+  | jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")' \
+    > "$final_out" 2>/dev/null
+rc="${PIPESTATUS[0]}"
+set -o pipefail
 
 if [[ $rc -ne 0 ]]; then
-  echo "XREVIEW_ERROR: opencode exited with code $rc (model: $model)"
+  echo "XREVIEW_ERROR: opencode exited with code $rc (model: $model)" >&2
   exit "$rc"
 fi

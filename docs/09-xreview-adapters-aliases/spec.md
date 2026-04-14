@@ -120,6 +120,53 @@ Adapter sandbox 放行（ADR-9）
 - [ ] M5 實作完成後，重跑 Task 4.7：對 sprint diff 派 3 reviewer real xreview，驗 3 個都 `RETURN` 且 log 尾都是有效 review 內容（非 `FAIL:`）
 - [ ] Self check：所有 M5 驗收條件逐條打勾
 
+**M7 驗收（adapter JSON schema 雙輸出）**
+
+背景：M5.5 端到端後發現 codex reviewer 的單一 log 可達 5329 行 / 356KB，coordinator 無法按 SKILL.md 步驟 7.1 的 peek/Read 協議處理。2026-04-14 smoke test 揭露根因：4 個 adapter 統一用 `exec 2>&1` 把 stderr 合併進 stdout，orchestrator 再 redirect 成單一 log——把原本天然分離的 verbose trace（stderr）和 final message（stdout）攪成一鍋。同時各家 CLI 都有 JSON output flag，final message 可獨立抽取。M7 同時處理「雙輸出分流」+「codex 的 agent 套用」兩件連動的事。
+
+Adapter 雙輸出（ADR-11）
+
+- [ ] 4 個 adapter 移除 `exec 2>&1`，改讓 stdout / stderr 自然分離
+- [ ] `adapters/claude.sh`：改用 `--output-format json` + `--debug-file <verbose>`；stdout 為單一 JSON，adapter `jq -r '.result'` 抽 final 寫入第 3 arg `<final-out>`；debug-file 吸走 verbose trace
+- [ ] `adapters/codex.sh`：加 `-o <final-out>`（CLI 直寫純 final text）；stderr 保留為 verbose trace；同時 prompt 前 prepend `ddd-reviewer` agent 的 `developer_instructions`（ADR-12）
+- [ ] `adapters/gemini.sh`：改用 `--output-format json`；stdout JSON 後 `jq -r '.response'` 寫 `<final-out>`；stderr 自然分離為 verbose
+- [ ] `adapters/opencode.sh`：改用 `--format json`；stdout 為 ndjson event stream，adapter `tee <verbose-out> | jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")' > <final-out>` 分流
+- [ ] Adapter 介面升級：第 3 arg 從 `<timeout>`（ADR-6 起已 ignored）重新定義為 `<final-out-file>`
+- [ ] 每個 adapter 失敗時（rc≠0）：`<final-out>` 可為空；verbose 保留完整 trace 供除錯
+
+Orchestrator（ADR-11 配套）
+
+- [ ] setsid body 為每個 reviewer 計算 `final_file="${log%.log}.final.txt"`，傳給 adapter 第 3 arg
+- [ ] Event stream：`RETURN <spec> <log> <final>` 加第三欄 `<final>` 路徑；`FAIL <spec> exit_code=<n> log=<log> final=<final>` 同步帶 final 路徑
+- [ ] `.final.txt` 保留供 coordinator 讀取，cleanup trap 不刪（與 `.log` 同生命週期）
+
+Codex prompt prepend（ADR-12）
+
+- [ ] `adapters/codex.sh` 在跑 `codex exec` 前，用 `python3 -c 'import tomllib; ...'` 讀 `${XDG_CONFIG_HOME:-$HOME/.config}/codex/agents/ddd-reviewer.toml`（或 fallback `~/.codex/agents/ddd-reviewer.toml`）的 `developer_instructions`，concat 到原 prompt 前
+- [ ] 讀 toml 失敗（檔案不存在 / 解析失敗）時降級為 prompt 原樣，不阻塞 review（warning 寫 stderr）
+
+SKILL.md 步驟 7.1 協議改寫
+
+- [ ] 步驟 7.1 peek 協議從「`tail -n 10 <log>` + 4 類字串判斷」改為「Read `<final.txt>`」
+- [ ] 判斷規則簡化：空 `.final.txt` → content-layer 失敗；非空 → 進 findings 驗證（`XREVIEW_ERROR:` 等 transport 層訊息由 FAIL event 已涵蓋，不會進 final.txt）
+- [ ] `.log` 保留原角色作為除錯用，不再是 peek 主要來源
+
+測試
+
+- [ ] `adapters.test.sh` 每家 adapter 新增雙輸出 assertion：mock CLI 產 fake JSON（claude/gemini 單 object、codex 寫 `-o` 檔、opencode ndjson）、stderr 另吐 verbose；驗 `<final-out>` 與 verbose 分流正確
+- [ ] codex adapter 新測試：mock toml → 驗 prompt 前 prepend 了 `developer_instructions`
+- [ ] `xreview-orchestrator.test.sh` 更新 RETURN / FAIL 事件 assertion 含 `<final>` 欄位
+- [ ] `xreview-orchestrator.test.sh` 新增：cleanup 不清 `.final.txt`
+
+端到端驗收
+
+- [ ] 派 4 reviewer（claude / opencode / gemini / codex）對 sprint 09 diff 跑一次 real xreview
+- [ ] 驗 4 個 `.final.txt` 都短、乾淨、直接 Read 得出 findings（不用 tail/grep）
+- [ ] 驗 4 個 `.log` 仍保有完整 verbose trace
+- [ ] 驗 codex final 確實套了 ddd-reviewer 角色（review 語氣/結構對齊其他 reviewer）
+- [ ] 驗 gemini final 非空且是 `.response` 欄位內容
+- [ ] Self check：M7 所有驗收條件逐條打勾
+
 ## 相關檔案
 
 **新增**
@@ -407,6 +454,43 @@ gemini \
 - gemini 的 flag 是原生支援，語意明確
 - `$HOME/.config` 必須放行才讀得到 `~/.config/ddd-workflow/xreview.json`（orchestrator 已讀過，但若 agent 自己再讀會撞牆）
 - `/tmp` 必須放行才讀得到 prompt file 與 log file
+
+### ADR-11：adapter 雙輸出——stdout/stderr 自然分流 + JSON schema 抽 final
+
+決策：4 個 adapter 拿掉 `exec 2>&1`，改讓 **stdout = agent final message**、**stderr = verbose trace** 自然分離；orchestrator 在呼叫 adapter 時多傳一個 `<final-out-file>` 參數（取代 ADR-6 以來被 ignored 的第 3 arg），adapter 把 final text 寫進該檔。verbose 由 orchestrator 重導到既有的 `.log` 檔。
+
+**根因發現**（2026-04-14 codex smoke test）：codex 原生把 final message 寫到 stdout、verbose trace 寫到 stderr（完全分離）。但現行 adapter 的 `exec 2>&1` 把 stderr merge 進 stdout，orchestrator 再 `>> "$log" 2>&1` 全部塞進單檔，造成 5329 行混雜 log。拿掉 `exec 2>&1` 就恢復 CLI 原生的 stream 分離。
+
+每家 CLI 的 final 抽取路徑（都是原生 flag，零解析成本或單行 jq）：
+
+| CLI | Final 提取 | Verbose 來源 |
+|-----|-----------|-------------|
+| claude | `--output-format json` → `jq -r '.result'` | `--debug-file <path>` 寫檔 |
+| codex | `-o <file>` 直接寫純 final text；stdout 同內容（備份） | stderr |
+| gemini | `--output-format json` → `jq -r '.response'` | stderr |
+| opencode | `--format json` ndjson → `jq -rs 'map(select(.type=="text")) \| map(.part.text) \| join("")'` | 同一條 ndjson stream，用 tee 複製 |
+
+考慮過的替代方案：
+
+- (a) 維持 `exec 2>&1` + 事後 regex 抽 final：fragile、每家 schema 不同、codex 重複印 final 兩次的行為還是會干擾
+- (b) 走 ACP protocol：事件天然分類（`agent_message_chunk` vs `tool_call`），但 codex 沒 native ACP server、只有 3 家可用 → 工程量遠大於本方案 → 已記錄在 `docs/10-acp-migration/plan.md`，待觸發條件成熟再做
+- (c) **stdout/stderr 分流 + JSON flag 抽 final**（採用）：零新依賴、沿用現有 bash 架構、每家 CLI 都有原生支援
+
+放棄 (b) 的成本：opencode 仍需 jq filter（沒 `-o` 類的單檔 flag），比其他 3 家多一行。但工程量相較於 ACP Node orchestrator 可忽略。
+
+### ADR-12：codex prompt prepend `developer_instructions`
+
+決策：`adapters/codex.sh` 在把 prompt 餵給 `codex exec` 前，用 `python3 tomllib` 讀 `~/.codex/agents/ddd-reviewer.toml` 的 `developer_instructions` 欄位，concat 到原 prompt 前。
+
+背景：2026-04-14 M5.5 端到端時發現 codex 自陳「`ddd-reviewer` skill 沒出現在 session 可用清單」——調研後確認 codex CLI **沒有 top-level `--agent` flag**，`~/.codex/agents/<name>.toml` 的 auto-discovery 只供 `spawn_agent` tool call 使用，top-level `codex exec` 不會自動套用任何 agent role。結果 cross review 時 codex 是在「泛泛 reviewer 模式」跑，不吃 `ddd-reviewer` 的審查立場／攻擊面／品質門檻定義。
+
+考慮過的替代方案：
+
+- (a) 改用 `-c agents.ddd-reviewer.<field>` 覆寫 config：codex 沒對應 CLI 語法支援 top-level apply
+- (b) build 時把 `developer_instructions` 抽出寫獨立 `.md`，adapter 讀 md：SSOT 分裂（toml 和 md 兩份要同步）
+- (c) **adapter runtime 讀 toml 解析 + prepend**（採用）：toml 仍是 SSOT，adapter 負責翻譯；相依 `python3 + tomllib`（Python 3.11+，Ubuntu 22.04+ 預設有）
+
+降級規則：讀 toml 失敗（檔案不存在、解析失敗、python3 不可用）時 adapter 不阻塞 review，prompt 原樣送進，warning 寫 stderr。使用者看 `.log` 能看到 warning。
 
 ## 風險與邊界
 

@@ -376,4 +376,178 @@ Coordinator 用 main session 派出新版 orchestrator（sprint worktree 絕對�
 ### 尚待
 
 - M6.5 codex sandbox 驗證與 M6.6 端到端一起跑（派 4 reviewer 包含 codex，順便驗 F1 timeout 路徑）
+
+---
+
+## 2026-04-14 M7 規劃：codex smoke 揭露 `2>&1` 元凶
+
+### 觸發事件
+
+新 session 接續時，使用者指出 `/tmp/xreview-408835-*-codex_gpt-5.4.log` 單檔 5329 行 / 356KB，coordinator 根本讀不動。第一輪分析認為是 codex CLI 特別 verbose；深入調研後發現是 adapter 架構問題。
+
+### 多路徑調研
+
+派 6 隻 agent 平行查（4 家 CLI 的 JSON output + 2 隻 ACP 調研）：
+
+**4 家 CLI 的 JSON schema output**（可取代 regex 解 verbose log）：
+
+| CLI | Final 抽取 | Verbose |
+|-----|-----------|---------|
+| claude | `--output-format json` + `jq -r '.result'` | `--debug-file <path>` |
+| codex | `-o <file>` 純 final text（獨立於 stdout/stderr）| stderr trace |
+| gemini | `--output-format json` + `jq -r '.response'` | stderr |
+| opencode | `--format json` ndjson → `jq -rs 'map(select(.type=="text"))|map(.part.text)|join("")'` | 同 ndjson，用 tee 複製 |
+
+**ACP（Agent Client Protocol）評估**：
+
+- opencode ✅ `opencode acp` native
+- gemini ✅ `gemini --acp` native
+- claude 🌉 需透過 `@agentclientprotocol/claude-agent-acp` bridge（直呼 Anthropic SDK）
+- codex ❌ 只有 `mcp-server` / `app-server`，非 ACP
+
+4 家混合（2 native + 1 bridge + 1 fallback）工程量大於 JSON schema 路線，決策先走 JSON schema（sprint 09 M7）、ACP 留待 sprint 10（見 `docs/10-acp-migration/plan.md`）觸發條件成熟時啟動。
+
+### Smoke test 實測（關鍵發現）
+
+**opencode**（`opencode run --format json --model opencode/gpt-5-nano`）：
+
+- 實測 schema 跟 deepwiki 描述**完全不同**！實際 top-level event types 是 `step_start` / `text` / `step_finish`（不是 deepwiki 說的 `message.part.updated`），每個 event `{type, timestamp, sessionID, part}` 結構
+- final 提取正解：`map(select(.type=="text")) | map(.part.text) | join("")`
+- 教訓：deepwiki 對 schema 描述不可 100% 信，實測一次確認欄位名
+
+**gemini**（`gemini --output-format json --model gemini-3-flash-preview -p "use bash ..."`，使用者手動實測）：
+
+- `-o json` 吐單一物件 `{session_id, response, stats, error?}`
+- `.response` 是**純 final text**（成功案例），比 claude `.result` 同級乾淨
+- Tool call 失敗訊息（如 `run_shell_command denied by policy`）走 stderr，完全獨立於 stdout JSON
+- 原本 background smoke 失敗是因為 `timeout` 被 fork 時找不到 gemini binary（PATH 不帶 npm-global）；用絕對路徑 `/home/dominicwu/.npm-global/bin/gemini` 重跑即可
+- 模型名修正：`gemini-3-flash` → `gemini-3-flash-preview`（前者 API 回 ModelNotFoundError）
+
+**codex**（`codex exec --sandbox read-only --ephemeral -o /tmp/codex-final.txt`，本機實測）：
+
+- rc=0，`-o` 檔寫入 `嗨\n`（3 bytes，純 final）
+- stdout 也是 `嗨`（跟 `-o` 同步）
+- **stderr 吐完整 verbose trace**：header、workdir、model、session id、user prompt echo、codex response echo、tokens used、error 訊息
+- **治本發現**：codex 原生 stdout/stderr 分流就是 final vs verbose，完全不需要處理。之前 log 混亂的元凶是 **adapter 的 `exec 2>&1`** 把 stderr merge 進 stdout，orchestrator 再 `>> "$log" 2>&1` 全部塞進單檔，造成混雜
+
+### 架構決策 M7（ADR-11 + ADR-12）
+
+**ADR-11**：4 個 adapter 拿掉 `exec 2>&1`，恢復 CLI 原生 stdout/stderr 分離；搭配各家 JSON flag 抽 final 寫入 `.final.txt`，verbose 保留到 `.log`。介面升級：adapter 第 3 arg 從 `<timeout>`（ADR-6 起已 ignored）重新定義為 `<final-out-file>`。orchestrator event stream 從 `RETURN <spec> <log>` 擴成 `RETURN <spec> <log> <final>`。SKILL.md 步驟 7.1 peek 協議改為 Read `.final.txt`。
+
+**ADR-12**：codex 沒有 top-level `--agent` flag（auto-discovery 只供 `spawn_agent` tool call 用），造成 M5.5 cross review 時 codex 跑在「泛泛 reviewer 模式」沒吃 `ddd-reviewer` 的審查立場定義。M7 解法：adapter runtime 用 `python3 -c 'import tomllib; ...'` 讀 `~/.codex/agents/ddd-reviewer.toml` 的 `developer_instructions`，concat 到 prompt 前。讀取失敗時降級為原 prompt + warning。
+
+### Checkpoint commit
+
+- Commit `10437f8 feat(xreview): M5+M6 完整改善 + sprint 10 ACP plan 種子`（15 files changed, 1111+ insertions）
+- npm test 全綠；M7 規劃文件（spec / tasks / works）未納入此 checkpoint，會隨 M7 一起 commit
+
+### 下一步
+
+- M7.1 4 個 adapter 平行工作線可派 developer 並行實作
+- M7.2 / M7.3 / M7.4 序列推進
+- M7 完成後 Task 6.6 / Task 6.5（codex sandbox + 端到端 4 reviewer）可合併在 M7.4 Task 7.4.2 一次驗完
 - e2e 通過後 commit M5 + M6 為單一 checkpoint
+
+---
+
+## 2026-04-14 M7 實作（atomic chunk dispatch）
+
+### 第一次嘗試失敗
+
+Coordinator 首次把 M7.1 + M7.2 + M7.3 包成單一大 prompt 派 ddd-developer 一次做完。Agent 只完成 M7.1（adapters.test.sh 從 62 → 90 passed、4 個 adapter 改完雙輸出）就被 token 吃光中斷，留下半完成狀態：
+- orchestrator.sh 只改了頂部 header comment、invalid-spec 分支、final.txt pre-create
+- setsid body / valid-path RETURN event / FAIL event / footer 全沒動
+- orchestrator.test.sh 116 passed / 5 failed
+- SKILL.md / cli-adapters.md / tasks.md / works.md 完全沒動
+- 根目錄冒出 cruft 檔 `1`、`1.debug`、`3000`、`3000.debug`
+
+**教訓**：大包派工失敗 blast radius 遠大於原子任務。使用者指示改為 atomic chunk + 依序派；記入 `feedback_atomic-task-dispatch.md`。
+
+### 切 chunk 策略
+
+Sprint 09 剩餘工作切成：
+
+| Chunk | 範圍 | 執行者 |
+|-------|------|--------|
+| A | 診斷 5 fail 根因 + 清 cruft | coordinator 自己 |
+| B+C | 修 orchestrator 接線 + adapters.test.sh 分檔 | ddd-developer #1 |
+| D | SKILL.md + cli-adapters.md 對齊新 schema | ddd-developer #2 |
+| E | 勾 tasks.md、寫 works.md、commit M5+M6+M7 checkpoint | coordinator |
+| F | M7.4 端到端 4 reviewer 實跑（含 codex sandbox 順便驗 M6.5）| coordinator + Monitor |
+
+B+C 合併是因使用者判斷分檔與 orchestrator 修都在測試層，合併後單 agent 效率高；實際執行證實 145K tokens 跑得動。
+
+### Chunk A（coordinator 診斷）
+
+5 fail 的共同根因：**adapter interface migration 漏接**。
+
+- `xreview-orchestrator.sh:357` 仍傳 `"$timeout_val"` 當 adapter 第 3 arg，但 M7.1 已把 adapter 第 3 arg 從 `<timeout>` 重定義為 `<final-out-file>`
+- 後果：adapter 把 review 寫到檔名叫 `3000`（timeout 預設值）或 `1`（test override）的檔案，造成 root cruft
+- 延伸：RETURN/FAIL event 未加 final 欄、footer 未加 `[FINAL]` column、setsid positional args 未傳 `$final`
+
+測試層的 5 fail 表面症狀：
+1. `setsid body output missing` — test 用 `sed 's/.*(\/tmp\/xreview-[^ ]+)$/\1/'` 抓 RETURN 第 3 token，event 加 final 欄後 sed 抓到 final.txt（沒 meta header）
+2. `log file empty or missing mock marker` — 類似 path extraction 問題 + mock claude 吐 plain text 被 adapter `jq -r '.result'` 吞光
+3+4. `invalid spec log mismatch` — FAIL event 已 emit `log=... final=...`，test 的 log= 抽取沒剝 final 尾
+5. `stdin content missing from reviewer log` — mock claude stdout 經 JSON filter 後 final.txt 有內容，但 test grep log 走舊路徑
+
+### Chunk B+C 成果（ddd-developer #1，145K tokens，21 分鐘）
+
+**Orchestrator 接線**：
+- setsid body 收第 6 個 arg `$final`，adapter 呼叫傳 `"$final"` 取代 `"$timeout_val"`
+- RETURN emit 改 `RETURN $spec $log $final`
+- FAIL emit 改 `FAIL $spec exit_code=$rc log=$log final=$final`
+- Blocking footer row 格式擴為 `[RETURN] spec [LOG] log [FINAL] final` 保持 12-char 對齊
+
+**Mock 升級策略**（agent 做的決策，事後驗證合理）：
+- stderr-to-log + stdout-to-final split：mock CLI stderr 吐 `MOCK_*_CALLED` marker 被 orchestrator `>> log 2>&1` 捕捉到 log；stdout 吐結構化 JSON/ndjson 被 adapter jq 抽到 final.txt
+- 既有 `grep MOCK_CLAUDE_CALLED "$log"` 斷言不用改（marker 走 stderr→log 路徑）
+- codex 例外：因 codex adapter 用 `-o <final>` flag，mock 直接寫檔
+
+**分檔**：
+- 新增 `adapters.test.common.sh`（source-only 共用 helpers）
+- 新增 `adapters/{claude,codex,gemini,opencode}.test.sh`，每檔 source common 後跑自家所有測試
+- `adapters.test.sh` 改為 runner，source 4 份累計統計
+- 單跑驗證：claude 17 / opencode 24 / gemini 23 / codex 26 = 90 與 runner 一致
+
+**M7.2 新增 orchestrator 測試**：RETURN/FAIL event 帶 final 欄（2 條）、cleanup 不刪 final.txt（1 條）、blocking footer `[FINAL]` column（數條）。
+
+**測試結果**：
+- orchestrator.test.sh：**138 passed / 0 failed**（116 → 138，+22：5 fails 修復 + 4 新 M7.2 塊）
+- adapters.test.sh runner：**90 passed / 0 failed**（分檔後總數不變）
+- 單跑 per-CLI 檔皆可獨立執行
+- 根目錄無 cruft
+
+### Chunk D 成果（ddd-developer #2，72K tokens，4 分鐘）
+
+**SKILL.md**（L80–L243 多段對齊）：
+- 步驟 4 事件範例：RETURN 加 `<final-path>` 欄、FAIL 加 `final=`；事件語意段強調 `.log` = verbose / `.final.txt` = coordinator Read 主要入口，並註明 orchestrator pre-create 空 final
+- events_map pseudo：RETURN/FAIL 解析擴 final_path，Read target 改 final_path
+- 步驟 5 失敗處理：全面改用 `.final.txt` 空/非空語意
+- 步驟 6：Read 主要對象改 `<final-path>`，log 降為 fallback
+- 步驟 7.1 peek 協議：4 類判斷簡化為 2 類；舊 `tail -n 10` 流程保留為歷史註記
+- M6.2 timeout marker：改為 log-only debug fallback，不當主要判斷依據
+- 暫存檔清理段：補 `.final.txt` 保留說明
+
+**cli-adapters.md**：
+- 新增總覽表加 Claude 行（原本只列 opencode/gemini/codex）
+- 新增「Final 抽取（ADR-11 雙輸出）」章節 + 對照表 + 共通約定（`: > $final_out` / `set +o pipefail` / `PIPESTATUS[0]`）
+- OpenCode: adapter 範例第 3 arg 改 `<final-out>`；新增 ndjson+tee+jq 流程
+- Gemini: 補 `.response` 抽取 + sandbox `--include-directories`
+- Codex: 補 `-o` 直寫 + ADR-12 toml prepend 流程
+- Claude 新章節：Plan Mode + `.result` 抽取 + `--debug-file` sidecar
+
+### 驗收（M7.4.1 已達成）
+
+- `bash adapters.test.sh` → 90 passed
+- `bash xreview-orchestrator.test.sh` → 138 passed
+- `bash adapters/claude.test.sh`（單跑）→ 17 passed，分檔後獨立可跑
+- `npm run deploy && npm test` → 全綠
+- 根目錄 cruft 清乾淨
+
+### 未完成項
+
+- **M7.4.2 端到端 4 reviewer 實跑**：待派。依使用者 feedback 改用小模型（`claude:haiku` / `gemini:flash` / `opencode:mini` / `codex` 小模型）降成本，旗艦模型留給正式 cross review
+- **M6.5 codex sandbox**：併入 M7.4.2 一起驗
+- **M6.6.1 手動 timeout 路徑驗證**：可選，非必要
+- **Task 7.4.4 commit**：Chunk E 會處理此 checkpoint
