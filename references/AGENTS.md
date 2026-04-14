@@ -183,6 +183,8 @@ import { createSession } from '../services/session'
 | 拼字檢查 | `typos --format json .` | 肉眼校稿 |
 | 安全 / 邏輯掃描 | `semgrep scan --config auto --json .` | 純 regex grep |
 | 檢查 CLI 是否可用 | `command -v <cmd>` 或直接執行 `<cmd> --version` | `which`（npm global 裝的工具不在 `which` 搜尋路徑） |
+| 查外部 GitHub repo 文件結構 / 全文 | `uvx ask-deepwiki {structure\|contents} <owner/repo>` | 手動翻 GitHub 網站 |
+| 對外部 GitHub repo 自然語言提問 | `uvx ask-deepwiki ask <owner/repo> "問題"` | 逐檔讀 node_modules 猜行為 |
 
 ## Cross Review 模型設定
 
