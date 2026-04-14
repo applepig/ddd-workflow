@@ -72,6 +72,48 @@ MOCK_EOF
   fi
 
   # ============================================================
+  echo "--- Test: claude adapter — default-mode array stdout (hotfix) ---"
+  # ============================================================
+  # Hotfix (2026-04-14): switching --permission-mode plan → default revealed
+  # that `claude -p --output-format json` returns a JSON ARRAY of stream events
+  # in non-plan modes (and actually also in plan mode — older single-object
+  # assumption was wrong). Adapter's jq filter must extract `.result` from the
+  # last `result`-type element in the array, while still tolerating the legacy
+  # single-object shape used by older mocks/CLIs.
+
+  # Mock CLI emits an array with a final element of type "result".
+  cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CALLED_ARRAY: $*" >&2
+cat > /dev/null
+printf '[{"type":"system"},{"type":"assistant"},{"type":"result","subtype":"success","result":"ARRAY_MODE_REVIEW_TEXT"}]\n'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/claude"
+
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$PATH" bash "$ADAPTER_DIR/claude.sh" "$PROMPT_FILE" "claude-opus-4-6" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "claude array-mode exits 0" "$rc" 0
+  array_final="$(cat "$FINAL_OUT")"
+  if [[ "$array_final" == "ARRAY_MODE_REVIEW_TEXT" ]]; then
+    ((PASS++)); echo "  PASS: claude final-out extracts .result from JSON array stdout"
+  else
+    ((FAIL++)); echo "  FAIL: claude array-mode expected 'ARRAY_MODE_REVIEW_TEXT', got: '$array_final'"
+  fi
+
+  # Static check: adapter must not be hard-wired to plan mode (regression guard
+  # for the 2026-04-14 hotfix that switched to --permission-mode default so
+  # ddd-reviewer's Bash tool is allowed). plan mode globally blocks Bash and
+  # makes the agent emit empty final.txt.
+  if grep -qE '\-\-permission-mode plan' "$ADAPTER_DIR/claude.sh"; then
+    ((FAIL++)); echo "  FAIL: claude.sh still uses --permission-mode plan (Bash gets denied)"
+  else
+    ((PASS++)); echo "  PASS: claude.sh does not pin --permission-mode plan"
+  fi
+
+  # ============================================================
   echo "--- Test: claude adapter — jq guard (Finding 1) ---"
   # ============================================================
   # ADR-11: claude adapter pipes CLI stdout through `jq -r '.result'`. If jq is

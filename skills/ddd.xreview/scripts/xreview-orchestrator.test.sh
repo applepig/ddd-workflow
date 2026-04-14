@@ -1371,6 +1371,89 @@ fi
 cleanup_from_output "$m74_output"
 
 # ============================================================
+echo "--- Test: M8 dedupe — duplicate resolved specs collapse to one reviewer ---"
+# ============================================================
+# Hotfix (2026-04-14): if config / CLI args contain two specs that resolve to
+# the same canonical spec (e.g. alias "opus" + full "claude:claude-opus-4-6"
+# both map to "claude:claude-opus-4-6"), the orchestrator used to dispatch
+# both — they shared the same slug, hence the same .log / .final.txt path,
+# and raced to overwrite each other. The event stream still emitted 2 RETURN
+# events lying about distinct work having happened.
+#
+# Required behavior:
+#   1. Only ONE START + ONE RETURN (or FAIL) event for the deduped spec.
+#   2. A `XREVIEW_WARN: deduped duplicate spec: <spec>` line on stderr (NOT
+#      stdout — stdout is the event stream).
+#   3. Only one .log + one .final.txt on disk for that spec.
+#
+# Test design: feed alias "opus" + full "claude:claude-opus-4-6" via config-
+# aliases. Both resolve to "claude:claude-opus-4-6". Use the happy mock so
+# the surviving reviewer succeeds → exactly 1 RETURN expected.
+
+write_happy_claude_mock
+m8_xdg=$(mktemp -d)
+mkdir -p "$m8_xdg/ddd-workflow"
+cat > "$m8_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "aliases": {
+    "opus": "claude:claude-opus-4-6"
+  }
+}
+CFG_EOF
+
+m8_stdout_file=$(mktemp)
+m8_stderr_file=$(mktemp)
+PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$m8_xdg" \
+  bash "$ORCH" "$PROMPT_FILE" "opus" "claude:claude-opus-4-6" \
+  > "$m8_stdout_file" 2> "$m8_stderr_file"
+m8_rc=$?
+m8_stdout=$(cat "$m8_stdout_file")
+m8_stderr=$(cat "$m8_stderr_file")
+
+assert_exit_code "M8 dedupe run exits 0" "$m8_rc" 0
+
+m8_start_count=$(count_lines_matching "$m8_stdout" "START claude:claude-opus-4-6 ")
+if [[ "$m8_start_count" -eq 1 ]]; then
+  ((PASS++)); echo "  PASS: M8 exactly 1 START event for deduped spec (got $m8_start_count)"
+else
+  ((FAIL++)); echo "  FAIL: M8 expected 1 START, got $m8_start_count"
+fi
+
+m8_terminal_count=$(echo "$m8_stdout" | grep -cE "^(RETURN|FAIL) claude:claude-opus-4-6 " || true)
+if [[ "$m8_terminal_count" -eq 1 ]]; then
+  ((PASS++)); echo "  PASS: M8 exactly 1 terminal (RETURN/FAIL) event for deduped spec"
+else
+  ((FAIL++)); echo "  FAIL: M8 expected 1 RETURN/FAIL, got $m8_terminal_count"
+fi
+
+if echo "$m8_stderr" | grep -qF "XREVIEW_WARN: deduped duplicate spec: claude:claude-opus-4-6"; then
+  ((PASS++)); echo "  PASS: M8 warning emitted on stderr for deduped spec"
+else
+  ((FAIL++)); echo "  FAIL: M8 missing 'XREVIEW_WARN: deduped duplicate spec' on stderr"
+  echo "     stderr was: $(echo "$m8_stderr" | head -5)"
+fi
+
+# Warning must NOT pollute stdout (which is the event stream consumed by Monitor).
+if echo "$m8_stdout" | grep -qF "XREVIEW_WARN"; then
+  ((FAIL++)); echo "  FAIL: M8 dedupe warning leaked into stdout (event stream)"
+else
+  ((PASS++)); echo "  PASS: M8 dedupe warning kept off stdout"
+fi
+
+# Disk: exactly one .log and one .final.txt for this spec slug.
+m8_logs=$(echo "$m8_stdout" | grep -oE '/tmp/xreview-[^ ]+claude_claude-opus-4-6\.log' | sort -u | wc -l)
+m8_finals=$(echo "$m8_stdout" | grep -oE '/tmp/xreview-[^ ]+claude_claude-opus-4-6\.final\.txt' | sort -u | wc -l)
+if [[ "$m8_logs" -eq 1 && "$m8_finals" -eq 1 ]]; then
+  ((PASS++)); echo "  PASS: M8 exactly one log + one final.txt path for deduped spec"
+else
+  ((FAIL++)); echo "  FAIL: M8 expected 1 log + 1 final, got logs=$m8_logs finals=$m8_finals"
+fi
+
+cleanup_from_output "$m8_stdout"
+rm -f "$m8_stdout_file" "$m8_stderr_file"
+rm -rf "$m8_xdg"
+
+# ============================================================
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

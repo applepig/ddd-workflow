@@ -209,6 +209,26 @@ for spec in "${specs[@]}"; do
 done
 specs=("${resolved_specs[@]}")
 
+# Dedupe: two specs that resolve to the same canonical form (e.g. alias "opus"
+# + full "claude:claude-opus-4-6") share the same slug → same .log / .final.txt
+# paths → race-overwrite. Keep first occurrence, warn on stderr for each
+# subsequent duplicate. stderr (not stdout) because stdout is the event stream
+# consumed by Monitor; mixing in non-event lines breaks deterministic parsing.
+deduped_specs=()
+# Requires bash 4.0+ (associative arrays). macOS's stock bash 3.2 would error
+# at parse time here; this file is intentionally bash 4+ throughout.
+declare -A _seen_specs=()
+for spec in "${specs[@]}"; do
+  if [[ -n "${_seen_specs[$spec]:-}" ]]; then
+    echo "XREVIEW_WARN: deduped duplicate spec: $spec" >&2
+    continue
+  fi
+  _seen_specs[$spec]=1
+  deduped_specs+=("$spec")
+done
+specs=("${deduped_specs[@]}")
+unset _seen_specs
+
 pids=()
 
 # Kill each reviewer's entire process group (created via setsid) so timeout

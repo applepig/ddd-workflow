@@ -8,8 +8,11 @@
 # envelope echo) flows via stderr and is captured by the orchestrator's log.
 #
 # Dual-output mechanics (ADR-11):
-#   - stdout of claude CLI is a single JSON object (--output-format json);
-#     adapter pipes it through `jq -r '.result'` into $final_out.
+#   - stdout of claude CLI with `--output-format json` is a JSON array of
+#     event envelopes; the final agent message sits in the last element with
+#     `type=="result"`. Some older CLI builds emit a single object instead.
+#     adapter's jq filter handles both: if array → pick last type=="result"
+#     element's .result; if object → .result. Empty on miss.
 #   - --debug-file <tmp> absorbs claude's verbose trace; adapter dumps the
 #     tmp file to stderr at the end so the orchestrator log keeps a copy.
 #   - stderr of claude CLI flows straight through (no `exec 2>&1`).
@@ -61,15 +64,19 @@ fi
 # Pipefail disabled for this pipeline: we take rc from PIPESTATUS[0] (the CLI),
 # and want jq failures to leave final_out empty rather than mask the CLI rc.
 set +o pipefail
+# --permission-mode default (not plan): plan mode denies Bash unconditionally
+# (Issue #13067, Issue #2058 — no per-mode allowlist) and ddd-reviewer needs
+# Bash for `git --no-pager diff`. Safety relies on user/local settings
+# allowlist; CI environments must supply --allowedTools explicitly.
 "$cli_path" -p \
   --agent ddd-reviewer \
   --model "$model" \
   --no-session-persistence \
-  --permission-mode plan \
+  --permission-mode default \
   --output-format json \
   --debug-file "$debug_file" \
   < "$prompt_file" \
-  | jq -r '.result // empty' > "$final_out" 2>/dev/null
+  | jq -r 'if type=="array" then (map(select(.type=="result")) | last // .[-1]).result else .result end // empty' > "$final_out" 2>/dev/null
 rc="${PIPESTATUS[0]}"
 set -o pipefail
 
