@@ -82,6 +82,28 @@ assert_exit_code() {
   fi
 }
 
+# --- jq-missing PATH helper --------------------------------------------------
+# Builds a PATH that contains the mock CLI dir + a curated system dir holding
+# symlinks to common utilities (cat, mktemp, awk, python3, etc.) but
+# deliberately omits `jq`. Used by Finding 1 tests (jq guard) so adapters that
+# require jq see `command -v jq` return empty and exit early.
+#
+# Returns the curated system dir path on stdout; caller is responsible for
+# composing PATH (typically `PATH="$MOCK_DIR:<returned>"`). The returned dir is
+# auto-registered for cleanup.
+make_jq_missing_sysdir() {
+  local sysdir cmd src
+  sysdir=$(mktemp -d)
+  register_cleanup "$sysdir"
+  for cmd in cat mktemp basename grep sed awk dirname tr head tail rm cut \
+             python3 echo printf bash sh ls find chmod cp mv tee sleep \
+             timeout date wc sort uniq xargs which env tomli; do
+    src=$(command -v "$cmd" 2>/dev/null) || continue
+    [[ -n "$src" ]] && ln -sf "$src" "$sysdir/$cmd" 2>/dev/null || true
+  done
+  printf '%s' "$sysdir"
+}
+
 # --- Mock CLI writers --------------------------------------------------------
 # These are the legacy mocks used by the cross-cutting tests (missing prompt,
 # missing CLI, passthrough). Per-CLI adapter-specific mocks (dual-output JSON,

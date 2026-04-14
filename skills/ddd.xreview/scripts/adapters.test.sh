@@ -35,6 +35,27 @@ run_gemini_adapter_tests
 source "$SCRIPT_DIR/adapters/codex.test.sh"
 run_codex_adapter_tests
 
+# ============================================================
+echo ""
+echo "--- Test: cli-adapters.md documents stdout/stderr contract (Finding 3) ---"
+# ============================================================
+# ADR-11 implicitly assumed adapter stdout is empty (final flows via $3). M7
+# cross review (sprint 09) flagged this as undocumented. Doc must explicitly
+# spell out the contract so future adapter authors don't accidentally print
+# final to stdout (which would be appended into log via orchestrator's
+# `>> $log 2>&1`).
+DOC_FILE="$SCRIPT_DIR/../references/cli-adapters.md"
+if grep -qF 'Adapter stdout/stderr contract' "$DOC_FILE"; then
+  ((PASS++)); echo "  PASS: cli-adapters.md has 'Adapter stdout/stderr contract' section"
+else
+  ((FAIL++)); echo "  FAIL: cli-adapters.md missing 'Adapter stdout/stderr contract' section"
+fi
+if grep -qE 'stdout.*must be empty|must be empty.*stdout' "$DOC_FILE"; then
+  ((PASS++)); echo "  PASS: cli-adapters.md states stdout must be empty"
+else
+  ((FAIL++)); echo "  FAIL: cli-adapters.md does not state stdout must be empty"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

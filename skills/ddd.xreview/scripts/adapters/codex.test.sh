@@ -160,6 +160,90 @@ TOML_EOF
     ((PASS++)); echo "  PASS: codex degradation sends only original prompt"
   fi
 
+  # ============================================================
+  echo "--- Test: codex adapter — stdout contract comment (Finding 3) ---"
+  # ============================================================
+  # codex doesn't use jq (writes via -o), so no jq guard expected. But the
+  # stdout contract comment still applies (CLI may print progress to stdout
+  # depending on flags; -o keeps final off stdout).
+  if grep -qF 'stdout contract: must be empty' "$ADAPTER_DIR/codex.sh"; then
+    ((PASS++)); echo "  PASS: codex.sh has stdout contract comment"
+  else
+    ((FAIL++)); echo "  FAIL: codex.sh missing stdout contract comment"
+  fi
+
+  # ============================================================
+  echo "--- Test: codex adapter — python stderr surfaced on parse failure (Finding 2) ---"
+  # ============================================================
+  # When python tomllib parsing fails, the original `2>/dev/null` swallowed the
+  # real error. Adapter must capture python stderr and embed a snippet in the
+  # XREVIEW_WARN line so users can debug without re-running manually.
+
+  # Place a malformed toml in XDG so codex.sh tries python parse and fails.
+  mkdir -p "$CODEX_XDG_DIR/codex/agents"
+  cat > "$CODEX_XDG_DIR/codex/agents/ddd-reviewer.toml" << 'TOML_EOF'
+this is not = valid """ toml at all
+TOML_EOF
+
+  # Mock python3 in MOCK_DIR that always emits a recognisable error to stderr
+  # and exits 2 (parse-failure code per the adapter convention).
+  cat > "$MOCK_DIR/python3" << 'PY_EOF'
+#!/usr/bin/env bash
+# Mock python3: emit identifiable stderr line, exit 2 (parse failure).
+echo "MOCK_PYTHON_TOMLLIB_PARSE_ERROR_LINE_42" >&2
+exit 2
+PY_EOF
+  chmod +x "$MOCK_DIR/python3"
+
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$PATH" HOME="$CODEX_HOME_DIR" XDG_CONFIG_HOME="$CODEX_XDG_DIR" \
+    bash "$ADAPTER_DIR/codex.sh" "$PROMPT_FILE" "o3" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "codex python-stderr-surface dispatch exits 0" "$rc" 0
+  assert_contains "codex emits XREVIEW_WARN on python parse failure" "$output" \
+    "XREVIEW_WARN: codex ddd-reviewer.toml"
+  if echo "$output" | grep -qF 'python stderr:'; then
+    ((PASS++)); echo "  PASS: codex XREVIEW_WARN includes 'python stderr:' label"
+  else
+    ((FAIL++)); echo "  FAIL: codex XREVIEW_WARN missing 'python stderr:' label"
+    echo "     got: $(printf '%s' "$output" | grep -E 'XREVIEW_WARN' | head -3)"
+  fi
+  if echo "$output" | grep -qF 'MOCK_PYTHON_TOMLLIB_PARSE_ERROR_LINE_42'; then
+    ((PASS++)); echo "  PASS: codex surfaces actual python stderr text in warning"
+  else
+    ((FAIL++)); echo "  FAIL: codex did not surface python stderr text in warning"
+    echo "     got: $(printf '%s' "$output" | grep -E 'XREVIEW_WARN' | head -3)"
+  fi
+
+  # Remove mock python3 to restore default behaviour for subsequent tests.
+  rm -f "$MOCK_DIR/python3"
+
+  # ============================================================
+  echo "--- Test: codex adapter — extraction-path log entry (Finding 2) ---"
+  # ============================================================
+  # Adapter should log which extraction path it took (python_tomllib /
+  # python_tomli / awk_fallback) so debugging python-version issues is easier.
+  # We re-use the XDG toml from the prepend test (valid toml, real python).
+  rm -f "$CODEX_XDG_DIR/codex/agents/ddd-reviewer.toml"
+  cat > "$CODEX_XDG_DIR/codex/agents/ddd-reviewer.toml" << 'TOML_EOF'
+name = "ddd-reviewer"
+developer_instructions = "PATH_LOG_TEST_MARKER"
+TOML_EOF
+
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$PATH" HOME="$CODEX_HOME_DIR" XDG_CONFIG_HOME="$CODEX_XDG_DIR" \
+    bash "$ADAPTER_DIR/codex.sh" "$PROMPT_FILE" "o3" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "codex extraction-path log dispatch exits 0" "$rc" 0
+  if echo "$output" | grep -qE 'XREVIEW_INFO: codex toml extracted via (python_tomllib|python_tomli|awk_fallback)'; then
+    ((PASS++)); echo "  PASS: codex logs which toml extraction path was used"
+  else
+    ((FAIL++)); echo "  FAIL: codex did not log the toml extraction path"
+    echo "     got: $(printf '%s' "$output" | grep -E 'XREVIEW' | head -3)"
+  fi
+
   # Universal contracts.
   run_universal_adapter_contracts codex
 }

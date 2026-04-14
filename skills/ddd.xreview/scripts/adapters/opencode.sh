@@ -14,6 +14,10 @@
 # (M6.3: respect XDG override; falls back to $HOME/.config). The env var is
 # scoped to the child process — no config file is created, no trap cleanup
 # needed, and the user's global OpenCode config is unaffected.
+#
+# stdout contract: must be empty. Final flows to $3 via jq -rs over the ndjson
+# stream; the raw ndjson is teed to stderr (verbose side) so the orchestrator
+# log keeps the full event log without polluting final_out.
 
 set -uo pipefail
 
@@ -29,6 +33,13 @@ fi
 cli_path="$(command -v opencode 2>/dev/null)" || true
 if [[ -z "$cli_path" ]]; then
   echo "XREVIEW_ERROR: cli not found: opencode (install it first)" >&2
+  exit 1
+fi
+
+# jq is doubly critical here: builds permission_json AND extracts ndjson final.
+# Missing jq makes the permission env malformed (or empty) and the final empty.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "XREVIEW_ERROR: jq not found (required for opencode adapter permission JSON build and final extraction)" >&2
   exit 1
 fi
 

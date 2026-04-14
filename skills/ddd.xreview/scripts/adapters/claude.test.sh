@@ -71,6 +71,47 @@ MOCK_EOF
     ((PASS++)); echo "  PASS: claude final-out free of stderr verbose markers"
   fi
 
+  # ============================================================
+  echo "--- Test: claude adapter — jq guard (Finding 1) ---"
+  # ============================================================
+  # ADR-11: claude adapter pipes CLI stdout through `jq -r '.result'`. If jq is
+  # missing the pipeline silently produces an empty final, masking the root
+  # cause as a content-layer failure. Adapter must guard early with rc=1.
+
+  # Static check: header has the guard line.
+  if grep -qE 'command -v jq' "$ADAPTER_DIR/claude.sh"; then
+    ((PASS++)); echo "  PASS: claude.sh has 'command -v jq' guard"
+  else
+    ((FAIL++)); echo "  FAIL: claude.sh missing 'command -v jq' guard"
+  fi
+
+  # Static check: stdout contract comment.
+  if grep -qF 'stdout contract: must be empty' "$ADAPTER_DIR/claude.sh"; then
+    ((PASS++)); echo "  PASS: claude.sh has stdout contract comment"
+  else
+    ((FAIL++)); echo "  FAIL: claude.sh missing stdout contract comment"
+  fi
+
+  # Behavioral check: PATH without jq → adapter exits 1 with descriptive stderr.
+  cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CALLED: claude $*" >&2
+cat > /dev/null
+printf '{"result":"unused"}\n'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/claude"
+
+  no_jq_sys=$(make_jq_missing_sysdir)
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$no_jq_sys" bash "$ADAPTER_DIR/claude.sh" \
+    "$PROMPT_FILE" "claude-opus-4-6" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "claude jq-missing exits 1" "$rc" 1
+  assert_contains "claude jq-missing stderr message" "$output" \
+    "XREVIEW_ERROR: jq not found"
+
   # Universal contracts (missing prompt, missing CLI, passthrough).
   run_universal_adapter_contracts claude
 }
