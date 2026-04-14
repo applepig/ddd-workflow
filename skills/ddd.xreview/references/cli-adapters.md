@@ -1,6 +1,6 @@
-# CLI Adapters — xreview-runner.sh 支援的外部 CLI
+# CLI Adapters — per-CLI adapter shell
 
-`/ddd.xreview` 透過 `xreview-runner.sh` 呼叫外部 CLI 執行 review。本文件說明各 CLI 的呼叫方式、read-only 機制與注意事項。
+`/ddd.xreview` 透過 `scripts/adapters/<cli>.sh` 呼叫外部 CLI 執行 review。本文件說明各 CLI 的呼叫方式、read-only 機制與注意事項。
 
 ## 總覽
 
@@ -17,19 +17,18 @@ Agent 定義檔位於 `ddd-workflow/opencode/agents/ddd.xreviewer.md`，透過 `
 ### 使用方式
 
 ```bash
-# 透過 xreview-runner.sh 呼叫（推薦，含 timeout + raw error passthrough）
-bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh /tmp/prompt.md opencode:openai/gpt-5.4
+# 透過 adapter 呼叫（推薦，含 timeout + raw error passthrough）
+bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md openai/gpt-5.4 3000
 
-# 直接呼叫（不含 timeout 與 runner summary）
+# 直接呼叫（不含 adapter error wrapping）
 echo "$prompt" | opencode run --agent ddd.xreviewer --model openai/gpt-5.4
 ```
 
-`xreview-runner.sh` 是刻意保持精簡的 proxy shell：
+`adapters/opencode.sh` 是刻意保持精簡的 proxy shell：
 
 - 不對 reviewer 輸出做內容／品質判斷
-- 只包 `timeout`
+- 只包 `timeout --foreground`
 - 使用 `--print-logs --log-level ERROR`，讓 OpenCode 自己的錯誤訊息直接出現在 stderr
-- 若 stderr 出現明確 error marker，轉成非零失敗
 - 在 timeout 或非零 exit code 時補一行 `XREVIEW_ERROR` summary，方便上層流程辨識失敗
 
 ### 設計說明

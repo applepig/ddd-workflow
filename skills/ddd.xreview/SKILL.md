@@ -51,11 +51,11 @@ echo "$review_prompt_file"
 
 ### 3. 派出 Reviewer（單一 Monitor）
 
-orchestrator 預設從 `~/.config/ddd-workflow/xreview.json` 讀取模型清單，無需在 command 中指定。要臨時覆蓋（例如針對某次 review 換掉某個模型），把 `cli:model` spec 直接接在 prompt file 後面當位置參數即可。
+orchestrator 預設從 `~/.config/ddd-workflow/xreview.json` 讀取模型清單，無需在 command 中指定。要臨時覆蓋（例如針對某次 review 換掉某個模型），把 `cli:model` spec 或 alias 直接接在 prompt file 後面當位置參數即可。
 
 ```
 Monitor({
-  command: "bash ~/.claude/skills/ddd.xreview/scripts/run-orchestrator.sh $review_prompt_file",
+  command: "bash ~/.claude/skills/ddd.xreview/scripts/xreview-orchestrator.sh $review_prompt_file",
   timeout_ms: 3600000,
   persistent: false,
   description: "xreview 平行派 N 個 reviewer"
@@ -64,11 +64,15 @@ Monitor({
 
 **設定要點**：
 
-- 使用 `run-orchestrator.sh` wrapper（thin exec 到 `xreview-orchestrator.sh`）——避免在 Monitor `command` JSON 字串內對 `$prompt_file` 做雙引號 escape，減少 copy-paste 出錯
+- 直接呼叫 `xreview-orchestrator.sh`
 - `$review_prompt_file` 由 `mktemp /tmp/xreview-XXXXXX.md` 產生，預設不含空白；若自訂路徑含空白或特殊字元，請改為 `\"$review_prompt_file\"` 並相應 escape
 - `timeout_ms: 3600000`（1 小時）—— Monitor 上限，繞過 Bash 10 分鐘 cap
 - `persistent: false` —— orchestrator 自然 exit 即結束 watch
-- 要臨時覆蓋模型清單：`... $review_prompt_file claude:claude-opus-4-6 opencode:github-copilot/gpt-5.4`（CLI 參數一律優先於 config）
+- 要臨時覆蓋模型清單：`... $review_prompt_file claude:claude-opus-4-6 opencode:github-copilot/gpt-5.4`
+- 預設短名共有 7 個：`5.4`、`5-mini`、`haiku`、`sonnet`、`opus`、`pro`、`flash`
+- alias 表位置：`~/.config/ddd-workflow/xreview.json` 的 `aliases` 區塊
+- 若 config 有 `aliases`，也可直接用短名：`... $review_prompt_file opus 5.4 pro`。orchestrator 會先 resolve 成完整 spec，再做 validate、事件流與 log 命名
+- 注意：若你本機已經有既存的 `~/.config/ddd-workflow/xreview.json`，`npm run deploy` 不會自動覆蓋，所以要自行補上 `aliases` 區塊與短名對應
 
 ### 4. 收集事件流
 
@@ -200,7 +204,7 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 - Reviewer 自己有能力讀檔案、跑 git 指令，不需在 prompt 中重複說明
 - **Timeout**：
   - Monitor 上限 3600000ms（1 小時）—— orchestrator 整體
-  - orchestrator 內部對每個 reviewer 固定 3000 秒（50 分鐘）safety net（寫死，與 runner 對齊）
+  - orchestrator 內部對每個 reviewer 固定 3000 秒（50 分鐘）safety net（寫死，由各 adapter 內部執行）
 - **安全性**：orchestrator 對外部 CLI 一律 stdin pipe，prompt 內容不出現在 command line
 - 若變更範圍太大，考慮按 milestone 拆分 review
 - **暫存檔清理**：所有 reviewer 完成後，執行 `rm -f "$review_prompt_file"`；log 檔保留在 `/tmp/xreview-*` 直到系統清理
@@ -211,7 +215,7 @@ for spec where events[spec].status in ["fail", "incomplete", "unknown"]:
 
 - **claude CLI**：用於 Claude reviewer，預設可用
 - **外部 CLI**：至少安裝一種（opencode / gemini / codex），並設定好認證。詳見 `references/cli-adapters.md`
-- **config 檔**：`~/.config/ddd-workflow/xreview.json` 由 `npm run deploy` 部署。要客製模型清單直接編輯該檔（不會被 deploy 覆蓋）
+- **config 檔**：`~/.config/ddd-workflow/xreview.json` 由 `npm run deploy` 部署。可同時設定 `reviewers` 與 `aliases`；要客製模型清單直接編輯該檔（不會被 deploy 覆蓋，既有個人 config 需自行補 alias）
 - 若所有外部 CLI 均未安裝，可在 config 中只留 claude reviewer 跑單方 review
 
 ## 產出

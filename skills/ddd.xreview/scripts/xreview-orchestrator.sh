@@ -105,7 +105,7 @@ if [[ ${#specs[@]} -eq 0 ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-runner="$script_dir/xreview-runner.sh"
+adapter_dir="$script_dir/adapters"
 # runid: PID + epoch seconds + $RANDOM. RANDOM defends against the unlikely
 # case of two orchestrators sharing the same PID in the same second (e.g.
 # after a reboot cycle with low PID reuse).
@@ -115,6 +115,64 @@ runid="$$-$(date +%s)-${RANDOM}"
 # long enough for deep-reasoning models (opus, gemini-pro). Hard-coded to
 # keep the contract simple; bump this if future models need more.
 per_reviewer_timeout=3000
+
+resolve_spec() {
+  local spec="$1"
+  local aliases_json="$2"
+  local resolved=""
+
+  if [[ "$spec" == *:* ]]; then
+    echo "$spec"
+    return
+  fi
+
+  if [[ -n "$aliases_json" ]]; then
+    resolved="$(jq -r --arg alias "$spec" '.[$alias] // empty' <<< "$aliases_json" 2>/dev/null)"
+  fi
+
+  if [[ -n "$resolved" ]]; then
+    echo "$resolved"
+    return
+  fi
+
+  echo "$spec"
+}
+
+config_needs_parse=false
+aliases_json='{}'
+if [[ -f "$config_file" ]]; then
+  if [[ ${#specs[@]} -eq 0 ]]; then
+    config_needs_parse=true
+  else
+    for spec in "${specs[@]}"; do
+      if [[ "$spec" != *:* ]]; then
+        config_needs_parse=true
+        break
+      fi
+    done
+  fi
+fi
+
+if $config_needs_parse; then
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "FAIL orchestrator jq_required_for_config_parse"
+    echo "ALL_DONE"
+    exit 1
+  fi
+
+  aliases_json="$(jq -c '.aliases // {}' "$config_file" 2>/dev/null)" || aliases_json=""
+  if [[ -z "$aliases_json" ]]; then
+    echo "FAIL orchestrator config_empty_or_invalid:$config_file"
+    echo "ALL_DONE"
+    exit 1
+  fi
+fi
+
+resolved_specs=()
+for spec in "${specs[@]}"; do
+  resolved_specs+=("$(resolve_spec "$spec" "$aliases_json")")
+done
+specs=("${resolved_specs[@]}")
 
 pids=()
 
@@ -229,47 +287,26 @@ for spec in "${valid_specs[@]:-}"; do
   setsid bash -c '
     spec="$1"
     prompt_file="$2"
-    runner="$3"
+    adapter_dir="$3"
     timeout_val="$4"
     log="$5"
 
     cli="${spec%%:*}"
     model="${spec#*:}"
 
-    case "$cli" in
-      claude)
-        # Use --agent ddd-reviewer to load the deployed agent system prompt
-        # and tool restrictions. --permission-mode plan enforces read-only.
-        # `timeout --foreground` keeps the child in our (setsid-created)
-        # process group; without it, timeout puts the child in a NEW pgrp,
-        # which would defeat the orchestrators cleanup() PGID kill path.
-        # Append (>>) to preserve the parent-written meta header.
-        timeout --foreground "$timeout_val" claude -p \
-          --agent ddd-reviewer \
-          --model "$model" \
-          --no-session-persistence \
-          --permission-mode plan \
-          --output-format text \
-          < "$prompt_file" \
-          >> "$log" 2>&1
-        rc=$?
-        ;;
-      opencode|gemini|codex)
-        # Delegate to the thin runner (per-CLI quirks + stdin piping). Both
-        # orchestrator and runner share the same 3000s cap; the nested
-        # `timeout --foreground` here is defense-in-depth, not overlap —
-        # it keeps the setsid process group intact if runner misbehaves.
-        timeout --foreground "$timeout_val" bash "$runner" \
-          "$prompt_file" "$spec" "$timeout_val" \
-          >> "$log" 2>&1
-        rc=$?
-        ;;
-      *)
-        echo "XREVIEW_ERROR: unknown cli: $cli (supported: claude, opencode, gemini, codex)" \
-          >> "$log"
-        rc=1
-        ;;
-    esac
+    adapter="$adapter_dir/$cli.sh"
+
+    if [[ ! -f "$adapter" ]]; then
+      echo "XREVIEW_ERROR: unknown cli: $cli (supported: claude, opencode, gemini, codex)" \
+        >> "$log"
+      rc=1
+    else
+      # Delegate all per-CLI quirks (command lookup / timeout / stdin piping /
+      # flags) to the thin adapter. Append (>>) to preserve the parent-written
+      # meta header.
+      bash "$adapter" "$prompt_file" "$model" "$timeout_val" >> "$log" 2>&1
+      rc=$?
+    fi
 
     # Sidecar status file lets the parent shell render a blocking-mode footer
     # without re-parsing its own stdout (events go straight to the parent
@@ -281,7 +318,7 @@ for spec in "${valid_specs[@]:-}"; do
     else
       echo "FAIL $spec exit_code=$rc log=$log"
     fi
-  ' _ "$spec" "$prompt_file" "$runner" "$per_reviewer_timeout" "$log" &
+  ' _ "$spec" "$prompt_file" "$adapter_dir" "$per_reviewer_timeout" "$log" &
   pids+=($!)
 done
 

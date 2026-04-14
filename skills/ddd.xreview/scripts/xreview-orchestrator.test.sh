@@ -47,7 +47,7 @@ exit 7
 MOCK_EOF
 chmod +x "$MOCK_DIR/claude-fail"
 
-# Mock opencode/gemini/codex for runner delegation
+# Mock opencode/gemini/codex for adapter dispatch
 for cli in opencode gemini codex; do
   cat > "$MOCK_DIR/$cli" << MOCK_EOF
 #!/usr/bin/env bash
@@ -265,12 +265,12 @@ else
 fi
 
 # ============================================================
-echo "--- Test: opencode dispatch via runner ---"
+echo "--- Test: opencode dispatch via adapter ---"
 # ============================================================
 
-# opencode (and gemini/codex) go through xreview-runner.sh. The mock opencode
-# in $MOCK_DIR just echoes args and exits 0 — runner preserves that exit code
-# and the orchestrator emits DONE.
+# opencode (and gemini/codex) now go through scripts/adapters/<cli>.sh. The
+# mock opencode in $MOCK_DIR just echoes args and exits 0; the adapter preserves
+# that exit code and the orchestrator emits DONE.
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "opencode:gpt-5-mini" 2>&1)
 rc=$?
 
@@ -288,7 +288,7 @@ opencode_log=$(echo "$output" | grep -E "^DONE opencode:" | \
 [[ -n "$opencode_log" ]] && rm -f "$opencode_log"
 
 # ============================================================
-echo "--- Test: gemini dispatch via runner ---"
+echo "--- Test: gemini dispatch via adapter ---"
 # ============================================================
 
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "gemini:gemini-3-flash" 2>&1)
@@ -654,6 +654,191 @@ assert_contains "config-resolved ALL_DONE" "$output" "ALL_DONE"
 
 # Cleanup logs from this run.
 for lp in $(echo "$output" | grep -E "^DONE " | sed -E 's/^DONE [^ ]+ //'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: alias hit resolves before validation ---"
+# ============================================================
+
+cfg_xdg=$(mktemp -d)
+mkdir -p "$cfg_xdg/ddd-workflow"
+cat > "$cfg_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["opus", "5.4", "flash"],
+  "aliases": {
+    "opus": "claude:opus",
+    "5.4": "opencode:github-copilot/gpt-5.4",
+    "flash": "gemini:flash"
+  }
+}
+CFG_EOF
+
+output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" XREVIEW_MODE=blocking \
+  bash "$ORCH" "$PROMPT_FILE" 2>&1)
+rc=$?
+
+assert_exit_code "alias-hit config run exits 0" "$rc" 0
+assert_contains "alias-hit claude START uses resolved spec" "$output" "START claude:opus /tmp/xreview-"
+assert_contains "alias-hit opencode DONE uses resolved spec" "$output" "DONE opencode:github-copilot/gpt-5.4 /tmp/xreview-"
+assert_contains "alias-hit gemini DONE uses resolved spec" "$output" "DONE gemini:flash /tmp/xreview-"
+assert_contains "alias-hit footer uses resolved spec" "$output" "[DONE]      claude:opus"
+assert_not_contains "alias-hit raw reviewer name hidden from events" "$output" "START opus"
+assert_not_contains "alias-hit raw reviewer name hidden from footer" "$output" "[DONE]      opus"
+
+alias_log=$(echo "$output" | grep -E "^DONE claude:opus " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+if [[ -n "$alias_log" && "$alias_log" == *"claude_opus.log" ]]; then
+  ((PASS++)); echo "  PASS: alias-hit log filename uses resolved spec slug"
+else
+  ((FAIL++)); echo "  FAIL: alias-hit log filename did not use resolved spec slug ($alias_log)"
+fi
+
+alias_status="${alias_log%.log}.status"
+if [[ -f "$alias_status" ]]; then
+  ((PASS++)); echo "  PASS: alias-hit status sidecar uses resolved spec slug"
+else
+  ((FAIL++)); echo "  FAIL: alias-hit status sidecar missing ($alias_status)"
+fi
+
+for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: alias miss stays raw ---"
+# ============================================================
+
+cfg_xdg=$(mktemp -d)
+mkdir -p "$cfg_xdg/ddd-workflow"
+cat > "$cfg_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["claude:unused"],
+  "aliases": {
+    "opus": "claude:opus"
+  }
+}
+CFG_EOF
+
+output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
+  bash "$ORCH" "$PROMPT_FILE" "unknown-short" 2>&1)
+
+assert_contains "alias-miss START keeps raw spec" "$output" "START unknown-short /tmp/xreview-"
+assert_contains "alias-miss FAIL keeps raw spec" "$output" "FAIL unknown-short exit_code=1 log=/tmp/xreview-"
+
+miss_log=$(echo "$output" | grep -E "^FAIL unknown-short " | sed -E 's/.*log=//')
+if [[ -n "$miss_log" && "$miss_log" == *"unknown-short.log" ]]; then
+  ((PASS++)); echo "  PASS: alias-miss log filename keeps raw spec slug"
+else
+  ((FAIL++)); echo "  FAIL: alias-miss log filename did not keep raw spec slug ($miss_log)"
+fi
+
+for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: config without aliases keeps specs raw ---"
+# ============================================================
+
+cfg_xdg=$(mktemp -d)
+mkdir -p "$cfg_xdg/ddd-workflow"
+cat > "$cfg_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["claude:no-alias-a", "unknown-short"]
+}
+CFG_EOF
+
+output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
+  bash "$ORCH" "$PROMPT_FILE" 2>&1)
+rc=$?
+
+assert_exit_code "no-aliases config run exits 0" "$rc" 0
+assert_contains "no-aliases full spec stays raw" "$output" "DONE claude:no-alias-a"
+assert_contains "no-aliases short spec stays raw" "$output" "START unknown-short /tmp/xreview-"
+assert_contains "no-aliases short spec fails as raw unknown cli" "$output" "FAIL unknown-short exit_code=1 log=/tmp/xreview-"
+
+for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: CLI alias args override config reviewers ---"
+# ============================================================
+
+cfg_xdg=$(mktemp -d)
+mkdir -p "$cfg_xdg/ddd-workflow"
+cat > "$cfg_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["pro"],
+  "aliases": {
+    "5.4": "opencode:github-copilot/gpt-5.4",
+    "pro": "gemini:pro"
+  }
+}
+CFG_EOF
+
+output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
+  bash "$ORCH" "$PROMPT_FILE" "5.4" 2>&1)
+
+assert_contains "CLI alias resolved to full spec" "$output" "DONE opencode:github-copilot/gpt-5.4"
+assert_not_contains "config reviewer ignored when CLI alias present" "$output" "gemini:pro"
+assert_not_contains "raw CLI alias not shown in events" "$output" "DONE 5.4"
+
+for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
+  rm -f "$lp" "${lp%.log}.status"
+done
+rm -rf "$cfg_xdg"
+
+# ============================================================
+echo "--- Test: default short reviewers resolve and dispatch ---"
+# ============================================================
+
+cfg_xdg=$(mktemp -d)
+mkdir -p "$cfg_xdg/ddd-workflow"
+cat > "$cfg_xdg/ddd-workflow/xreview.json" << 'CFG_EOF'
+{
+  "reviewers": ["opus", "5.4", "pro"],
+  "aliases": {
+    "5.4": "opencode:github-copilot/gpt-5.4",
+    "5-mini": "opencode:github-copilot/gpt-5-mini",
+    "haiku": "claude:haiku",
+    "sonnet": "claude:sonnet",
+    "opus": "claude:opus",
+    "pro": "gemini:pro",
+    "flash": "gemini:flash"
+  }
+}
+CFG_EOF
+
+output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" XREVIEW_MODE=blocking \
+  bash "$ORCH" "$PROMPT_FILE" 2>&1)
+rc=$?
+
+assert_exit_code "default short reviewers run exits 0" "$rc" 0
+assert_contains "default short reviewer claude resolved" "$output" "START claude:opus /tmp/xreview-"
+assert_contains "default short reviewer opencode resolved" "$output" "DONE opencode:github-copilot/gpt-5.4 /tmp/xreview-"
+assert_contains "default short reviewer gemini resolved" "$output" "DONE gemini:pro /tmp/xreview-"
+assert_contains "default short reviewer footer uses resolved spec" "$output" "[DONE]      gemini:pro"
+
+default_log=$(echo "$output" | grep -E "^DONE gemini:pro " | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+default_status="${default_log%.log}.status"
+if [[ -f "$default_status" ]]; then
+  ((PASS++)); echo "  PASS: default short reviewer status sidecar uses resolved spec slug"
+else
+  ((FAIL++)); echo "  FAIL: default short reviewer status sidecar missing ($default_status)"
+fi
+
+for lp in $(echo "$output" | grep -E "^(DONE|FAIL) " | \
+  sed -E 's/.*(\/tmp\/xreview-[^ ]+)/\1/' | grep '^/tmp/xreview-'); do
   rm -f "$lp" "${lp%.log}.status"
 done
 rm -rf "$cfg_xdg"
