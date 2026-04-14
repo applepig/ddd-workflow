@@ -29,15 +29,26 @@ PROMPT_FILE=$(mktemp /tmp/xreview-test-XXXXXX.md)
 echo "test review prompt content" > "$PROMPT_FILE"
 trap 'rm -rf "$MOCK_DIR" "$PROMPT_FILE" /tmp/xreview-*-test-* /tmp/xreview-sigterm-test-* /tmp/xreview-sigint-test-* 2>/dev/null || true' EXIT
 
-# Mock claude CLI — echoes args and a marker, exit 0
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+# Mock claude CLI — ADR-11 dual-output aware.
+# stderr: dispatch marker + stdin echo → orchestrator log via `2>&1`.
+# stdout: single JSON `{"result":"..."}` → adapter's `jq -r .result` → final.txt.
+# This split mirrors the real CLI (structured stdout, verbose stderr) so the
+# orchestrator log contains what we want to assert on (dispatch markers), while
+# final.txt holds only clean review content.
+write_happy_claude_mock() {
+  cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
 #!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
+echo "MOCK_CLAUDE_CALLED args=$*" >&2
+while IFS= read -r line; do
+  echo "MOCK_CLAUDE_STDIN: $line" >&2
+done
+echo "MOCK_CLAUDE_DONE" >&2
+printf '{"result":"MOCK_CLAUDE_REVIEW_TEXT"}\n'
 exit 0
 MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+  chmod +x "$MOCK_DIR/claude"
+}
+write_happy_claude_mock
 
 # Mock failing claude (used by opt-in tests)
 cat > "$MOCK_DIR/claude-fail" << 'MOCK_EOF'
@@ -47,15 +58,44 @@ exit 7
 MOCK_EOF
 chmod +x "$MOCK_DIR/claude-fail"
 
-# Mock opencode/gemini/codex for adapter dispatch
-for cli in opencode gemini codex; do
-  cat > "$MOCK_DIR/$cli" << MOCK_EOF
+# Mock opencode: dispatch marker on stderr; ndjson text-event on stdout so the
+# adapter's `jq` pipeline produces a non-empty final.txt. The orchestrator log
+# gets the stderr marker.
+cat > "$MOCK_DIR/opencode" << 'MOCK_EOF'
 #!/usr/bin/env bash
-echo "MOCK_${cli^^}_CALLED \$*"
+echo "MOCK_OPENCODE_CALLED $*" >&2
+cat > /dev/null
+printf '{"type":"text","timestamp":1,"sessionID":"s","part":{"type":"text","text":"MOCK_OPENCODE_REVIEW_TEXT"}}\n'
 exit 0
 MOCK_EOF
-  chmod +x "$MOCK_DIR/$cli"
+chmod +x "$MOCK_DIR/opencode"
+
+# Mock gemini: dispatch marker on stderr; JSON with `.response` on stdout.
+cat > "$MOCK_DIR/gemini" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_GEMINI_CALLED $*" >&2
+cat > /dev/null
+printf '{"response":"MOCK_GEMINI_REVIEW_TEXT"}\n'
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/gemini"
+
+# Mock codex: dispatch marker on stderr; writes final marker to `-o <out>` arg.
+cat > "$MOCK_DIR/codex" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "MOCK_CODEX_CALLED $*" >&2
+cat > /dev/null
+out_file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out_file="$2"; shift 2 ;;
+    *) shift ;;
+  esac
 done
+[[ -n "$out_file" ]] && printf 'MOCK_CODEX_REVIEW_TEXT' > "$out_file"
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/codex"
 
 # --- Helpers ---
 
@@ -89,6 +129,45 @@ assert_exit_code() {
 
 count_lines_matching() {
   echo "$1" | grep -cE "^$2" || true
+}
+
+# M7.2 event format: RETURN <spec> <log> <final>, FAIL <spec> exit_code=N log=L final=F.
+# These helpers abstract the event columns so path extraction doesn't need to
+# change again if columns are added later. Callers pass the full captured output.
+first_return_log() {
+  # RETURN <spec> <log> <final> — log is column 3.
+  echo "$1" | awk '/^RETURN / {print $3; exit}'
+}
+
+first_return_final() {
+  # RETURN <spec> <log> <final> — final is column 4.
+  echo "$1" | awk '/^RETURN / {print $4; exit}'
+}
+
+first_fail_log() {
+  # FAIL <spec> exit_code=N log=L final=F — extract log= value only.
+  echo "$1" | grep -E '^FAIL ' | head -1 | grep -oE 'log=/tmp/xreview-[^ ]+\.log' | sed 's/^log=//'
+}
+
+first_fail_final() {
+  echo "$1" | grep -E '^FAIL ' | head -1 | grep -oE 'final=/tmp/xreview-[^ ]+\.final\.txt' | sed 's/^final=//'
+}
+
+# Cleanup helper: remove every reviewer artifact (log/final/status) referenced
+# by the given event-stream output. Covers both RETURN and FAIL rows, both
+# bare log paths and `log=…` / `final=…` tokens.
+cleanup_from_output() {
+  local out="$1"
+  local path base
+  # Extract every /tmp/xreview-... path (both .log and .final.txt).
+  for path in $(echo "$out" | grep -oE '/tmp/xreview-[^ ]+\.(log|final\.txt)' | sort -u); do
+    if [[ "$path" == *.final.txt ]]; then
+      base="${path%.final.txt}"
+    else
+      base="${path%.log}"
+    fi
+    rm -f "${base}.log" "${base}.final.txt" "${base}.status"
+  done
 }
 
 # Poll the given file until it has at least $expected lines, or up to ~5s.
@@ -147,7 +226,8 @@ assert_not_contains "no FAIL for happy path" "$output" "FAIL"
 
 # Verify log file has meta header written by parent shell (so main agent can
 # Read the log safely immediately after seeing START, without racing setsid).
-done_log_path=$(echo "$output" | grep -E "^RETURN " | head -1 | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+done_log_path=$(first_return_log "$output")
+done_final_path=$(first_return_final "$output")
 if [[ -n "$done_log_path" && -f "$done_log_path" ]]; then
   if grep -q '^\[xreview\] START claude:claude-haiku-4-5-20251001 ' "$done_log_path"; then
     ((PASS++)); echo "  PASS: log file starts with meta START header"
@@ -165,13 +245,15 @@ if [[ -n "$done_log_path" && -f "$done_log_path" ]]; then
   else
     ((FAIL++)); echo "  FAIL: meta separator missing from log"
   fi
-  # Setsid body appends after the header, so MOCK marker must still be present
+  # Setsid body appends adapter stderr (via 2>&1) after the header. Mock
+  # claude's dispatch marker is emitted on stderr per ADR-11 split, so it
+  # must still land in the log file.
   if grep -q 'MOCK_CLAUDE_CALLED' "$done_log_path"; then
     ((PASS++)); echo "  PASS: setsid body output appended after meta header"
   else
     ((FAIL++)); echo "  FAIL: setsid body output missing (append failed?)"
   fi
-  rm -f "$done_log_path"
+  rm -f "$done_log_path" "$done_final_path"
 else
   ((FAIL++)); echo "  FAIL: could not locate DONE log path for meta header check"
 fi
@@ -225,14 +307,7 @@ assert_contains "FAIL emitted with log path" "$output" "log=/tmp/xreview-"
 assert_contains "ALL_DONE still emitted after FAIL" "$output" "ALL_DONE"
 
 # Restore happy claude mock for downstream tests
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+write_happy_claude_mock
 
 # ============================================================
 echo "--- Test: unknown CLI reports FAIL ---"
@@ -250,7 +325,8 @@ echo "--- Test: log file actually written ---"
 # ============================================================
 
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "claude:log-test-model" 2>&1)
-log_path=$(echo "$output" | grep -E "^RETURN " | sed -E 's/.*log=//; s/^RETURN [^ ]+ //')
+log_path=$(first_return_log "$output")
+final_path=$(first_return_final "$output")
 
 if [[ -n "$log_path" && -f "$log_path" ]]; then
   ((PASS++)); echo "  PASS: log file exists at $log_path"
@@ -259,7 +335,7 @@ if [[ -n "$log_path" && -f "$log_path" ]]; then
   else
     ((FAIL++)); echo "  FAIL: log file empty or missing mock marker"
   fi
-  rm -f "$log_path"
+  rm -f "$log_path" "$final_path"
 else
   ((FAIL++)); echo "  FAIL: log file not found at '$log_path'"
 fi
@@ -322,13 +398,20 @@ assert_contains "ALL_DONE still emitted after invalid spec" "$output" "ALL_DONE"
 
 # START log path must equal FAIL log path (same file, so main agent can Read it).
 start_log=$(echo "$output" | grep -E "^START bad/cli:some-model " | \
-  sed -E 's/^START [^ ]+ //')
-fail_log=$(echo "$output" | grep -E "^FAIL bad/cli:some-model " | \
-  sed -E 's/.*log=//')
+  awk '{print $3}')
+fail_log=$(first_fail_log "$output")
+fail_final=$(first_fail_final "$output")
 if [[ -n "$start_log" && "$start_log" == "$fail_log" ]]; then
   ((PASS++)); echo "  PASS: invalid spec START and FAIL share log path"
 else
   ((FAIL++)); echo "  FAIL: invalid spec log mismatch — start='$start_log' fail='$fail_log'"
+fi
+
+# M7.2: FAIL event must carry final= column (ADR-11 dual-output).
+if [[ -n "$fail_final" && "$fail_final" == *".final.txt" ]]; then
+  ((PASS++)); echo "  PASS: invalid spec FAIL event carries final= path"
+else
+  ((FAIL++)); echo "  FAIL: invalid spec FAIL event missing final= column (got '$fail_final')"
 fi
 
 # Log file must exist and contain the XREVIEW_ERROR message (not a placeholder).
@@ -340,7 +423,7 @@ if [[ -n "$fail_log" && -f "$fail_log" ]]; then
     ((FAIL++)); echo "  FAIL: invalid spec log missing XREVIEW_ERROR message"
     cat "$fail_log"
   fi
-  rm -f "$fail_log"
+  rm -f "$fail_log" "$fail_final"
 else
   ((FAIL++)); echo "  FAIL: invalid spec log file not found at '$fail_log'"
 fi
@@ -351,9 +434,9 @@ assert_contains "invalid model FAIL emitted with log path" "$output" \
   "FAIL claude:bad model! exit_code=2 log=/tmp/xreview-"
 
 # Cleanup any invalid-model log file produced above.
-invalid_model_log=$(echo "$output" | grep -E "^FAIL claude:bad model! " | \
-  sed -E 's/.*log=//')
-[[ -n "$invalid_model_log" ]] && rm -f "$invalid_model_log"
+invalid_model_log=$(first_fail_log "$output")
+invalid_model_final=$(first_fail_final "$output")
+[[ -n "$invalid_model_log" ]] && rm -f "$invalid_model_log" "$invalid_model_final"
 
 # Make sure a valid spec alongside an invalid one still runs.
 output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" \
@@ -503,14 +586,7 @@ fi
 rm -f /tmp/xreview-sigint-test-pids /tmp/xreview-sigint-test-out
 
 # Restore happy claude mock (in case future tests are added below).
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+write_happy_claude_mock
 
 # ============================================================
 echo "--- Test: blocking mode emits summary footer ---"
@@ -526,7 +602,7 @@ assert_contains "blocking footer header" "$output" "=== Cross Review Summary (2 
 assert_contains "blocking footer Read instruction" "$output" "Read these log files"
 assert_contains "blocking footer DONE row for a" "$output" "[RETURN]    claude:blocking-a"
 assert_contains "blocking footer DONE row for b" "$output" "[RETURN]    claude:blocking-b"
-assert_contains "blocking footer Next instruction" "$output" "Next: Read each log above"
+assert_contains "blocking footer Next instruction" "$output" "Next: Read each [FINAL]"
 
 # Footer rows must appear AFTER ALL_DONE, not before (Monitor consumers should
 # never see the footer interspersed with events).
@@ -565,14 +641,7 @@ assert_contains "blocking footer FAIL row" "$output" "[FAIL=7]  claude:fail-test
 assert_contains "blocking footer counts failure" "$output" "1 reviewers: 0 returned, 1 failed"
 
 # Restore happy claude mock for any future tests.
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+write_happy_claude_mock
 
 # Cleanup logs.
 for lp in $(echo "$output" | grep -E "^(RETURN|FAIL) " | \
@@ -588,7 +657,7 @@ output=$(PATH="$MOCK_DIR:$PATH" XREVIEW_MODE=streaming bash "$ORCH" "$PROMPT_FIL
   "claude:streaming-test" 2>&1)
 assert_contains "streaming still emits ALL_DONE" "$output" "ALL_DONE"
 assert_not_contains "streaming has no summary header" "$output" "Cross Review Summary"
-assert_not_contains "streaming has no Next instruction" "$output" "Next: Read each log"
+assert_not_contains "streaming has no Next instruction" "$output" "Next: Read each"
 
 # Cleanup.
 for lp in $(echo "$output" | grep -E "^RETURN " | sed -E 's/^RETURN [^ ]+ //'); do
@@ -687,8 +756,7 @@ assert_contains "alias-hit footer uses resolved spec" "$output" "[RETURN]    cla
 assert_not_contains "alias-hit raw reviewer name hidden from events" "$output" "START opus"
 assert_not_contains "alias-hit raw reviewer name hidden from footer" "$output" "[RETURN]    opus"
 
-alias_log=$(echo "$output" | grep -E "^RETURN claude:opus " | \
-  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+alias_log=$(echo "$output" | grep -E "^RETURN claude:opus " | awk '{print $3}')
 if [[ -n "$alias_log" && "$alias_log" == *"claude_opus.log" ]]; then
   ((PASS++)); echo "  PASS: alias-hit log filename uses resolved spec slug"
 else
@@ -729,7 +797,7 @@ output=$(PATH="$MOCK_DIR:$PATH" XDG_CONFIG_HOME="$cfg_xdg" \
 assert_contains "alias-miss START keeps raw spec" "$output" "START unknown-short /tmp/xreview-"
 assert_contains "alias-miss FAIL keeps raw spec" "$output" "FAIL unknown-short exit_code=1 log=/tmp/xreview-"
 
-miss_log=$(echo "$output" | grep -E "^FAIL unknown-short " | sed -E 's/.*log=//')
+miss_log=$(first_fail_log "$output")
 if [[ -n "$miss_log" && "$miss_log" == *"unknown-short.log" ]]; then
   ((PASS++)); echo "  PASS: alias-miss log filename keeps raw spec slug"
 else
@@ -829,7 +897,7 @@ assert_contains "default short reviewer opencode resolved" "$output" "RETURN ope
 assert_contains "default short reviewer gemini resolved" "$output" "RETURN gemini:pro /tmp/xreview-"
 assert_contains "default short reviewer footer uses resolved spec" "$output" "[RETURN]    gemini:pro"
 
-default_log=$(echo "$output" | grep -E "^RETURN gemini:pro " | sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+default_log=$(echo "$output" | grep -E "^RETURN gemini:pro " | awk '{print $3}')
 default_status="${default_log%.log}.status"
 if [[ -f "$default_status" ]]; then
   ((PASS++)); echo "  PASS: default short reviewer status sidecar uses resolved spec slug"
@@ -978,14 +1046,7 @@ for lp in $(echo "$output" | grep -E "^(START|FAIL) " | \
 done
 
 # Restore happy claude mock.
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+write_happy_claude_mock
 
 # ============================================================
 echo "--- Test: stdin mode — prompt read from stdin, no positional file arg (M6.4) ---"
@@ -994,19 +1055,10 @@ echo "--- Test: stdin mode — prompt read from stdin, no positional file arg (M
 # mktemp/rm. When orchestrator is invoked with no positional prompt file
 # (or with "-" sentinel), it slurps stdin into its own tmpfile and rms on exit.
 
-# Use a mock claude that echoes the prompt file path and content so we can
-# verify the stdin bytes actually reached the adapter/CLI.
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-# Adapter pipes prompt file as stdin; echo each line back with a marker.
-while IFS= read -r line; do
-  echo "MOCK_CLAUDE_STDIN: $line"
-done
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+# Reuse the happy claude mock (stderr echoes dispatch marker + each stdin line
+# as MOCK_CLAUDE_STDIN: …). The orchestrator captures adapter stderr into the
+# log via `>> "$log" 2>&1`, so asserting against the log works.
+write_happy_claude_mock
 
 stdin_output=$(PATH="$MOCK_DIR:$PATH" \
   bash "$ORCH" "-" "claude:stdin-test" <<< "HELLO-FROM-STDIN" 2>&1)
@@ -1016,9 +1068,9 @@ assert_exit_code "stdin mode exits 0" "$rc" 0
 assert_contains "stdin mode emits START" "$stdin_output" "START claude:stdin-test"
 assert_contains "stdin mode emits RETURN" "$stdin_output" "RETURN claude:stdin-test"
 
-# The mock CLI wrote the stdin content into the log. Verify we can find it.
-stdin_log=$(echo "$stdin_output" | grep -E "^RETURN " | head -1 | \
-  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/')
+# The mock CLI wrote the stdin content into the log (via stderr → 2>&1 → log).
+stdin_log=$(first_return_log "$stdin_output")
+stdin_final=$(first_return_final "$stdin_output")
 if [[ -n "$stdin_log" && -f "$stdin_log" ]]; then
   if grep -q "MOCK_CLAUDE_STDIN: HELLO-FROM-STDIN" "$stdin_log"; then
     ((PASS++)); echo "  PASS: stdin content reached CLI via internal tmpfile"
@@ -1026,7 +1078,7 @@ if [[ -n "$stdin_log" && -f "$stdin_log" ]]; then
     ((FAIL++)); echo "  FAIL: stdin content missing from reviewer log"
     head -10 "$stdin_log"
   fi
-  rm -f "$stdin_log" "${stdin_log%.log}.status"
+  rm -f "$stdin_log" "$stdin_final" "${stdin_log%.log}.status"
 else
   ((FAIL++)); echo "  FAIL: could not locate log path from RETURN event"
 fi
@@ -1118,14 +1170,7 @@ rm -rf "$cfg_empty_dir"
 echo "--- Test: backward compat — positional prompt file still works (M6.4) ---"
 # ============================================================
 # Restore happy mock for safety, then verify old calling convention.
-cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
-#!/usr/bin/env bash
-echo "MOCK_CLAUDE_CALLED args=$*"
-cat
-echo "MOCK_CLAUDE_DONE"
-exit 0
-MOCK_EOF
-chmod +x "$MOCK_DIR/claude"
+write_happy_claude_mock
 
 bc_output=$(PATH="$MOCK_DIR:$PATH" \
   bash "$ORCH" "$PROMPT_FILE" "claude:backcompat-model" 2>&1)
@@ -1136,10 +1181,130 @@ assert_contains "backward compat RETURN emitted" "$bc_output" \
   "RETURN claude:backcompat-model"
 
 # Cleanup
-for lp in $(echo "$bc_output" | grep -E "^RETURN " | \
-  sed -E 's/.*(\/tmp\/xreview-[^ ]+)$/\1/'); do
-  rm -f "$lp" "${lp%.log}.status"
-done
+cleanup_from_output "$bc_output"
+
+# ============================================================
+echo "--- Test: M7.2 — RETURN event carries final path as 4th column ---"
+# ============================================================
+# ADR-11: each reviewer produces both <log> (verbose) and <final> (clean
+# review text). The orchestrator event stream must surface both so callers
+# know where to Read the clean content.
+
+write_happy_claude_mock
+m72_output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "claude:m72-ret" 2>&1)
+m72_rc=$?
+
+assert_exit_code "M7.2 RETURN happy path exits 0" "$m72_rc" 0
+
+# Strict format: RETURN <spec> <log> <final> — no trailing tokens, no log=/final= noise.
+m72_return_line=$(echo "$m72_output" | grep -E "^RETURN claude:m72-ret " | head -1)
+if echo "$m72_return_line" | grep -qE '^RETURN claude:m72-ret /tmp/xreview-[^ ]+\.log /tmp/xreview-[^ ]+\.final\.txt$'; then
+  ((PASS++)); echo "  PASS: M7.2 RETURN event has 4-column shape (spec log final)"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 RETURN event shape wrong: '$m72_return_line'"
+fi
+
+# Both referenced files must actually exist on disk so coordinator can Read them.
+m72_log=$(first_return_log "$m72_output")
+m72_final=$(first_return_final "$m72_output")
+if [[ -f "$m72_log" && -f "$m72_final" ]]; then
+  ((PASS++)); echo "  PASS: M7.2 both log and final files exist on disk"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 missing file(s) — log=$m72_log final=$m72_final"
+fi
+
+# final.txt must contain the jq-extracted review text (not raw JSON envelope).
+if [[ -f "$m72_final" ]] && grep -qF 'MOCK_CLAUDE_REVIEW_TEXT' "$m72_final" \
+  && ! grep -qF '"result"' "$m72_final"; then
+  ((PASS++)); echo "  PASS: M7.2 final.txt contains clean review text (jq extracted)"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 final.txt missing clean review text or leaked JSON envelope"
+  cat "$m72_final" 2>/dev/null | head -3
+fi
+
+cleanup_from_output "$m72_output"
+
+# ============================================================
+echo "--- Test: M7.2 — FAIL event carries final= path alongside log= ---"
+# ============================================================
+# A non-zero CLI rc surfaces as FAIL. The event must still point to both the
+# log (for debugging) and the (possibly empty) final.txt (for content-layer
+# inspection per SKILL.md step 7.1).
+
+cp "$MOCK_DIR/claude-fail" "$MOCK_DIR/claude"
+m72f_output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "claude:m72-fail" 2>&1)
+m72f_rc=$?
+
+assert_exit_code "M7.2 FAIL orchestrator still exits 0" "$m72f_rc" 0
+
+m72f_line=$(echo "$m72f_output" | grep -E "^FAIL claude:m72-fail " | head -1)
+if echo "$m72f_line" | grep -qE '^FAIL claude:m72-fail exit_code=7 log=/tmp/xreview-[^ ]+\.log final=/tmp/xreview-[^ ]+\.final\.txt$'; then
+  ((PASS++)); echo "  PASS: M7.2 FAIL event has log= and final= columns"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 FAIL event shape wrong: '$m72f_line'"
+fi
+
+m72f_final=$(first_fail_final "$m72f_output")
+if [[ -n "$m72f_final" && -f "$m72f_final" ]]; then
+  ((PASS++)); echo "  PASS: M7.2 FAIL final.txt path points to real file"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 FAIL final.txt path missing or file absent ($m72f_final)"
+fi
+
+write_happy_claude_mock
+cleanup_from_output "$m72f_output"
+
+# ============================================================
+echo "--- Test: M7.2 — final.txt survives orchestrator cleanup ---"
+# ============================================================
+# Cleanup trap kills reviewer PGIDs but must NOT delete final.txt (it's the
+# coordinator's Read target after RETURN/FAIL).
+
+m72c_output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" "claude:m72-cleanup" 2>&1)
+m72c_final=$(first_return_final "$m72c_output")
+m72c_log=$(first_return_log "$m72c_output")
+
+if [[ -n "$m72c_final" && -f "$m72c_final" ]]; then
+  ((PASS++)); echo "  PASS: M7.2 final.txt still exists after orchestrator exit"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 final.txt removed by cleanup ($m72c_final)"
+fi
+
+if [[ -n "$m72c_log" && -f "$m72c_log" ]]; then
+  ((PASS++)); echo "  PASS: M7.2 log file also preserved (coordinator may tail it)"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 log file removed by cleanup ($m72c_log)"
+fi
+
+cleanup_from_output "$m72c_output"
+
+# ============================================================
+echo "--- Test: M7.2 — blocking-mode footer includes [FINAL] column ---"
+# ============================================================
+# Footer consumers need both log (verbose) and final (clean) paths to do the
+# step 7.1 dual-peek protocol. Blocking-mode rows must expose both.
+
+m72b_output=$(PATH="$MOCK_DIR:$PATH" XREVIEW_MODE=blocking bash "$ORCH" "$PROMPT_FILE" \
+  "claude:m72-footer" 2>&1)
+m72b_rc=$?
+
+assert_exit_code "M7.2 blocking-mode run exits 0" "$m72b_rc" 0
+assert_contains "M7.2 footer row has [LOG] column" "$m72b_output" "[LOG] /tmp/xreview-"
+assert_contains "M7.2 footer row has [FINAL] column" "$m72b_output" "[FINAL] /tmp/xreview-"
+assert_contains "M7.2 footer row has [FINAL] …final.txt" "$m72b_output" ".final.txt"
+assert_contains "M7.2 footer Next instruction points at [FINAL]" "$m72b_output" \
+  "Next: Read each [FINAL]"
+
+# The [FINAL] path printed in the footer must exist on disk.
+m72b_final=$(echo "$m72b_output" | grep -oE '\[FINAL\] /tmp/xreview-[^ ]+\.final\.txt' | \
+  head -1 | sed 's/^\[FINAL\] //')
+if [[ -n "$m72b_final" && -f "$m72b_final" ]]; then
+  ((PASS++)); echo "  PASS: M7.2 footer [FINAL] path resolves to real file"
+else
+  ((FAIL++)); echo "  FAIL: M7.2 footer [FINAL] path missing or absent ($m72b_final)"
+fi
+
+cleanup_from_output "$m72b_output"
 
 # ============================================================
 echo ""

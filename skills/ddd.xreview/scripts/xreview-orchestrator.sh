@@ -8,20 +8,26 @@
 #
 # Stdout event stream (one event per line):
 #   START <cli:model> <log-path>
-#   RETURN <cli:model> <log-path>
-#   FAIL <cli:model> exit_code=<n> log=<log-path>
+#   RETURN <cli:model> <log-path> <final-path>
+#   FAIL <cli:model> exit_code=<n> log=<log-path> final=<final-path>
 #   ALL_DONE
 #
-# Event semantics (ADR-7):
-#   RETURN = transport layer success (CLI exit 0). Does NOT guarantee the log
-#            contains a real review — the agent may have emitted "FAIL:" or
-#            "XREVIEW_ERROR:" content while exiting normally. Coordinator MUST
-#            peek the log tail before treating the reviewer as valid.
+# Event semantics (ADR-7 + ADR-11):
+#   RETURN = transport layer success (CLI exit 0). Carries <log> (verbose
+#            trace) and <final> (clean agent final message). Does NOT guarantee
+#            the final contains a real review — the agent may have emitted
+#            "FAIL:" or "XREVIEW_ERROR:" content while exiting normally.
+#            Coordinator MUST Read <final> before treating the reviewer as
+#            valid (SKILL.md step 7.1: empty .final.txt = content-layer fail).
 #   FAIL   = transport layer failure (CLI exit non-zero, timeout 124, etc).
+#            Same <log>/<final> paths — <final> may be empty on failure.
 #   ALL_DONE = fan-out complete (reached end of reviewer loop).
 #
-# Each reviewer's full output is written to /tmp/xreview-<runid>-<slug>.log
-# The log path is emitted on START so callers can tail it during the review.
+# Each reviewer writes two files:
+#   /tmp/xreview-<runid>-<slug>.log        — verbose trace (stderr + noise)
+#   /tmp/xreview-<runid>-<slug>.final.txt  — agent's final message only (ADR-11)
+# Both are emitted in events so callers can tail the log during review and
+# Read the final after RETURN/FAIL.
 #
 # Designed to run under Claude Code's Monitor tool (timeout_ms up to 3600000ms)
 # to bypass the Bash tool's 10-minute hard cap.
@@ -284,6 +290,7 @@ valid_specs=()
 for spec in "${specs[@]}"; do
   slug="$(slug_of "$spec")"
   log="/tmp/xreview-${runid}-${slug}.log"
+  final="/tmp/xreview-${runid}-${slug}.final.txt"
 
   cli="${spec%%:*}"
   model="${spec#*:}"
@@ -294,16 +301,22 @@ for spec in "${specs[@]}"; do
 [xreview] cli must match ^[a-z0-9_-]+\$
 [xreview] model must match ^[A-Za-z0-9._/:-]+\$
 EOF
+    # Empty final.txt so coordinator's Read protocol (step 7.1) sees the
+    # content-layer-failure signal (empty → fail).
+    : > "$final"
     # Sidecar matches subshell convention so blocking-mode footer can read it.
     echo "2" > "${log%.log}.status"
     echo "START $spec $log"
-    echo "FAIL $spec exit_code=2 log=$log"
+    echo "FAIL $spec exit_code=2 log=$log final=$final"
     continue
   fi
 
   # Valid spec: write meta header; setsid body will APPEND its output after.
   printf '[xreview] START %s at %s\n[xreview] log=%s\n[xreview] ---\n' \
     "$spec" "$(date -Iseconds)" "$log" > "$log"
+  # Pre-create final.txt (empty) so coordinator can Read it unconditionally
+  # after RETURN/FAIL, even if the adapter never writes (e.g. early CLI crash).
+  : > "$final"
   echo "START $spec $log"
   valid_specs+=("$spec")
 done
@@ -324,6 +337,7 @@ for spec in "${valid_specs[@]:-}"; do
     adapter_dir="$3"
     timeout_val="$4"
     log="$5"
+    final="$6"
 
     cli="${spec%%:*}"
     model="${spec#*:}"
@@ -340,8 +354,10 @@ for spec in "${valid_specs[@]:-}"; do
       # so new adapters automatically inherit the safety net. `--foreground`
       # keeps the child in our process group so setsid-based cleanup still works.
       # Append (>>) to preserve the parent-written meta header.
+      # ADR-11 (M7): 3rd adapter arg is <final-out-file>. Adapter writes clean
+      # final text there; verbose trace flows via stderr into this log.
       timeout --foreground "$timeout_val" \
-        bash "$adapter" "$prompt_file" "$model" "$timeout_val" >> "$log" 2>&1
+        bash "$adapter" "$prompt_file" "$model" "$final" >> "$log" 2>&1
       rc=$?
 
       # M6.1 (F1): timeout(1) only SIGTERMs its direct child (bash adapter).
@@ -379,11 +395,11 @@ for spec in "${valid_specs[@]:-}"; do
     # actually produce a review?) is the coordinator responsibility — see
     # SKILL.md step 7 for the log-tail peek protocol.
     if [[ $rc -eq 0 ]]; then
-      echo "RETURN $spec $log"
+      echo "RETURN $spec $log $final"
     else
-      echo "FAIL $spec exit_code=$rc log=$log"
+      echo "FAIL $spec exit_code=$rc log=$log final=$final"
     fi
-  ' _ "$spec" "$prompt_file" "$adapter_dir" "$per_reviewer_timeout" "$log" &
+  ' _ "$spec" "$prompt_file" "$adapter_dir" "$per_reviewer_timeout" "$log" "$final" &
   pids+=($!)
 done
 
@@ -409,21 +425,22 @@ if [[ "$mode" == "blocking" ]]; then
   for spec in "${specs[@]}"; do
     slug="$(slug_of "$spec")"
     log="/tmp/xreview-${runid}-${slug}.log"
+    final="/tmp/xreview-${runid}-${slug}.final.txt"
     status_file="${log%.log}.status"
 
     if [[ -f "$status_file" ]]; then
       rc="$(cat "$status_file" 2>/dev/null || echo "?")"
       if [[ "$rc" == "0" ]]; then
-        rows+=("[RETURN]    $spec  ->  $log")
+        rows+=("[RETURN]    $spec  ->  [LOG] $log  [FINAL] $final")
         ((done_count++))
       else
-        rows+=("[FAIL=$rc]  $spec  ->  $log")
+        rows+=("[FAIL=$rc]  $spec  ->  [LOG] $log  [FINAL] $final")
         ((fail_count++))
       fi
     else
       # No status file means the subshell never reached its write — likely
       # SIGKILLed mid-flight. The log file may still have partial output.
-      rows+=("[UNKNOWN]   $spec  ->  $log")
+      rows+=("[UNKNOWN]   $spec  ->  [LOG] $log  [FINAL] $final")
       ((unknown_count++))
     fi
   done
@@ -444,7 +461,8 @@ if [[ "$mode" == "blocking" ]]; then
     echo "  $row"
   done
   echo ""
-  echo "Next: Read each log above, then cross-compare findings per ddd.xreview SKILL.md step 6."
+  echo "Next: Read each [FINAL] for the review text (or [LOG] for verbose trace),"
+  echo "then cross-compare findings per ddd.xreview SKILL.md step 6."
 fi
 
 exit 0
