@@ -1307,6 +1307,70 @@ fi
 cleanup_from_output "$m72b_output"
 
 # ============================================================
+echo "--- Test: M7.4 — per-reviewer final path slug matches spec slug (multi-reviewer) ---"
+# ============================================================
+# Regression (M7.4 e2e): dispatch loop recomputes $log per spec but used to
+# forget $final, so every reviewer's RETURN event reported the LAST spec's
+# final.txt. With N reviewers racing in parallel all writes landed in one file
+# (last-writer wins). This assertion pins final-path-per-spec correctness.
+#
+# Design: two claude specs so one mock suffices; slugs differ on model suffix.
+# For each RETURN line assert `slug_of($2) == slug_of($4 minus prefix/suffix)`.
+
+write_happy_claude_mock
+m74_output=$(PATH="$MOCK_DIR:$PATH" bash "$ORCH" "$PROMPT_FILE" \
+  "claude:m74-alpha" "claude:m74-beta" 2>&1)
+m74_rc=$?
+
+assert_exit_code "M7.4 multi-reviewer run exits 0" "$m74_rc" 0
+
+m74_return_count=$(count_lines_matching "$m74_output" "RETURN ")
+[[ "$m74_return_count" -eq 2 ]] \
+  && { ((PASS++)); echo "  PASS: M7.4 got 2 RETURN events"; } \
+  || { ((FAIL++)); echo "  FAIL: expected 2 RETURN got $m74_return_count"; }
+
+# Per-line check: spec slug must equal the slug embedded in the final path.
+# final path shape: /tmp/xreview-<runid>-<slug>.final.txt. runid contains
+# digits, '-', and may look like "PID-EPOCH-RANDOM". slug is produced by
+# `slug_of` which replaces ':' and '/' with '_' — in these specs it's
+# "claude_m74-alpha" / "claude_m74-beta". We extract slug by stripping the
+# `.final.txt` suffix and the longest `/tmp/xreview-<digits>-<digits>-<digits>-`
+# prefix (runid = $$-$(date +%s)-$RANDOM, three numeric segments).
+mismatch=0
+while IFS= read -r line; do
+  spec="$(echo "$line" | awk '{print $2}')"
+  final_path="$(echo "$line" | awk '{print $4}')"
+  # Inline equivalent of orchestrator's slug_of(): tr ':/' '__'.
+  expected_slug="$(echo "$spec" | tr ':/' '__')"
+  # Strip prefix up to and including the runid (3 numeric segments separated
+  # by '-'), then strip .final.txt to get the embedded slug.
+  actual_slug="$(echo "$final_path" \
+    | sed -E 's#^/tmp/xreview-[0-9]+-[0-9]+-[0-9]+-##; s#\.final\.txt$##')"
+  if [[ "$expected_slug" != "$actual_slug" ]]; then
+    mismatch=1
+    echo "     MISMATCH: spec=$spec expected_slug=$expected_slug actual_slug=$actual_slug final=$final_path"
+  fi
+done < <(echo "$m74_output" | grep -E "^RETURN ")
+
+if [[ $mismatch -eq 0 ]]; then
+  ((PASS++)); echo "  PASS: M7.4 every RETURN final path slug matches its spec slug"
+else
+  ((FAIL++)); echo "  FAIL: M7.4 at least one RETURN final path slug does not match spec slug (race-overwrite bug)"
+fi
+
+# Defence in depth: the two final.txt paths must be distinct files on disk.
+# If the bug is present both RETURN lines point to the SAME final.txt
+# (last-spec's), so the set of unique final paths collapses to 1.
+unique_finals=$(echo "$m74_output" | awk '/^RETURN / {print $4}' | sort -u | wc -l)
+if [[ "$unique_finals" -eq 2 ]]; then
+  ((PASS++)); echo "  PASS: M7.4 each reviewer has its own final.txt path (2 unique)"
+else
+  ((FAIL++)); echo "  FAIL: M7.4 reviewers share final.txt path (got $unique_finals unique, expected 2) — race-overwrite bug"
+fi
+
+cleanup_from_output "$m74_output"
+
+# ============================================================
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

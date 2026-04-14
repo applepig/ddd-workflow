@@ -327,6 +327,11 @@ for spec in "${valid_specs[@]:-}"; do
   [[ -z "$spec" ]] && continue  # guard against the :- empty-string placeholder
   slug="$(slug_of "$spec")"
   log="/tmp/xreview-${runid}-${slug}.log"
+  # Recompute $final per spec (mirror validation loop line 293). Without this,
+  # $final retains the last validation iteration's value and every dispatched
+  # reviewer races to overwrite a single final.txt. Regression test: M7.4 in
+  # xreview-orchestrator.test.sh.
+  final="/tmp/xreview-${runid}-${slug}.final.txt"
   # `setsid bash -c '...' _ arg1 arg2 ...` spawns the child in a new session
   # and process group (the child PID becomes the PGID leader). We pass args
   # positionally to avoid quoting/escaping issues with the outer script's
