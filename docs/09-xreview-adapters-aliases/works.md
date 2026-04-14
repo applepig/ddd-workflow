@@ -551,3 +551,101 @@ B+C 合併是因使用者判斷分檔與 orchestrator 修都在測試層，合�
 - **M6.5 codex sandbox**：併入 M7.4.2 一起驗
 - **M6.6.1 手動 timeout 路徑驗證**：可選，非必要
 - **Task 7.4.4 commit**：Chunk E 會處理此 checkpoint
+
+---
+
+## 2026-04-14 M7.4 e2e 實跑：抓到 race bug + 3 findings 全修
+
+### 第一輪 e2e（抓到 Critical race bug）
+
+Coordinator 派 4 reviewer（`haiku` / `flash` / `5-mini` / `codex:gpt-5.4-mini`）對 sprint 09 M7 diff（commit b5e5c60）做 cross review。Monitor 事件顯示**每個 RETURN event 的 final path 都指向 codex 的 final.txt**（codex 是 specs 最後一個）。例：
+
+```
+RETURN opencode:github-copilot/gpt-5-mini /tmp/xreview-509079-...-opencode_...gpt-5-mini.log /tmp/xreview-509079-...-codex_gpt-5.4-mini.final.txt
+RETURN claude:claude-haiku-4-5   /tmp/xreview-509079-...-claude_claude-haiku-4-5.log /tmp/xreview-509079-...-codex_gpt-5.4-mini.final.txt
+RETURN codex:gpt-5.4-mini        /tmp/xreview-509079-...-codex_gpt-5.4-mini.log       /tmp/xreview-509079-...-codex_gpt-5.4-mini.final.txt
+```
+
+log path 對、final 全指向 codex——**orchestrator dispatch loop 漏 recompute `$final`**，4 個 adapter 平行 race-overwrite 同一 final.txt。因為測試全跑單 reviewer 所以沒抓到；4 reviewer 才觸發。
+
+### Fix commit `57d688e`
+
+- `xreview-orchestrator.sh` dispatch loop 補 `final="/tmp/xreview-${runid}-${slug}.final.txt"`，對齊 validation loop
+- `xreview-orchestrator.test.sh` 新 M7.4 測試塊：2 個 claude spec 驗每個 RETURN 的 final slug 與 spec slug 一致、且 2 個 final 路徑相異
+- Stash 掉 fix 可重現 race-overwrite 症狀（2 條 FAIL：slug 不符 / 1 unique expected 2）
+- 138 → 142 passed
+
+### 第二輪 e2e（含 fix + `XREVIEW_TIMEOUT_SEC=300`）
+
+結果：
+
+| Reviewer | 事件 | final.txt |
+|---|---|---|
+| opencode:gpt-5-mini | RETURN | 92 行實質 findings（3 Important）|
+| gemini:flash | RETURN | 5 行摘要；實 findings 寫外部檔 `~/.gemini/tmp/.../plans/code-review-sprint-09-m7.md`（LGTM / 0 Critical / 0 Important）|
+| claude:haiku | RETURN | **0 行空**——log 顯示 `Write tool permission denied`，plan mode 下 ddd-reviewer agent 嘗試 Write 被擋、agent 無 fallback 直接 exit |
+| codex:gpt-5.4-mini | FAIL exit_code=1 | 0 行（空）——`usage limit reached` 到 2026-04-21；另外 `bubblewrap not found` warning 但走 vendored fallback 不阻塞 |
+
+**正面觀察**：$final race fix 後每個 RETURN 的 final path slug 與 spec slug 一致對應，event schema 運作正確。
+
+**環境失敗項（非 M7 實作 bug）**：
+- **haiku + --permission-mode plan**：ddd-reviewer agent 在 plan mode 下嘗試 Write 被拒後無 fallback，final 空。需要在 ddd-reviewer agent 或 claude adapter 做整合調整（plan mode 下 agent 該怎麼輸出 review）——記入下 sprint
+- **gemini findings 寫外部檔**：gemini-cli 的 agent runtime 把 findings 寫到 `~/.gemini/tmp/agents/<uuid>/plans/*.md`，`.response` 只放摘要。coordinator peek .final.txt 看到 5 行覺得單薄，實際 review 在外部檔。SKILL.md 沒覆蓋這個模式
+- **codex usage limit**：帳號 token 用完到 4/21 恢復，無法 review
+
+### opencode 3 Important findings 全修（Chunk G）
+
+Coordinator 決定「現在就修 3 項，合進 sprint 09」——派 ddd-developer 完成。
+
+**Finding 1：adapter jq 依賴未檢查（信心高）**
+
+- 現狀：claude.sh / gemini.sh / opencode.sh 沒 `command -v jq` guard。jq 缺失時 `| jq ... > $final_out` 失敗、final 空、CLI rc=0 仍 RETURN，coordinator 誤判為 content-layer fail 而非 transport fail
+- 修法：3 個 adapter 在 `command -v <cli>` guard 後加 `command -v jq` guard，缺失 `exit 1` + `XREVIEW_ERROR: jq not found (required for ... extraction)` 到 stderr。codex.sh 不用 jq（走 `-o`）不加此 guard
+
+**Finding 2：codex tomllib python fallback 可觀測性差（信心高）**
+
+- 現狀：`extract_via_python` 用 `python3 -c '...' 2>/dev/null` 吞 python stderr。python < 3.11 / tomli 缺 / toml 語法錯時只印通用 `XREVIEW_WARN` 無根因
+- 修法：
+  - `extract_via_python` 改為把 stderr 重導到 mktemp 出的 `$PY_ERR_FILE`（不再 `2>/dev/null`）
+  - Python 內部加 `EXTRACTOR=tomllib|tomli` 標記 + `PARSE_EXC: <type>: <msg>` 例外輸出
+  - 主邏輯：成功 → `XREVIEW_INFO: codex toml extracted via python_tomllib|python_tomli|awk_fallback ($agent_toml)`；失敗 → `XREVIEW_WARN` 加 `| python stderr: <head -c 300, 換行壓縮>`
+  - 新增 `python_has_tomllib()` helper（保留供未來明確版本路徑判斷）
+  - `PY_ERR_FILE` 與 `EFFECTIVE_PROMPT_FILE` 共用 `_codex_full_cleanup` trap
+
+**Finding 3：orchestrator `>> log 2>&1` 合併 stdout/stderr 違背 ADR-11（信心中）**
+
+- 現狀：orchestrator 把 adapter stdout + stderr 都 append 到 log；若未來 adapter 意外把 final 留在 stdout，log 會重複 final
+- 採 (b) 文件化方案：**不動 orchestrator**，在 `references/cli-adapters.md` 新增「Adapter stdout/stderr contract」章節（stdout 必須空 / stderr 自然傳遞 / exit code 透傳 / jq 共通約定），4 個 adapter 檔頭 comment 各加 `stdout contract: must be empty (final flows to $3 via jq/-o)`
+
+**測試新增 21 條**：
+- claude/gemini/opencode test 各 +4（jq guard static、stdout contract static、jq-missing exit 1、jq-missing stderr 訊息）
+- codex test +6（stdout contract static、python stderr surface dispatch rc=0、XREVIEW_WARN 訊息、python stderr label、實際 stderr 文字、extraction-path log）
+- adapters.test.sh runner +2（cli-adapters.md 文件 static check）
+- common.sh 新增 `make_jq_missing_sysdir()` helper（curated PATH 不含 jq）
+
+### 最終測試結果
+
+- `bash adapters.test.sh` → **111 passed / 0 failed**（baseline 90 → +21）
+- `bash xreview-orchestrator.test.sh` → **142 passed / 0 failed**（138 → 142 race fix 期；本次 Chunk G 不動 orchestrator）
+- 4 個 standalone per-CLI test 皆綠
+- `npm test` 全綠
+
+### Sprint 09 總結
+
+**實作達成**：
+- ADR-1 ~ ADR-12 全落地
+- 4 adapter 統一介面 + 雙輸出 + jq guard + codex toml prepend 含詳細降級 stderr
+- Orchestrator 外層 timeout + 事件 schema `RETURN <spec> <log> <final>` + `$final` race fix + footer [FINAL] 欄 + pgid sweep + stdin mode
+- 測試分檔為 common + 4 per-CLI + runner，各可獨立執行
+- SKILL.md 步驟 7.1 peek 協議 2 類判斷（空/非空 final.txt）
+- cli-adapters.md 4 家 JSON 抽取 + stdout/stderr contract
+
+**環境層面待下 sprint 處理**：
+- ddd-reviewer agent 在 claude plan mode 下缺 fallback 路徑（haiku 空 final 根因）
+- gemini-cli 把 findings 寫外部檔、`.response` 只放摘要——SKILL.md 步驟 6 可能要加這種特殊模式
+- codex 帳號 usage limit 回復日 2026-04-21
+
+**下一步 commit**：
+- Commit 1（已 done，b5e5c60）：M7 implementation checkpoint
+- Commit 2（已 done，57d688e）：fix $final race
+- Commit 3（本條）：opencode 3 Important findings 全修 + tasks/works 收尾

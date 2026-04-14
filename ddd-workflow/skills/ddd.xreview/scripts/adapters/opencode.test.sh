@@ -159,6 +159,43 @@ MOCK_EOF
     ((FAIL++)); echo "  FAIL: jq not available, cannot verify XDG override"
   fi
 
+  # ============================================================
+  echo "--- Test: opencode adapter — jq guard (Finding 1) ---"
+  # ============================================================
+  # opencode adapter uses jq twice: once eagerly for permission_json
+  # construction, then on the ndjson stream. Both will silently fail without
+  # the early guard. Adapter must exit 1 with descriptive stderr when jq is
+  # missing.
+  if grep -qE 'command -v jq' "$ADAPTER_DIR/opencode.sh"; then
+    ((PASS++)); echo "  PASS: opencode.sh has 'command -v jq' guard"
+  else
+    ((FAIL++)); echo "  FAIL: opencode.sh missing 'command -v jq' guard"
+  fi
+
+  if grep -qF 'stdout contract: must be empty' "$ADAPTER_DIR/opencode.sh"; then
+    ((PASS++)); echo "  PASS: opencode.sh has stdout contract comment"
+  else
+    ((FAIL++)); echo "  FAIL: opencode.sh missing stdout contract comment"
+  fi
+
+  cat > "$MOCK_DIR/opencode" << 'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+printf '{"type":"text","part":{"type":"text","text":"unused"}}\n'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/opencode"
+
+  no_jq_sys=$(make_jq_missing_sysdir)
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$no_jq_sys" bash "$ADAPTER_DIR/opencode.sh" \
+    "$PROMPT_FILE" "github-copilot/gpt-5.4" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "opencode jq-missing exits 1" "$rc" 1
+  assert_contains "opencode jq-missing stderr message" "$output" \
+    "XREVIEW_ERROR: jq not found"
+
   # Universal contracts (missing prompt, missing CLI, passthrough).
   run_universal_adapter_contracts opencode
 }

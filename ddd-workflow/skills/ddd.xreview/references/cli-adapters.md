@@ -27,6 +27,17 @@
 - 所有 adapter 都先 `: > "$final_out"` 清空，確保 early exit（例如 prompt 檔不存在、CLI 未安裝）時 final 仍可讀但為空——coordinator 的 step 7.1 peek 會判定為 content-layer 失敗。
 - `set +o pipefail` 包住 `CLI | jq` 的 pipeline，用 `PIPESTATUS[0]` 保留 CLI 自己的 exit code，避免被 `jq` 的成功 / 失敗遮蓋。
 - jq 失敗時（CLI 輸出非預期 JSON）final_out 可能為空，但 adapter 仍忠實回報 CLI 的 rc，讓 orchestrator 依 rc 發 RETURN / FAIL 事件。
+- 用到 jq 的 adapter（claude / gemini / opencode）在頭部用 `command -v jq` guard，若缺失立即 `exit 1` 並印 `XREVIEW_ERROR: jq not found ...`，避免 silent empty final 被誤判為 content failure。codex adapter 走 `-o` 直寫不需要 jq。
+
+### Adapter stdout/stderr contract
+
+ADR-11 雙輸出設計對 adapter 的 stdout / stderr 行為有隱性契約，這裡明文化以避免後續 adapter 作者誤觸發：
+
+- **stdout：必須為空。** 所有 final review 內容經各家 JSON flag + jq（claude / gemini / opencode）或 `-o` 旗標（codex）寫入第 3 個 arg 指定的 `$final_out` 檔。orchestrator 的 adapter call 是 `bash "$adapter" ... "$final" >> "$log" 2>&1`，若 adapter 實作讓 final 溢出到 stdout，會被 append 到 log 造成（a）log 膨脹、（b）final 在 log 與 final.txt 重複、（c）使用者看到 log 時誤以為 transport 出問題。
+- **stderr：自然傳遞。** CLI 的 debug trace、adapter 自訂的 `XREVIEW_INFO` / `XREVIEW_WARN` / `XREVIEW_ERROR` 都走 stderr。orchestrator 把 stderr 併入 log 作為 verbose trace，使用者除錯時直接看 log 即可，不需另外收集。
+- **exit code：透傳 CLI rc。** adapter 只在「必要工具缺失」（如 jq、prompt file、CLI 本身）時提前 `exit 1`；其餘情況用 `PIPESTATUS[0]` 或 `$?` 回傳 CLI 自己的 rc，讓 orchestrator 依 rc 發 RETURN / FAIL 事件。
+
+每個 adapter 檔頭 comment 都會帶一行 `stdout contract: must be empty (...)` 提醒；CI 的 `adapters.test.sh` 會 grep 該標記與本段標題作 static check，文件與實作不同步會立刻紅。
 
 ## OpenCode
 

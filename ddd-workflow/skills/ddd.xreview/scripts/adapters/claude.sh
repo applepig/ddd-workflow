@@ -17,6 +17,10 @@
 # Exit code: the CLI's own rc, taken from PIPESTATUS[0]. If jq fails (CLI
 # emitted non-JSON), final_out may be empty but we still report the CLI rc
 # so upstream `RETURN` vs `FAIL` semantics are preserved.
+#
+# stdout contract: must be empty (final flows to $3 via jq). If anything ever
+# prints to stdout here, the orchestrator's `>> $log 2>&1` will append it to
+# the log and the final_out copy will be the only sanctioned record.
 
 set -uo pipefail
 
@@ -32,6 +36,14 @@ fi
 cli_path="$(command -v claude 2>/dev/null)" || true
 if [[ -z "$cli_path" ]]; then
   echo "XREVIEW_ERROR: cli not found: claude (install it first)" >&2
+  exit 1
+fi
+
+# jq is required for final extraction. Without it the pipeline silently yields
+# an empty final_out while the CLI rc may still be 0, fooling upstream
+# orchestration into treating a transport failure as a content-layer failure.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "XREVIEW_ERROR: jq not found (required for claude adapter final extraction)" >&2
   exit 1
 fi
 

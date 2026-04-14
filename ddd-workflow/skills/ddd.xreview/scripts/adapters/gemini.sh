@@ -13,6 +13,8 @@
 # $XDG_CONFIG_HOME (or $HOME/.config fallback) for xreview.json — enough
 # for the reviewer agent to read both inputs without leaking write access.
 # (M6.3: respect XDG override.)
+#
+# stdout contract: must be empty (final flows to $3 via jq -r '.response').
 
 set -uo pipefail
 
@@ -28,6 +30,12 @@ fi
 cli_path="$(command -v gemini 2>/dev/null)" || true
 if [[ -z "$cli_path" ]]; then
   echo "XREVIEW_ERROR: cli not found: gemini (install it first)" >&2
+  exit 1
+fi
+
+# jq required for final extraction; missing jq would silently empty final_out.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "XREVIEW_ERROR: jq not found (required for gemini adapter final extraction)" >&2
   exit 1
 fi
 

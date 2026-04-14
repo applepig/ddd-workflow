@@ -100,6 +100,39 @@ MOCK_EOF
   assert_contains "gemini --include-directories honors XDG_CONFIG_HOME" \
     "$output" "/tmp,/xdg/override"
 
+  # ============================================================
+  echo "--- Test: gemini adapter — jq guard (Finding 1) ---"
+  # ============================================================
+  if grep -qE 'command -v jq' "$ADAPTER_DIR/gemini.sh"; then
+    ((PASS++)); echo "  PASS: gemini.sh has 'command -v jq' guard"
+  else
+    ((FAIL++)); echo "  FAIL: gemini.sh missing 'command -v jq' guard"
+  fi
+
+  if grep -qF 'stdout contract: must be empty' "$ADAPTER_DIR/gemini.sh"; then
+    ((PASS++)); echo "  PASS: gemini.sh has stdout contract comment"
+  else
+    ((FAIL++)); echo "  FAIL: gemini.sh missing stdout contract comment"
+  fi
+
+  cat > "$MOCK_DIR/gemini" << 'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+printf '{"response":"unused"}\n'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/gemini"
+
+  no_jq_sys=$(make_jq_missing_sysdir)
+  : > "$FINAL_OUT"
+  output=$(PATH="$MOCK_DIR:$no_jq_sys" bash "$ADAPTER_DIR/gemini.sh" \
+    "$PROMPT_FILE" "gemini-test" "$FINAL_OUT" 2>&1)
+  rc=$?
+
+  assert_exit_code "gemini jq-missing exits 1" "$rc" 1
+  assert_contains "gemini jq-missing stderr message" "$output" \
+    "XREVIEW_ERROR: jq not found"
+
   # Universal contracts.
   run_universal_adapter_contracts gemini
 }
