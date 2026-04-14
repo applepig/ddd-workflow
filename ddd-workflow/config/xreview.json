@@ -1,7 +1,12 @@
 {
-  "reviewers": [
-    "claude:claude-opus-4-6",
-    "opencode:github-copilot/gpt-5.4",
-    "gemini:gemini-3-pro-preview"
-  ]
+  "reviewers": ["opus", "5.4", "pro"],
+  "aliases": {
+    "5.4": "opencode:github-copilot/gpt-5.4",
+    "5-mini": "opencode:github-copilot/gpt-5-mini",
+    "haiku": "claude:haiku",
+    "sonnet": "claude:sonnet",
+    "opus": "claude:opus",
+    "pro": "gemini:pro",
+    "flash": "gemini:flash"
+  }
 }
