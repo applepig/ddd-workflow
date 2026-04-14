@@ -353,7 +353,7 @@ M1.2、M5.4 是值得平行的區塊。若 coordinator 判斷 4 個 adapter / M5
   - (d) codex `.final.txt` 反映 ddd-reviewer 角色語氣 — ❌ 無法驗（usage limit）
   - (e) gemini `.final.txt` 非空（`.response` 有內容）— ✅（5 行，但 findings 寫外部檔）
 - [x] Task 7.4.3：Self check：M7 所有驗收條件逐條打勾；spec 中 M7 / ADR-11 / ADR-12 條文同步勾選——本次落地：race fix 57d688e + opencode 3 Important findings 全修（jq guard / codex python stderr surface / adapter stdout contract 文件化）；所有 unit test 全綠（adapters 111 / orchestrator 142 / npm test）；e2e 驗證顯示 transport schema 正確運作、環境失敗項（haiku plan mode / codex usage limit / gemini 外部檔）列入 works.md 供下 sprint 處理
-- [ ] Task 7.4.4：commit M7 最終 checkpoint（implementation b5e5c60 + race fix 57d688e + findings fix 待 commit）
+- [x] Task 7.4.4：commit M7 最終 checkpoint — implementation `b5e5c60` + race fix `57d688e` + findings fix `8e5c64c`
 
 ---
 
