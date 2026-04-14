@@ -6,6 +6,8 @@
 
 ## Feedback
 - [Skill 命名大小寫問題](feedback_skill-naming.md) — Skill tool 用資料夾名配對（小寫），不是 frontmatter name（PascalCase）
+- [派工要 atomic + 依序](feedback_atomic-task-dispatch.md) — sub-agent 一次做一 chunk，大包派工會中途 token 爆
+- [真實測試用小模型](feedback_test-with-small-models.md) — e2e/smoke 用 haiku/flash/mini，旗艦模型留給正式 review
 
 ## Project
 - [xreview reviewer 重構完成](project_xreview3-upgrade.md) — review-prompt.md 已刪除，整合進 ddd-reviewer agent（2026-04-08）
