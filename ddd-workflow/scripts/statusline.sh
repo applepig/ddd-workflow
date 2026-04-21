@@ -48,7 +48,7 @@ _detect_term_cols() {
 # ─── 常數 ────────────────────────────────────────────────────────────────────
 
 BAR_WIDTH=25
-SAFE_CONTEXT=250000
+CONTEXT_CAP=250000
 FILL_CHAR=$'\xe2\x96\x88'   # █ (U+2588)
 EMPTY_CHAR=$'\xe2\x96\x91'  # ░ (U+2591)
 NBSP=$'\xc2\xa0'             # non-breaking space (U+00A0)
@@ -282,6 +282,7 @@ eval "$(echo "$json" | jq -r '
         ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0))
       end
     ),
+    ctx_window_size: (.context_window.context_window_size | safe_num),
     used_pct: (.rate_limits.five_hour.used_percentage | safe_num | round),
     resets_at: (.rate_limits.five_hour.resets_at | safe_num)
   } | to_entries | map("json_\(.key)=\(.value | @sh)") | .[]
@@ -291,6 +292,7 @@ eval "$(echo "$json" | jq -r '
   json_cwd=""
   json_project_dir=""
   json_ctx_tokens=0
+  json_ctx_window_size=0
   json_used_pct=0
   json_resets_at=0
 }
@@ -382,8 +384,13 @@ formatLabelValue() {
 
 model_short=$(formatModel "$json_model_id")
 
-# Context bar：基於 SAFE_CONTEXT (250k) 計算百分比，25 格 = 100%
-ctx_pct=$(( json_ctx_tokens * 100 / SAFE_CONTEXT ))
+# Context bar：min(CONTEXT_CAP, context_window_size) 為分母
+if (( json_ctx_window_size > 0 && json_ctx_window_size < CONTEXT_CAP )); then
+  ctx_max=$json_ctx_window_size
+else
+  ctx_max=$CONTEXT_CAP
+fi
+ctx_pct=$(( json_ctx_tokens * 100 / ctx_max ))
 (( ctx_pct > 100 )) && ctx_pct=100
 ctx_filled=$(( ctx_pct / 4 ))
 (( ctx_filled > BAR_WIDTH )) && ctx_filled=$BAR_WIDTH
