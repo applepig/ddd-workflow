@@ -751,3 +751,33 @@ log `xreview-...-claude_claude-opus-4-6.log:487` 關鍵訊息：
 - `xreview-orchestrator.sh`：`declare -A _seen_specs=()` 上方加 bash 4.0+ 相依 comment
 
 Config 旁支待使用者自行調整：`~/.config/ddd-workflow/xreview.json` 的 `pro`/`flash` alias value 要從 `gemini-pro`/`gemini-flash` 改回 gemini CLI native alias `pro`/`flash` 或完整 model id，否則 gemini reviewer 持續 404。
+
+---
+
+## 2026-04-14（夜）SKILL.md quick fix：blocking fallback 明文化
+
+### 觸發
+
+- 使用者指出：`ddd.xreview` 的 skill 文字過度偏向 Claude Code `Monitor` 路徑，讓 OpenCode 等 runner 容易把 shell orchestration 當成「非必要／可略過」，最後退回 main agent 自己 review。
+
+### 決策
+
+- 這次只做 quick fix，不改 orchestrator、adapter、config 或 tests。
+- 保留 `SKILL.md` 既有「Monitor 主文」結構，不重寫成新的 wrapper / driver 設計。
+- 直接把既有實作能力扶正進文件：`xreview-orchestrator.sh` 已支援 `XREVIEW_MODE=blocking`，沒有 `Monitor` 的 host 應走這條路，而不是跳過 cross review。
+- `mktemp + heredoc` 保留不動。這是刻意的 trade-off：先 materialize 一份單一 prompt artifact，避免同一份 review prompt 被重複展開到多個 reviewer command／argv。
+
+### 實作
+
+- `ddd-workflow/skills/ddd.xreview/SKILL.md`
+  - frontmatter 與開頭說明補上 `blocking shell fallback`
+  - step 2 補上 single prompt artifact 的 rationale
+  - step 3 新增「無 Monitor 但有 shell 的 host」blocking fallback 指令與硬規則
+  - step 4 補上 blocking mode 的 event parsing 說明：event parser 只吃 `ALL_DONE` 前的事件行，footer 只是輔助資訊
+  - step 5 與注意事項補上「不可退回 self-review」與 host fallback 規則
+- 未改 scripts：這次不是擴 scope 做新 wrapper；只是把現有 orchestrator 的 blocking contract 明文化，讓 agent 看得懂該怎麼執行
+
+### 驗收
+
+- docs-only quick fix，未跑測試
+- 靜態對齊確認：`xreview-orchestrator.sh` 已有 `XREVIEW_MODE=blocking` 與 footer 行為，`xreview-orchestrator.test.sh` 也已有 blocking mode 測試；這次是讓 `SKILL.md` 與既有實作對齊
