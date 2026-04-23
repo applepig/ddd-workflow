@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { readFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import * as path from 'node:path'
 
 export const PREFIX = 'cr-'
@@ -43,21 +44,12 @@ export function listSessions(): SessionInfo[] {
 }
 
 /**
- * 內部 helper：建立 detached tmux session、設定 environment、送出 claude 命令。
- */
-function startTmuxSession(session_name: string, dir: string, claude_session_id: string, claude_cmd: string): void {
-  execFileSync('tmux', ['new-session', '-d', '-s', session_name, '-c', dir], { stdio: 'pipe' })
-  execFileSync('tmux', ['set-environment', '-t', session_name, 'CLAUDE_SESSION_ID', claude_session_id], { stdio: 'pipe' })
-  execFileSync('tmux', ['send-keys', '-t', session_name, claude_cmd, 'Enter'], { stdio: 'pipe' })
-}
-
-/**
- * 建立 detached tmux session，產生 UUID 作為 Claude session ID，
- * 存入 tmux environment 並以 --session-id 啟動 claude。
+ * 建立 detached tmux session，送 cc 指令啟動 Claude。
+ * 不預先產 UUID——讓 Claude 自行決定 session ID，之後由 syncSessionId 讀取。
  */
 export function createSession(session_name: string, dir: string): void {
-  const claude_session_id = randomUUID()
-  startTmuxSession(session_name, dir, claude_session_id, `claude --session-id ${claude_session_id} --dangerously-skip-permissions`)
+  execFileSync('tmux', ['new-session', '-d', '-s', session_name, '-c', dir], { stdio: 'pipe' })
+  execFileSync('tmux', ['send-keys', '-t', session_name, 'cc', 'Enter'], { stdio: 'pipe' })
 }
 
 /**
@@ -87,7 +79,62 @@ export function getClaudeSessionId(session_name: string): string | null {
  * claude_session_id 會存入 tmux environment 以利後續再次 resume。
  */
 export function createSessionWithResume(session_name: string, dir: string, claude_session_id: string): void {
-  startTmuxSession(session_name, dir, claude_session_id, `claude --resume ${claude_session_id} --dangerously-skip-permissions`)
+  execFileSync('tmux', ['new-session', '-d', '-s', session_name, '-c', dir], { stdio: 'pipe' })
+  execFileSync('tmux', ['set-environment', '-t', session_name, 'CLAUDE_SESSION_ID', claude_session_id], { stdio: 'pipe' })
+  execFileSync('tmux', ['send-keys', '-t', session_name, `cc --resume ${claude_session_id}`, 'Enter'], { stdio: 'pipe' })
+}
+
+/**
+ * 從執行中的 Claude process 讀取真正的 session ID，寫入 tmux environment。
+ * 任何步驟失敗就靜默跳過（Claude 可能還沒啟動或已退出）。
+ */
+export function syncSessionId(session_name: string): void {
+  try {
+    const pane_pid = execFileSync(
+      'tmux',
+      ['display-message', '-t', session_name, '-p', '#{pane_pid}'],
+      { stdio: 'pipe' },
+    ).toString().trim()
+
+    const child_pids_raw = execFileSync(
+      'pgrep',
+      ['-P', pane_pid],
+      { stdio: 'pipe' },
+    ).toString().trim()
+
+    const child_pids = child_pids_raw.split('\n').filter((pid) => pid.length > 0)
+
+    for (const child_pid of child_pids) {
+      try {
+        const session_file = path.join(homedir(), '.claude', 'sessions', `${child_pid}.json`)
+        const content = readFileSync(session_file, 'utf-8')
+        const data = JSON.parse(content)
+        const session_id = data.sessionId
+        if (session_id && UUID_RE.test(session_id)) {
+          execFileSync(
+            'tmux',
+            ['set-environment', '-t', session_name, 'CLAUDE_SESSION_ID', session_id],
+            { stdio: 'pipe' },
+          )
+          return
+        }
+      } catch {
+        // session file not found or invalid, try next child
+      }
+    }
+  } catch {
+    // silently skip
+  }
+}
+
+/**
+ * 檢查 Claude 的對話檔案是否存在。
+ * Claude 的專案路徑編碼方式：把絕對路徑的 / 全部替換成 -。
+ */
+export function sessionFileExists(dir: string, session_id: string): boolean {
+  const encoded_path = dir.replace(/\//g, '-')
+  const file_path = path.join(homedir(), '.claude', 'projects', encoded_path, `${session_id}.jsonl`)
+  return existsSync(file_path)
 }
 
 /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import * as os from 'node:os'
-import { listSessions, attachSession, createSession, createSessionWithResume, getClaudeSessionId, killSession, generateSessionName } from './tmux.ts'
+import { listSessions, attachSession, createSession, createSessionWithResume, getClaudeSessionId, killSession, generateSessionName, syncSessionId, sessionFileExists } from './tmux.ts'
 import type { SessionInfo } from './tmux.ts'
 
 /** 選單狀態 */
@@ -165,11 +165,22 @@ function draw(content: string, prev_lines: number): number {
 }
 
 /**
+ * 列出所有 session 並同步每個 session 的 Claude session ID。
+ */
+function listAndSync(): SessionInfo[] {
+  const sessions = listSessions()
+  for (const session of sessions) {
+    syncSessionId(session.name)
+  }
+  return sessions
+}
+
+/**
  * CLI 進入點。
  */
 async function main(): Promise<void> {
   const cwd = process.cwd()
-  let sessions = listSessions()
+  let sessions = listAndSync()
 
   // 沒有任何 session 時，直接建立新 session
   if (sessions.length === 0) {
@@ -238,7 +249,7 @@ async function main(): Promise<void> {
         }
         case 'terminate': {
           killSession(action.session_name)
-          sessions = listSessions()
+          sessions = listAndSync()
           const new_total = sessions.length + 1
           total = new_total
           if (selected >= new_total) selected = new_total - 1
@@ -246,14 +257,15 @@ async function main(): Promise<void> {
           break
         }
         case 'restart': {
+          syncSessionId(action.session_name)
           const claude_session_id = getClaudeSessionId(action.session_name)
           killSession(action.session_name)
-          if (claude_session_id) {
+          if (claude_session_id && sessionFileExists(action.dir, claude_session_id)) {
             createSessionWithResume(action.session_name, action.dir, claude_session_id)
           } else {
             createSession(action.session_name, action.dir)
           }
-          sessions = listSessions()
+          sessions = listAndSync()
           total = sessions.length + 1
           prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
           break
