@@ -181,7 +181,6 @@ import { createSession } from '../services/session'
 | 檔案搜尋 | `fd` | find |
 | 檔案檢視 | `bat` | cat |
 | JSON 處理 | `jq` | 手動 parse |
-| Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
 | 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
 | 反向代理 | Traefik（Docker label 設定路由） | nginx |
