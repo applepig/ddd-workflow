@@ -27,6 +27,8 @@ AGENTS/                          # monorepo
     └── cli.js                   # CLI 工具：deploy / undeploy / test
 ```
 
+opencode reference document放在 `reference/opencode/packages/web/src/content/docs/index.mdx`
+
 ### 關鍵設計決策
 
 - **ddd-workflow 是 SSOT**：所有可部署內容都在 `ddd-workflow/` 中，其餘為部署邏輯與開發文件
