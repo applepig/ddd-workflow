@@ -115,6 +115,16 @@ Timeout 觸發時：
 - 所有 reviewer 都 transport 失敗 → 直接告知使用者
 - 所有 reviewer `.final.txt` 都空 → 同上（content-layer 全失敗 ≡ 沒有有效 review）
 
+## Host 差異：讀取結果
+
+各 host 用自身的 file-read 工具讀取 `.final.txt`：
+
+| Host | 工具 |
+|------|------|
+| Claude Code | `Read` |
+| Gemini | `read_file` |
+| Codex / OpenCode | `read` |
+
 ## Config 與 Aliases
 
 - 位置：`~/.config/ddd-workflow/xreview.json`

@@ -40,7 +40,7 @@ description: >
 5. **寫入 plan.md** — 存到 `docs/<編號>-<名稱>/plan.md`
 6. **Plan Self-Review** — inline 檢查 Placeholder / 一致性 / Scope / 歧義四項（見下方）
 7. **使用者審閱 plan.md** — 請使用者 review 寫好的檔案，取得最終確認
-8. **引導進入 /ddd.spec** — 轉交到規格制定階段
+8. **接續 `/ddd.spec` 撰寫 spec.md** — invoke `/ddd.spec` skill，規劃結論填入 spec 的「背景」與「ADR」段落
 
 ## Process Flow
 
@@ -54,7 +54,7 @@ digraph ddd_brainstorming {
     "寫入 plan.md" [shape=box];
     "Plan Self-Review\n(inline 修正)" [shape=box];
     "使用者審閱 plan.md？" [shape=diamond];
-    "引導 /ddd.spec" [shape=doublecircle];
+    "接續 /ddd.spec 撰寫 spec.md" [shape=doublecircle];
 
     "探索專案 context" -> "逐一追問釐清需求";
     "逐一追問釐清需求" -> "提出 2-3 個方案";
@@ -65,11 +65,11 @@ digraph ddd_brainstorming {
     "寫入 plan.md" -> "Plan Self-Review\n(inline 修正)";
     "Plan Self-Review\n(inline 修正)" -> "使用者審閱 plan.md？";
     "使用者審閱 plan.md？" -> "寫入 plan.md" [label="要求修改"];
-    "使用者審閱 plan.md？" -> "引導 /ddd.spec" [label="通過"];
+    "使用者審閱 plan.md？" -> "接續 /ddd.spec 撰寫 spec.md" [label="通過"];
 }
 ```
 
-**終止狀態是引導 `/ddd.spec`。** brainstorming 結束後**唯一**可以執行的下一步 skill 是 `/ddd.spec`。不要 invoke `/ddd.tasks`、`/ddd.work`、`/ddd.architect-refactor`，或任何其他實作 skill。
+**終止狀態是完成 `/ddd.spec` 流程。** plan.md 確認後直接 invoke `/ddd.spec` 接續撰寫 spec.md，不要結束讓使用者自己跑。不要 invoke `/ddd.tasks`、`/ddd.work`、`/ddd.architect-refactor`，或任何其他實作 skill。
 
 ## The Process
 
@@ -140,10 +140,10 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 
 等使用者回應。如果要求修改，改完後**重跑 Plan Self-Review**。使用者確認後才能進下一步。
 
-### 進入實作
+### 接續規格制定
 
-- 引導使用者執行 `/ddd.spec` 撰寫正式規格
-- **不要** invoke 任何其他 skill。`/ddd.spec` 是下一步
+- 直接 invoke `/ddd.spec` skill 撰寫 spec.md，規劃結論填入 spec 的「背景」與「ADR」段落
+- **不要** invoke 任何其他 skill。`/ddd.spec` 是唯一的下一步
 
 ## plan.md 大綱
 
@@ -188,6 +188,6 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 
 ## 結束條件
 
-使用者確認 plan.md 後，引導使用者執行 `/ddd.spec`。
+`/ddd.spec` 流程完成、使用者確認規格後，引導使用者執行 `/ddd.tasks`。
 
 如有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在同資料夾的 `research.md` 中。

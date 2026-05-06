@@ -184,4 +184,4 @@ description: >
 
 ## 結束條件
 
-使用者確認任務規劃後，引導使用者執行 `/ddd.work`。
+使用者確認任務規劃後，試情況引導使用者執行 `/ddd.xreview` 或 `/ddd.work`。
