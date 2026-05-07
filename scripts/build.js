@@ -55,12 +55,18 @@ export const OPENCODE_DENY_LIST = [
  * @type {Record<string, object>}
  */
 export const AGENT_OVERRIDES = {
+  'ddd-developer': {
+    opencode: {
+      // ddd.work 的 opencode-worker 用 `--agent ddd-developer` 直接載入這份
+      // 為 system prompt；同時保留 subagent 角色給 opencode 內部 task tool
+      // 派工。`mode: all` 讓同一份檔案兩用，不需要部署兩個變體。
+      mode: 'all',
+    },
+  },
   'ddd-reviewer': {
     opencode: {
-      // 將 opencode 平台的 agent 名稱與輸出檔名對齊 xreview-runner.sh 使用的
-      // `--agent ddd.xreviewer`，避免 fallback 到 default agent 而失去
-      // 正確的 system prompt 與 permission 限制。
-      name: 'ddd.xreviewer',
+      // xreview runner 用 `--agent ddd-reviewer` 載入這份為 primary system
+      // prompt；agents 統一用 dash 分隔（skills 用 dot），不再 rename。
       mode: 'primary',
       permission: {
         bash: {
@@ -364,8 +370,8 @@ export async function build() {
     writeFileSync(join(gemini_dir, `${stem}.md`), gemini_out)
 
     // OpenCode：.md
-    // 若 override 指定了 opencode.name（例如 ddd-reviewer → ddd.xreviewer），
-    // 輸出檔名也要跟著改，讓平台引用名稱與 frontmatter `name` 一致。
+    // 輸出檔名與來源 stem 一致（agents 統一用 dash，skills 用 dot）。
+    // 保留 override.opencode.name 的覆寫管道供未來特例使用，預設 fallback 到 stem。
     const opencode_out = convertToOpencode(frontmatter, body, agent_name)
     const opencode_stem = AGENT_OVERRIDES[agent_name]?.opencode?.name ?? stem
     writeFileSync(join(opencode_dir, `${opencode_stem}.md`), opencode_out)

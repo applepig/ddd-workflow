@@ -1,0 +1,1 @@
+../../ddd.xreview/scripts/adapters/opencode.sh

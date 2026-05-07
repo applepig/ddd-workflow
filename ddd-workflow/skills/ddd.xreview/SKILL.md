@@ -87,8 +87,8 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 ## Reviewer 組成
 | Reviewer | 模型 | 狀態 |
 |----------|------|------|
-| claude | claude-opus-4-6 | ✅ 完成 |
-| opencode | gpt-5.4 | ✅ 完成 |
+| claude | claude-opus-4-7 | ✅ 完成 |
+| opencode | gpt-5.x | ✅ 完成 |
 | gemini | gemini-3-pro-preview | ❌ 失敗（timeout） |
 
 ## 各 Reviewer 評估
