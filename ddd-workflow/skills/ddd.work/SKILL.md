@@ -23,9 +23,13 @@ description: >
 
 ---
 
-## 預設 worker
+## Host Routing 與預設 worker
 
-派發 worker 時，主流程透過 `work-orchestrator.sh --jobs-file <jsonl> --cwd <project-root>` 一次派多條 worker。`work-orchestrator.sh` 是 shared `agent-runner.sh` 的 skill-local symlink entrypoint；底層仍透過 `opencode-worker.sh` 跑 `opencode:openai/gpt-5.5`。worker 在獨立的 git worktree 中工作，worker lifecycle 事件寫入各自 job log；runner stdout 只輸出 job-level `START / RETURN / FAIL / ALL_DONE` event stream 給 coordinator 解析。
+進入平行模式時，已經代表 milestone 要派 agent；此處的決策點不是「要不要派 subagent」，而是依目前 host 能力選擇派工路徑。
+
+在 Claude Code host（Monitor 可用）中，coordinator 透過 `work-orchestrator.sh --jobs-file <jsonl> --cwd <project-root>` 一次外包多條 OpenCode worker。`work-orchestrator.sh` 是 shared `agent-runner.sh` 的 skill-local symlink entrypoint；底層透過 `opencode-worker.sh` 跑 `opencode:openai/gpt-5.5`，並以 `--agent ddd-developer` 載入 worker 的 primary prompt。worker 在獨立的 git worktree 中工作，worker lifecycle 事件寫入各自 job log；runner stdout 只輸出 job-level `START / RETURN / FAIL / ALL_DONE` event stream 給 coordinator 解析。
+
+OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的 agent/subagent 能力派工；這屬於 worker 的自主執行策略，不由 coordinator 再選一次 agent。
 
 ## 序列模式：TDD 開發循環
 
@@ -68,7 +72,7 @@ description: >
 
 ## 平行模式：Coordinator 派發
 
-適用於 milestone 內包含 `🔀 可平行工作線` 的情境。主行程作為 coordinator，將每條工作線派發給獨立 Agent。
+適用於 milestone 內包含 `🔀 可平行工作線` 的情境。主行程作為 coordinator，將每條工作線依 host routing 派發給獨立 worker agent。
 
 ### Phase 1: 準備派發
 
@@ -152,7 +156,7 @@ description: >
    | `id` | 工作線 ID，如 `A`、`B` |
    | `description` | 工作線描述，會傳給底層 worker 並用於 worktree slug |
    | `prompt_file` | 該 worker prompt 暫存檔絕對路徑 |
-   | `agent` | subagent type，預設 `ddd-developer` |
+   | `agent` | OpenCode agent name；外層以 `--agent` 載入為 worker primary prompt，預設 `ddd-developer` |
    | `model` | worker model，預設 `openai/gpt-5.5` |
    | `isolation` | 隔離模式；平行工作線一律使用 `worktree` |
 

@@ -111,8 +111,12 @@ describe('AGENT_OVERRIDES', () => {
     expect(ext_dir['/tmp/*']).toBe('allow')
   })
 
-  it('should declare opencode name override ddd.xreviewer for ddd-reviewer', () => {
-    expect(AGENT_OVERRIDES['ddd-reviewer'].opencode.name).toBe('ddd.xreviewer')
+  it('should keep ddd-reviewer opencode name aligned with dash agent naming', () => {
+    expect(AGENT_OVERRIDES['ddd-reviewer'].opencode.name).toBeUndefined()
+  })
+
+  it('should set ddd-developer opencode mode to all', () => {
+    expect(AGENT_OVERRIDES['ddd-developer'].opencode.mode).toBe('all')
   })
 })
 
@@ -346,9 +350,9 @@ describe('convertToOpencode', () => {
     expect(result).toContain('edit: allow')
   })
 
-  it('should include default mode subagent for non-overridden agent', () => {
+  it('should apply ddd-developer override: mode becomes all', () => {
     const result = convertToOpencode(DEVELOPER_FRONTMATTER, SAMPLE_BODY, 'ddd-developer')
-    expect(result).toContain('mode: subagent')
+    expect(result).toContain('mode: all')
   })
 
   it('should include default steps 50 when no maxTurns', () => {
@@ -380,10 +384,10 @@ describe('convertToOpencode', () => {
     expect(result).toContain('/tmp/*')
   })
 
-  it('should apply ddd-reviewer override: name becomes ddd.xreviewer in frontmatter', () => {
+  it('should keep ddd-reviewer dash name in opencode frontmatter', () => {
     const result = convertToOpencode(REVIEWER_FRONTMATTER, SAMPLE_BODY, 'ddd-reviewer')
-    expect(result).toContain('name: ddd.xreviewer')
-    expect(result).not.toMatch(/^name: ddd-reviewer$/m)
+    expect(result).toContain('name: ddd-reviewer')
+    expect(result).not.toContain('name: ddd.xreviewer')
   })
 
   it('should deny doom_loop in permission', () => {
@@ -507,11 +511,11 @@ describe('build', () => {
     expect(gemini_files).toHaveLength(source_files.length)
   })
 
-  it('should rename opencode output to ddd.xreviewer.md for ddd-reviewer override', async () => {
+  it('should keep opencode output using dash agent filename for ddd-reviewer', async () => {
     await build()
     const files = readdirSync(join(dist_dir, 'opencode', 'agents'))
-    expect(files).toContain('ddd.xreviewer.md')
-    expect(files).not.toContain('ddd-reviewer.md')
+    expect(files).toContain('ddd-reviewer.md')
+    expect(files).not.toContain('ddd.xreviewer.md')
   })
 
   it('should keep gemini and codex outputs using original agent filename', async () => {
@@ -523,11 +527,11 @@ describe('build', () => {
     expect(gemini_files).not.toContain('ddd.xreviewer.md')
   })
 
-  it('should write opencode frontmatter name matching renamed filename', async () => {
+  it('should write opencode frontmatter name matching dash filename', async () => {
     await build()
-    const file_path = join(dist_dir, 'opencode', 'agents', 'ddd.xreviewer.md')
+    const file_path = join(dist_dir, 'opencode', 'agents', 'ddd-reviewer.md')
     const content = readFileSync(file_path, 'utf-8')
-    expect(content).toMatch(/^---\nname: ddd\.xreviewer\n[\s\S]*?\n---/)
+    expect(content).toMatch(/^---\nname: ddd-reviewer\n[\s\S]*?\n---/)
   })
 
   it('should clear existing dist before building', async () => {
