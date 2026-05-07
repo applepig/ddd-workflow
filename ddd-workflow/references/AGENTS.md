@@ -74,7 +74,7 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 
 > 各階段的詳細步驟請參考對應的 skill：
 > `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
-> E2E 測試用 `/ddd.e2e`，架構重構用 `/ddd.architect-refactor`，hook 設定用 `/ddd.create-hooks`。
+> E2E 測試用 `/ddd.e2e`。
 
 ### E2E 測試的特殊處理
 

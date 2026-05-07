@@ -55,8 +55,6 @@ Document Driven Development——先寫文件、再寫測試、最後寫程式�
 | `/ddd.tasks` | 將 spec 拆解為 milestone + task |
 | `/ddd.work` | 以 TDD 循環執行開發任務 |
 | `/ddd.xreview` | Cross review（Gemini + Claude 獨立審查） |
-| `/ddd.architect-refactor` | 架構層級重構 |
-| `/ddd.create-hooks` | 設定 Claude Code hooks |
 | `/ddd.code-to-spec` | 從既有程式碼反向萃取規格 |
 | `/ddd.agent-browser` | E2E 除錯（瀏覽器自動化） |
 
