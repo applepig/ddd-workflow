@@ -98,3 +98,16 @@
 - 驗證：`bash ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.test.sh` 通過（148 passed, 0 failed），確認 mock xreview `RETURN` 與 `.final.txt` 行為維持不變。
 - 驗證：`bash ddd-workflow/skills/ddd.xreview/scripts/adapters/opencode.test.sh` 通過（55 passed, 0 failed）。
 - 驗證：`bash -n ddd-workflow/scripts/agent-runner.sh` 通過。
+
+## 2026-05-08
+
+### Host routing 語意與真實 OpenCode worker E2E
+
+- 更新 `ddd-workflow/skills/ddd.work/SKILL.md` 的派工語意：進入平行模式即代表要派 agent；此處的決策點是依 host 能力選擇 routing，而不是重新判斷「要不要派 subagent」。Claude Code host（Monitor 可用）走 `work-orchestrator.sh` 外包 OpenCode worker；OpenCode worker 內部仍可依自身 agent/subagent 能力再拆小任務。
+- 同步更新 `scripts/build.test.js` 的 stale expectations：OpenCode agent 命名已回到 dash convention（`ddd-reviewer`），`ddd-developer` 在 OpenCode 變體為 `mode: all`，同時可作為 `--agent` primary prompt 與 worker 內部 subagent。
+- 驗證：`npx vitest run scripts/build.test.js` 通過（97 passed）。
+- 驗證：`npx vitest run scripts/shared-agent-runner.test.js` 通過（13 passed）。
+- 驗證：`npm test` 通過；Claude / Gemini / Codex / OpenCode skill-local script symlink 驗證全綠。
+- 真實 E2E 第一次執行 `work-orchestrator.sh --jobs-file ... --cwd ...` 有抓到環境前置條件：`~/.config/opencode/agents/ddd-developer.md` 是 symlink，但 `dist/opencode/agents/` 尚未存在，導致 OpenCode 回報 `agent "ddd-developer" not found. Falling back to default agent`。補跑 `npm run build` 產生 dist 後再測。
+- 真實 E2E 第二次執行通過：`work-orchestrator.sh` 輸出 `START E2E` / `RETURN E2E` / `ALL_DONE`；worker log 顯示 `WORKTREE_REUSED /home/applepig/Dropbox/projects/AGENTS/.worktrees/opencode/e2e-no-op-smoke`、`SUBAGENT_TYPE ddd-developer`、`MODEL openai/gpt-5.5`、`DONE exit=0`；result file 最後輸出 `DONE: ddd.work OpenCode worker smoke test completed（測試結果：13 passed, 0 failed）`。
+- E2E 測試 prompt 改用 `npx vitest run scripts/shared-agent-runner.test.js`，避免在 worker worktree 裡跑 `npm test` 時被全域部署 symlink 指向主 repo 的預期 target 影響；這是 deploy 驗證語意，不適合作為隔離 worktree smoke test。
