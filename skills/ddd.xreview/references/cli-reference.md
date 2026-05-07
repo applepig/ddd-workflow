@@ -9,10 +9,10 @@
 在 orchestrator command 的 prompt file 後接位置參數，可覆蓋 config 的 reviewer 清單：
 
 ```
-... $review_prompt_file opus 5.4 pro; ...
+... $review_prompt_file opus 5.x pro; ...
 ```
 
-支援短名（由 `~/.config/ddd-workflow/xreview.json` 的 `aliases` 定義），預設：`opus`、`sonnet`、`haiku`、`5.4`、`5-mini`、`pro`、`flash`。
+支援短名（由 `~/.config/ddd-workflow/xreview.json` 的 `aliases` 定義），預設：`opus`、`sonnet`、`haiku`、`5.x`、`5-mini`、`pro`、`flash`。`5.4` 保留給 `opencode:github-copilot/gpt-5.4` 等 Copilot fallback 或 legacy 用法。
 
 ## 雙模式
 

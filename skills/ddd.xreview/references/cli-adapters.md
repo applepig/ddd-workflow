@@ -7,7 +7,7 @@
 | CLI | Read-Only 機制 | 呼叫方式 | model 指定 |
 |-----|---------------|---------|-----------|
 | Claude | `--permission-mode plan` + `--agent ddd-reviewer` | `claude -p --agent ddd-reviewer --model "$model" --permission-mode plan < prompt.md` | `--model` flag |
-| OpenCode | Agent 定義檔中設定 `edit: deny` + `bash` 白名單 | `opencode run --agent ddd.xreviewer --model "$model" < prompt.md` | `--model` flag |
+| OpenCode | Agent 定義檔中設定 `edit: deny` + `bash` 白名單 | `opencode run --agent ddd-reviewer --model "$model" < prompt.md` | `--model` flag |
 | Gemini CLI | `--approval-mode=plan`（Plan Mode，禁止寫入專案檔案） | `gemini --approval-mode=plan -m "$model" < prompt.md` | `-m` / `--model` flag |
 | Codex CLI | `--sandbox read-only`（預設值，明確指定更清楚） | `codex exec --sandbox read-only --ephemeral --model "$model" - < prompt.md` | `--model` / `-m` flag |
 
@@ -41,17 +41,19 @@ ADR-11 雙輸出設計對 adapter 的 stdout / stderr 行為有隱性契約，�
 
 ## OpenCode
 
-Agent 定義檔位於 `ddd-workflow/opencode/agents/ddd.xreviewer.md`，透過 `npm run deploy` 自動 symlink 到 `~/.config/opencode/agents/ddd.xreviewer.md`。
+Agent 定義來自 `ddd-workflow/agents/ddd-reviewer.md`（共用 SSOT），`npm run deploy` 透過 build.js 的 `AGENT_OVERRIDES` 把 opencode 變體（含 `mode: primary` 與專屬 permission）寫入 `dist/opencode/agents/ddd-reviewer.md`，再 symlink 到 `~/.config/opencode/agents/ddd-reviewer.md`。Agent 命名規則：skills 用 dot 分隔（`ddd.xreview`），agents 用 dash 分隔（`ddd-reviewer`）。
 
 ### 使用方式
 
 ```bash
 # 透過 adapter 呼叫（推薦，含 raw error passthrough；timeout 由 orchestrator 外層 `timeout --foreground` 負責）
-bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md openai/gpt-5.4 /tmp/xreview-demo.final.txt
+bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md openai/gpt-5.5 /tmp/xreview-demo.final.txt
 
 # 直接呼叫（不含 adapter error wrapping）
-echo "$prompt" | opencode run --agent ddd.xreviewer --model openai/gpt-5.4
+echo "$prompt" | opencode run --agent ddd-reviewer --model openai/gpt-5.5
 ```
+
+在 orchestrator 的使用者介面中，GPT 5 系列預設 reviewer 以 `5.x` alias 表示；adapter 與 OpenCode CLI 實際呼叫仍需使用具體 model id（例如 `openai/gpt-5.5`）。
 
 `adapters/opencode.sh` 是刻意保持精簡的 proxy shell：
 
@@ -74,7 +76,7 @@ OpenCode `run` 模式下，未列入的 permission 預設為 `"ask"`。但 headl
 
 #### 其他設計
 
-- `mode: subagent`：只能透過 `--agent` 呼叫，不會出現在 TUI 的模型選單
+- `mode: primary`：可透過 `--agent ddd-reviewer` 在 `opencode run` 載入為 primary system prompt（xreview adapter 用法）
 - `steps: 50`：限制 agentic 迭代次數，防止 reviewer 因工具失敗而無限重試
 - `edit: deny`：技術層面禁止修改任何檔案
 - `bash: deny` + 白名單：只允許 git 唯讀指令和檔案檢視指令
@@ -84,6 +86,7 @@ OpenCode `run` 模式下，未列入的 permission 預設為 `"ask"`。但 headl
 ### 注意事項
 
 - 修改 agent 定義後，執行 `npm run deploy opencode` 重新建立 symlink（或直接生效，因為是 symlink）
+- **升級時若 agent 重新命名或 `mode` 變更**（例如本批次 `ddd-reviewer` 統一 dash 命名 + `mode: primary`、`ddd-developer` 改 `mode: all`），必須重跑 `npm run deploy`，否則 symlink 仍指向舊檔，OpenCode 會回 `agent not found`
 - 若 reviewer 仍然卡住，嘗試降低 `steps` 值（如 30）
 - 若特定模型有額外的工具需求，在 bash 白名單中加入對應的指令 pattern
 
