@@ -12,7 +12,7 @@
 import {
   readFileSync, writeFileSync, mkdirSync, rmSync, existsSync,
   readdirSync, statSync, symlinkSync, readlinkSync,
-  renameSync, lstatSync
+  renameSync, lstatSync, realpathSync
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -23,6 +23,24 @@ const DIST = join(ROOT, 'dist')
 const HOME = homedir()
 
 const ALL_TARGETS = ['claude', 'gemini', 'codex', 'opencode']
+
+const SKILL_LOCAL_SCRIPT_SYMLINKS = [
+  {
+    skill: 'ddd.xreview',
+    script: 'scripts/xreview-orchestrator.sh',
+    expected_target: join(SRC, 'scripts', 'agent-runner.sh'),
+  },
+  {
+    skill: 'ddd.work',
+    script: 'scripts/work-orchestrator.sh',
+    expected_target: join(SRC, 'scripts', 'agent-runner.sh'),
+  },
+  {
+    skill: 'ddd.work',
+    script: 'scripts/opencode-worker.sh',
+    expected_target: join(SRC, 'skills', 'ddd.xreview', 'scripts', 'adapters', 'opencode.sh'),
+  },
+]
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -355,6 +373,56 @@ function checkSymlink(path, label) {
 }
 
 /**
+ * 驗證已安裝 skill namespace 內的 script entrypoint symlink。
+ * deploy 會 symlink 整個 skill 目錄，因此這裡檢查 installed path，
+ * 並用 script 所在實體目錄解析 relative symlink target。
+ * @param {string} skills_dir
+ * @param {string} label
+ * @returns {boolean}
+ */
+function checkSkillLocalScriptSymlinks(skills_dir, label) {
+  let ok = true
+
+  if (!existsSync(skills_dir)) {
+    warn(`${label}: installed skills directory missing`)
+    return false
+  }
+
+  for (const item of SKILL_LOCAL_SCRIPT_SYMLINKS) {
+    const relative_path = `${item.skill}/${item.script}`
+    const script_path = join(skills_dir, item.skill, item.script)
+    const script_label = `${label} skill-local script ${relative_path}`
+
+    if (!lstatExists(script_path)) {
+      warn(`${script_label} missing`)
+      ok = false
+      continue
+    }
+
+    if (!lstatSync(script_path).isSymbolicLink()) {
+      warn(`${script_label} expected symlink`)
+      ok = false
+      continue
+    }
+
+    const link_target = readlinkSync(script_path)
+    const real_script_dir = realpathSync(join(script_path, '..'))
+    const resolved_target = resolve(real_script_dir, link_target)
+    const expected_target = resolve(item.expected_target)
+
+    if (resolved_target !== expected_target) {
+      warn(`${script_label} target mismatch: expected ${expected_target}, got ${resolved_target}`)
+      ok = false
+      continue
+    }
+
+    log(`  ✅ ${script_label} → ${link_target}`)
+  }
+
+  return ok
+}
+
+/**
  * 計算目錄中指向本專案的 ddd* symlink 數量。
  * @param {string} dir
  * @param {string} label
@@ -394,6 +462,7 @@ function testClaude() {
   // Symlink 狀態
   if (!checkSymlink(join(HOME, '.claude', 'CLAUDE.md'), '~/.claude/CLAUDE.md')) ok = false
   countInstalledLinks(join(HOME, '.claude', 'skills'), '~/.claude/skills ddd*')
+  if (!checkSkillLocalScriptSymlinks(join(HOME, '.claude', 'skills'), '~/.claude/skills')) ok = false
   countInstalledLinks(join(HOME, '.claude', 'agents'), '~/.claude/agents ddd*')
   if (!checkSymlink(join(HOME, '.claude', 'scripts', 'statusline.sh'), '~/.claude/scripts/statusline.sh')) ok = false
 
@@ -405,6 +474,7 @@ function testGemini() {
   let ok = true
   if (!checkSymlink(join(HOME, '.gemini', 'GEMINI.md'), '~/.gemini/GEMINI.md')) ok = false
   countInstalledLinks(join(HOME, '.gemini', 'skills'), '~/.gemini/skills ddd*')
+  if (!checkSkillLocalScriptSymlinks(join(HOME, '.gemini', 'skills'), '~/.gemini/skills')) ok = false
   countInstalledLinks(join(HOME, '.gemini', 'agents'), '~/.gemini/agents ddd*')
   countInstalledLinks(join(HOME, '.gemini', 'policies'), '~/.gemini/policies ddd*')
   return ok
@@ -415,14 +485,16 @@ function testCodex() {
   let ok = true
   if (!checkSymlink(join(HOME, '.codex', 'AGENTS.md'), '~/.codex/AGENTS.md')) ok = false
   countInstalledLinks(join(HOME, '.codex', 'skills'), '~/.codex/skills ddd*')
+  if (!checkSkillLocalScriptSymlinks(join(HOME, '.codex', 'skills'), '~/.codex/skills')) ok = false
   countInstalledLinks(join(HOME, '.codex', 'agents'), '~/.codex/agents ddd*')
   return ok
 }
 
 function testOpencode() {
   log('=== opencode 驗證 ===')
-  const ok = true
+  let ok = true
   countInstalledLinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills ddd*')
+  if (!checkSkillLocalScriptSymlinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills')) ok = false
   countInstalledLinks(join(HOME, '.config', 'opencode', 'agents'), '~/.config/opencode/agents ddd*')
   return ok
 }
