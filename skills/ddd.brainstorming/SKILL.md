@@ -69,7 +69,7 @@ digraph ddd_brainstorming {
 }
 ```
 
-**終止狀態是完成 `/ddd.spec` 流程。** plan.md 確認後直接 invoke `/ddd.spec` 接續撰寫 spec.md，不要結束讓使用者自己跑。不要 invoke `/ddd.tasks`、`/ddd.work`、`/ddd.architect-refactor`，或任何其他實作 skill。
+**終止狀態是完成 `/ddd.spec` 流程。** plan.md 確認後直接 invoke `/ddd.spec` 接續撰寫 spec.md，不要結束讓使用者自己跑。不要 invoke `/ddd.tasks`、`/ddd.work`，或任何其他實作 skill。
 
 ## The Process
 
