@@ -25,7 +25,7 @@ description: >
 
 ## 預設 worker
 
-派發 worker 時，預設透過 `opencode-worker.sh` 跑 `opencode:openai/gpt-5.5`。worker 在獨立的 git worktree 中工作，由 Monitor 串流 lifecycle 事件回 coordinator。
+派發 worker 時，主流程透過 `work-orchestrator.sh --jobs-file <jsonl> --cwd <project-root>` 一次派多條 worker。`work-orchestrator.sh` 是 shared `agent-runner.sh` 的 skill-local symlink entrypoint；底層仍透過 `opencode-worker.sh` 跑 `opencode:openai/gpt-5.5`。worker 在獨立的 git worktree 中工作，worker lifecycle 事件寫入各自 job log；runner stdout 只輸出 job-level `START / RETURN / FAIL / ALL_DONE` event stream 給 coordinator 解析。
 
 ## 序列模式：TDD 開發循環
 
@@ -134,37 +134,54 @@ description: >
 
 ### Phase 2: 派發 Worker
 
-收到使用者確認後，**在同一個 message 中**為每條工作線派一個 Monitor，並行執行：
+收到使用者確認後，用一個 jobs-file JSONL 描述所有工作線，並用單一 `work-orchestrator.sh` Monitor 一次派發多條 worker：
 
 1. 把組裝好的 worker prompt 寫進 mktemp 暫存檔（一條工作線一份），避免 shell escape 問題：
 
    ```bash
-   prompt_file=$(mktemp /tmp/ddd-worker-XXXXXX.md)
-   cat > "$prompt_file" << 'WORKER_EOF'
+   prompt_file_a=$(mktemp /tmp/ddd-worker-A-XXXXXX.md)
+   cat > "$prompt_file_a" << 'WORKER_EOF'
    <上面組裝好的 worker prompt>
    WORKER_EOF
    ```
 
-2. 對每條工作線 `[A]`、`[B]`、`[C]`…，在同一個 assistant message 裡開一個 Monitor：
+2. 建立 jobs-file JSONL。每行一個 worker job，欄位如下：
+
+   | 欄位 | 說明 |
+   |------|------|
+   | `id` | 工作線 ID，如 `A`、`B` |
+   | `description` | 工作線描述，會傳給底層 worker 並用於 worktree slug |
+   | `prompt_file` | 該 worker prompt 暫存檔絕對路徑 |
+   | `agent` | subagent type，預設 `ddd-developer` |
+   | `model` | worker model，預設 `openai/gpt-5.5` |
+   | `isolation` | 隔離模式；平行工作線一律使用 `worktree` |
+
+   ```bash
+   jobs_file=$(mktemp /tmp/ddd-worker-jobs-XXXXXX.jsonl)
+   cat > "$jobs_file" << JOBS_EOF
+   {"id":"A","description":"[A] Backend API","prompt_file":"$prompt_file_a","agent":"ddd-developer","model":"openai/gpt-5.5","isolation":"worktree"}
+   {"id":"B","description":"[B] Frontend Form","prompt_file":"$prompt_file_b","agent":"ddd-developer","model":"openai/gpt-5.5","isolation":"worktree"}
+   JOBS_EOF
+   ```
+
+3. 開一個 Monitor 執行 work orchestrator：
 
    ```
    Monitor({
-     command: "bash <skill-dir>/scripts/opencode-worker.sh \
-       --description '[X] <工作線標題>' \
-       --subagent-type ddd-developer \
-       --model openai/gpt-5.5 \
-       --isolation worktree \
-       --prompt-file $prompt_file \
-       --cwd $project_root; rc=$?; rm -f $prompt_file; exit $rc",
+     command: "bash <skill-dir>/scripts/work-orchestrator.sh \
+       --jobs-file $jobs_file \
+       --cwd $project_root; rc=$?; rm -f $jobs_file $prompt_file_a $prompt_file_b; exit $rc",
      timeout_ms: 7200000,
      persistent: false,
-     description: "[X] <工作線標題>"
+     description: "ddd.work 平行派多條 worker"
    })
    ```
 
 > **Worktree 路徑**：`opencode-worker.sh --isolation worktree` 自動建在 `$PROJECT_ROOT/.worktrees/opencode/<slug>/`，分支名為 `opencode/<slug>`，符合 AGENTS.md 的 `.worktrees/` 約定。`<slug>` 從 `--description` 衍生。
 
-> **Worker runner 的 lifecycle 事件**：每個 Monitor 會即時收到 `[opencode-worker] DESCRIPTION ...`、`SUBAGENT_TYPE ...`、`MODEL ...`、`CWD ...`、`LOG_FILE <path>`、`RESULT_FILE <path>`、（必要時）`WORKTREE_CREATED` / `WORKTREE_REUSED`、`ERROR ...`、`WARN downstream_pipeline_failed ...`、`NDJSON_RAW <path>`，以 `DONE exit=<N>` 收尾。Coordinator 從事件流抽出 `RESULT_FILE` 路徑等待 `DONE`，再讀檔解析 worker 的 `DONE: ` / `FAIL: ` 文字回報。
+> **Worker runner 的 lifecycle 事件**：底層 `opencode-worker.sh` 仍會輸出 `[opencode-worker] DESCRIPTION ...`、`SUBAGENT_TYPE ...`、`MODEL ...`、`CWD ...`、`LOG_FILE <path>`、`RESULT_FILE <path>`、（必要時）`WORKTREE_CREATED` / `WORKTREE_REUSED`、`ERROR ...`、`WARN downstream_pipeline_failed ...`、`NDJSON_RAW <path>`，以 `DONE exit=<N>` 收尾；但這些 lifecycle 事件會進入該 worker 的 job log，不直接出現在 orchestrator stdout。
+
+> **Orchestrator event stream**：runner stdout 只輸出 job-level event：`START <id> <log-path> <result-path>`、`RETURN <id> <log-path> <result-path>`、`FAIL <id> exit_code=<n> log=<log-path> result=<result-path>`、`ALL_DONE`。Coordinator 從 `START / RETURN / FAIL` 取得 log/result path；收到 `RETURN` 或 `FAIL` 後讀取 `<result-path>`，解析 worker 最後輸出的 `DONE:` / `FAIL:`。Process exit 0 只代表 transport 成功，若 result path 空白或沒有 `DONE:` / `FAIL:`，一律視為 content-layer fail。
 
 派發完畢後，立即輸出狀態表：
 
@@ -178,13 +195,14 @@ description: >
 ### Phase 3: 追蹤與匯合
 
 1. **追蹤進度**
-   - 每條 Monitor 會吐 `[opencode-worker] DONE exit=<N>` 收尾。收到後，從先前的 `RESULT_FILE <path>` 事件取得結果檔，`cat` 該檔案讀 worker 最後輸出
+   - `work-orchestrator.sh` 會為每條 worker 吐出 `START`，完成時吐 `RETURN` 或 `FAIL`，最後以 `ALL_DONE` 收斂
+   - 從 `START / RETURN / FAIL` 事件取得 `<log-path>` 與 `<result-path>`；收到 `RETURN` / `FAIL` 後讀取 result path，取得 worker 最後輸出
    - 解析 worker 文字回報中的 `DONE:` / `FAIL:` 行（含測試結果摘要）
    - 更新狀態表（✅ 完成 / ❌ 失敗）
-   - 若同時看到 `WARN downstream_pipeline_failed` + `NDJSON_RAW <path>`，代表 worker runner 的下游 pipeline 失敗（schema drift 等），保留下來的 `NDJSON_RAW` 是事後追查用的原始 ndjson；視為 worker 失敗處理
+   - 若 job log 內同時看到 `WARN downstream_pipeline_failed` + `NDJSON_RAW <path>`，代表 worker runner 的下游 pipeline 失敗（schema drift 等），保留下來的 `NDJSON_RAW` 是事後追查用的原始 ndjson；視為 worker 失敗處理
 
 2. **處理失敗**
-   - 若 worker 失敗或退出碼非 0，顯示失敗原因（含 RESULT_FILE 摘要、必要時附 LOG_FILE 路徑）
+   - 若 worker 失敗、退出碼非 0、result path 空白、或 result path 沒有 `DONE:` / `FAIL:`，顯示失敗原因（含 result path 摘要、必要時附 log path）
    - 使用 `AskUserQuestion` 詢問使用者：重試 / 手動修復 / 跳過
 
 3. **匯合（🔗 匯合點）**
@@ -218,7 +236,7 @@ description: >
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。Spec 更新確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
-* **Worker 隔離**：所有派出的 worker 一律帶 `--isolation worktree`。Worker 在獨立的 worktree（`$PROJECT_ROOT/.worktrees/opencode/<slug>/`）中工作、測試、commit，確保不會互相干擾或汙染主線。
+* **Worker 隔離**：所有派出的 worker 一律帶 `--isolation worktree`。Worker 在獨立的 worktree（`$PROJECT_ROOT/.worktrees/opencode/<slug>/`）中工作、測試，但不得自行 commit；commit 由 coordinator merge 後、經使用者確認才執行，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。
 * **Worker 測試紀律**：違反「Worker 完成協議」中的測試要求（未貼測試輸出、隱瞞失敗、跳過環境問題）一律視為 FAIL，coordinator 退回重做。
 * **測試失敗透明化**：即使 worker 判斷失敗「不是本次變更造成的」，仍必須在回報中明確標註哪些測試失敗、失敗原因、以及為什麼認為與本次無關。Coordinator 會驗證這個判斷。

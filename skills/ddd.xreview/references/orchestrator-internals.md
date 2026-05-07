@@ -16,6 +16,32 @@ ALL_DONE
 - **Monitor host**：事件以 task notification 逐行送達
 - **Blocking host**（`XREVIEW_MODE=blocking`）：事件在 shell 結束後一次出現在 stdout；`ALL_DONE` 後會附 human-readable summary footer，event parser 只吃 `ALL_DONE` 之前的行
 
+## Shared Runner Mode 與 Symlink Layout
+
+`xreview-orchestrator.sh` 的公開呼叫方式不變，但 source tree 中的 entrypoint 已改為 symlink：
+
+```text
+ddd-workflow/scripts/agent-runner.sh                         # shared runner 實體檔
+ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.sh -> ../../../scripts/agent-runner.sh
+ddd-workflow/skills/ddd.work/scripts/work-orchestrator.sh       -> ../../../scripts/agent-runner.sh
+```
+
+`xreview-orchestrator.sh` 與 `work-orchestrator.sh` 都 symlink 到同一個 `ddd-workflow/scripts/agent-runner.sh`。Runner mode 由 invocation basename 決定：
+
+| Invocation name | Mode | 用途 |
+| --- | --- | --- |
+| `xreview-orchestrator.sh` | `xreview` | Cross review reviewer fan-out |
+| `work-orchestrator.sh` | `work` | ddd.work worker fan-out |
+| `agent-runner.sh --mode <mode>` | explicit | 測試或直接呼叫 shared runner 時使用 |
+
+`ddd.work` 的底層 worker entrypoint 也保留在 skill-local namespace：
+
+```text
+ddd-workflow/skills/ddd.work/scripts/opencode-worker.sh -> ../../ddd.xreview/scripts/adapters/opencode.sh
+```
+
+因此部署後各 host 仍呼叫自己 skill 底下的 `scripts/...`；不需要新增或記住全域 shared scripts namespace。
+
 ### 事件語意
 
 - **RETURN**：transport 層成功（CLI exit 0）。**不保證 `.final.txt` 內容是真 review**——agent 可能因 sandbox 限制、rate limit、context 超載等原因 CLI 正常退出但 final 被寫成空字串（JSON 無 `.result` / `.response` 欄位時 `jq -r` 輸出空）

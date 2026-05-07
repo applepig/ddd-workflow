@@ -52,6 +52,8 @@ echo "$review_prompt_file"
 
 ### 3. 派 Orchestrator
 
+公開入口維持 skill-local script：`scripts/xreview-orchestrator.sh`。此檔案是 shared `agent-runner.sh` 的 symlink entrypoint；runner 會依 invocation basename 進入 `xreview` mode。Coordinator 不需也不應直接呼叫 shared runner 實體路徑。
+
 **Claude Code**（Monitor 可用）：
 
 ```
