@@ -171,11 +171,21 @@ local cwd=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --jobs-file)
-      jobs_file="${2:-}"
+      if [[ $# -lt 2 || "${2:-}" == --* ]]; then
+        echo "FAIL orchestrator missing_value:--jobs-file"
+        emit_all_done_event
+        exit 2
+      fi
+      jobs_file="$2"
       shift 2
       ;;
     --cwd)
-      cwd="${2:-}"
+      if [[ $# -lt 2 || "${2:-}" == --* ]]; then
+        echo "FAIL orchestrator missing_value:--cwd"
+        emit_all_done_event
+        exit 2
+      fi
+      cwd="$2"
       shift 2
       ;;
     *)
@@ -226,10 +236,20 @@ fi
 runid="$(make_run_id)"
 timeout_val="${DDD_WORK_TIMEOUT_SEC:-7200}"
 
+local parsed_jobs
+parsed_jobs="$(mktemp /tmp/ddd-work-parsed-XXXXXX.jsonl)"
+if ! jq -c '.' "$jobs_file" > "$parsed_jobs" 2>/dev/null; then
+  rm -f "$parsed_jobs"
+  echo "FAIL orchestrator jobs_file_invalid:$jobs_file"
+  emit_all_done_event
+  exit 2
+fi
+
 local -a job_lines=()
 while IFS= read -r line; do
   [[ -n "$line" ]] && job_lines+=("$line")
-done < <(jq -c '.' "$jobs_file" 2>/dev/null)
+done < "$parsed_jobs"
+rm -f "$parsed_jobs"
 
 if [[ ${#job_lines[@]} -eq 0 ]]; then
   echo "FAIL orchestrator jobs_file_empty_or_invalid:$jobs_file"
