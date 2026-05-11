@@ -16,6 +16,32 @@ ALL_DONE
 - **Monitor host**：事件以 task notification 逐行送達
 - **Blocking host**（`XREVIEW_MODE=blocking`）：事件在 shell 結束後一次出現在 stdout；`ALL_DONE` 後會附 human-readable summary footer，event parser 只吃 `ALL_DONE` 之前的行
 
+## Shared Runner Mode 與 Symlink Layout
+
+`xreview-orchestrator.sh` 的公開呼叫方式不變，但 source tree 中的 entrypoint 已改為 symlink：
+
+```text
+ddd-workflow/scripts/agent-runner.sh                         # shared runner 實體檔
+ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.sh -> ../../../scripts/agent-runner.sh
+ddd-workflow/skills/ddd.work/scripts/work-orchestrator.sh       -> ../../../scripts/agent-runner.sh
+```
+
+`xreview-orchestrator.sh` 與 `work-orchestrator.sh` 都 symlink 到同一個 `ddd-workflow/scripts/agent-runner.sh`。Runner mode 由 invocation basename 決定：
+
+| Invocation name | Mode | 用途 |
+| --- | --- | --- |
+| `xreview-orchestrator.sh` | `xreview` | Cross review reviewer fan-out |
+| `work-orchestrator.sh` | `work` | ddd.work worker fan-out |
+| `agent-runner.sh --mode <mode>` | explicit | 測試或直接呼叫 shared runner 時使用 |
+
+`ddd.work` 的底層 worker entrypoint 也保留在 skill-local namespace：
+
+```text
+ddd-workflow/skills/ddd.work/scripts/opencode-worker.sh -> ../../ddd.xreview/scripts/adapters/opencode.sh
+```
+
+因此部署後各 host 仍呼叫自己 skill 底下的 `scripts/...`；不需要新增或記住全域 shared scripts namespace。
+
 ### 事件語意
 
 - **RETURN**：transport 層成功（CLI exit 0）。**不保證 `.final.txt` 內容是真 review**——agent 可能因 sandbox 限制、rate limit、context 超載等原因 CLI 正常退出但 final 被寫成空字串（JSON 無 `.result` / `.response` 欄位時 `jq -r` 輸出空）
@@ -115,14 +141,24 @@ Timeout 觸發時：
 - 所有 reviewer 都 transport 失敗 → 直接告知使用者
 - 所有 reviewer `.final.txt` 都空 → 同上（content-layer 全失敗 ≡ 沒有有效 review）
 
+## Host 差異：讀取結果
+
+各 host 用自身的 file-read 工具讀取 `.final.txt`：
+
+| Host | 工具 |
+|------|------|
+| Claude Code | `Read` |
+| Gemini | `read_file` |
+| Codex / OpenCode | `read` |
+
 ## Config 與 Aliases
 
 - 位置：`~/.config/ddd-workflow/xreview.json`
 - 由 `npm run deploy` 部署預設值；既有 config 不會被覆蓋
-- 預設短名 7 個：`5.4`、`5-mini`、`haiku`、`sonnet`、`opus`、`pro`、`flash`
+- 預設短名 7 個：`5.x`、`5-mini`、`haiku`、`sonnet`、`opus`、`pro`、`flash`；`5.4` 保留給 `opencode:github-copilot/gpt-5.4` 等 Copilot fallback 或 legacy 用法
 - 使用者既有的 config 需自行補 `aliases` 區塊才能用短名
 - Orchestrator 在 CLI 沒指定 spec 時自動讀 config 的 `reviewers` 清單
-- CLI 位置參數可一次性覆蓋：`... $prompt_file opus 5.4 pro`（alias 在 orchestrator 內 resolve 成完整 spec）
+- CLI 位置參數可一次性覆蓋：`... $prompt_file opus 5.x pro`（alias 在 orchestrator 內 resolve 成完整 spec）
 
 ## 相關 ADR
 

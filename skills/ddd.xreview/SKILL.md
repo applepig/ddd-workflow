@@ -22,8 +22,13 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md`、`tasks.md` 路徑
-- **變更範圍**：uncommitted（`git diff HEAD`）或 branch diff（`git diff main...HEAD`）
+- **Sprint 文件**：當前 sprint 的 `spec.md`、`tasks.md` 路徑。
+- **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
+  1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
+  2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
+     - 有未提交變更 → 確認要 review uncommitted 還是整個 branch diff
+     - 在 feature branch 且無未提交變更 → 確認 `git diff <upstream>...HEAD`
+     - 在 main/dev 上且無未提交變更 → 詢問要 review 什麼
 
 各 reviewer 會自己讀檔案與跑 git，不需把完整內容塞進 prompt。
 
@@ -47,7 +52,9 @@ echo "$review_prompt_file"
 
 ### 3. 派 Orchestrator
 
-**預設（Monitor 可用時）**：
+公開入口維持 skill-local script：`scripts/xreview-orchestrator.sh`。此檔案是 shared `agent-runner.sh` 的 symlink entrypoint；runner 會依 invocation basename 進入 `xreview` mode。Coordinator 不需也不應直接呼叫 shared runner 實體路徑。
+
+**Claude Code**（Monitor 可用）：
 
 ```
 Monitor({
@@ -58,42 +65,19 @@ Monitor({
 })
 ```
 
-**沒有 Monitor 的 host**（gemini / codex / opencode 等，改走 blocking mode，同一支 orchestrator）：
+**其他 host**（Gemini / Codex / OpenCode，走 blocking mode）：
 
 ```bash
 XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_prompt_file"; rc=$?; rm -f "$review_prompt_file"; exit "$rc"
 ```
 
-> `<skill-dir>` 是這個 skill 被部署到當前 host 的絕對路徑，Skill tool 載入時會告訴你（例如 gemini host 上是 `~/.gemini/skills/ddd.xreview`、codex 是 `~/.codex/skills/ddd.xreview`、opencode 是 `~/.config/opencode/skills/ddd.xreview`）。請替換成實際值再執行。
-
-臨時指定模型清單：在 orchestrator 後接 spec 位置參數，支援短名（`opus`、`5.4`、`pro` 等）：
-
-```
-... $review_prompt_file opus 5.4 pro; ...
-```
-
-Monitor mode 與 blocking mode 走**同一份** event schema、同一批 `.log`／`.final.txt` sidecar，差別只在 caller 是「執行中逐行收事件」還是「結束後一次拿完整 stdout」。深入細節見 `references/orchestrator-internals.md`。
+模型覆蓋、短名等用法見 `references/cli-reference.md`。
 
 ### 4. 收集結果
 
-orchestrator 以「每行一事件」輸出：
+orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。讀取各 RETURN 的 `<final-path>`，空檔標失敗。
 
-```
-START  <spec> <log-path>
-RETURN <spec> <log-path> <final-path>
-FAIL   <spec> exit_code=<n> log=<log-path> final=<final-path>
-ALL_DONE
-```
-
-對每個 **RETURN** 事件：
-
-1. 讀取對應的 `<final-path>`（用當前 host 的 file-read 工具：claude 的 `Read`、gemini 的 `read_file`、codex/opencode 的 `read` 等）
-2. **檔案為空** → 標記 content-layer 失敗（transport 成功但 agent 實質沒產出），納入報告狀態欄、不進交叉比對
-3. **檔案有內容** → 納入步驟 5 整合
-
-**FAIL** 事件直接標失敗原因（exit_code / timeout 124），需要除錯時才讀取 `<log-path>`。
-
-邊界案例（沒收到 ALL_DONE、stream-end 兜底、空 final 的技術原因等）見 `references/orchestrator-internals.md`。
+事件格式與邊界案例見 `references/orchestrator-internals.md`。
 
 ### 5. 整合、驗證、呈現
 
@@ -105,8 +89,8 @@ ALL_DONE
 ## Reviewer 組成
 | Reviewer | 模型 | 狀態 |
 |----------|------|------|
-| claude | claude-opus-4-6 | ✅ 完成 |
-| opencode | gpt-5.4 | ✅ 完成 |
+| claude | claude-opus-4-7 | ✅ 完成 |
+| opencode | gpt-5.x | ✅ 完成 |
 | gemini | gemini-3-pro-preview | ❌ 失敗（timeout） |
 
 ## 各 Reviewer 評估
@@ -140,19 +124,20 @@ ALL_DONE
 
 **原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
-### 6. 使用者決策
+### 6. 逐條決策
 
-用 Question Tool（各 host 內建：claude 的 `AskUserQuestion`、gemini 的 `question`、codex/opencode 的 `ask_user` 等）向使用者確認：
+對步驟 5.2 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，用 Question Tool 逐條詢問使用者修正方向。
 
-- 哪些建議要採納並修正？
-- 哪些可以忽略？
-- 是否需要針對特定問題深入討論？
+**批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
 
-使用者決定後，由主 agent 派 `ddd-developer` 執行修正。
+**每個 issue 一題**，格式：
 
-## 前提條件
+- `header`：`"Issue #N"`
+- `question`：一句話說明問題
+- `preview`：引用的問題程式碼片段（含檔案路徑與行號）
+- `options`：根據 reviewer 意見與 coordinator 驗證結果，列出具體可行的修法方案（各方案在 description 簡述怎麼改），加上「不修，跳過」。使用者可透過自動附加的 Other 給自訂指示
 
-orchestrator script 已部署（`npm run deploy` 自動處理）、至少安裝一種 reviewer CLI（claude / gemini / opencode / codex，安裝與認證見 `references/cli-adapters.md`）。只剩一個 CLI 可用時 config 仍可跑單方 review，但嚴格講不算 cross review。
+收集完所有決策後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
 
 ## 產出
 
@@ -165,5 +150,6 @@ orchestrator script 已部署（`npm run deploy` 自動處理）、至少安裝�
 
 ## 進一步閱讀
 
-- `references/orchestrator-internals.md` — 事件語意、timeout、SIGKILL、content-layer 失敗根因、config/aliases、ADR 索引
+- `references/cli-reference.md` — 模型覆蓋、短名、部署前提
+- `references/orchestrator-internals.md` — 事件語意、timeout、content-layer 失敗、config
 - `references/cli-adapters.md` — 各 CLI 的安裝、認證、JSON 抽取機制

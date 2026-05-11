@@ -41,8 +41,7 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 * **No Code Without Tests**：修改 production code 前，必須先建立或更新測試。
 * **Sync on Finish**：標記任務完成前，必須先更新 `tasks.md` 和 `works.md`。
 * **規格變更**：開發中若需變更規格，暫停開發，同步更新三份文件，經使用者確認後才恢復。
-* **明確的決策點**：需要使用者確認或決策時，必須使用 Question Tool，不可用一般對話文字代替。這確保流程在決策點明確暫停，等待使用者輸入。
-* **Show Must Go On**：每次準備結束當前回合（相當於 Claude Code `Stop` hook 的時機）時，必須用 Question Tool 提議 2–4 個具體下一步選項。禁止只寫「完成了」或用開放式「要繼續嗎？」收尾。使用者明確說「結束／就這樣」時才可豁免。
+* **明確的決策點**：只有缺少使用者判斷會阻塞下一步，或會改變需求、範圍、風險承擔時，才使用 Question Tool。提問前先回報已知事實與目前判斷；不可把導覽問題、例行下一步、或可自行查證的事項包裝成決策點。
 
 ### 文件結構
 
@@ -74,7 +73,7 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 
 > 各階段的詳細步驟請參考對應的 skill：
 > `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
-> E2E 測試用 `/ddd.e2e`，架構重構用 `/ddd.architect-refactor`，hook 設定用 `/ddd.create-hooks`。
+> E2E 測試用 `/ddd.e2e`。
 
 ### E2E 測試的特殊處理
 
@@ -181,7 +180,6 @@ import { createSession } from '../services/session'
 | 檔案搜尋 | `fd` | find |
 | 檔案檢視 | `bat` | cat |
 | JSON 處理 | `jq` | 手動 parse |
-| Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
 | 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
 | 反向代理 | Traefik（Docker label 設定路由） | nginx |

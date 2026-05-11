@@ -101,7 +101,12 @@ chmod +x "$MOCK_DIR/codex"
 
 assert_contains() {
   local test_name="$1" output="$2" expected="$3"
-  if echo "$output" | grep -qF -- "$expected"; then
+  # Avoid `echo "$output" | grep -q ...` under `set -o pipefail`: when grep -q
+  # finds an early match it may close the pipe before echo finishes writing,
+  # causing echo to receive SIGPIPE and the whole pipeline to fail even though
+  # the expected text is present. A here-string keeps the assertion about
+  # content only and preserves the event-stream semantics being checked.
+  if grep -qF -- "$expected" <<< "$output"; then
     ((PASS++)); echo "  PASS: $test_name"
   else
     ((FAIL++)); echo "  FAIL: $test_name — expected '$expected' in output"
@@ -111,7 +116,7 @@ assert_contains() {
 
 assert_not_contains() {
   local test_name="$1" output="$2" unexpected="$3"
-  if echo "$output" | grep -qF -- "$unexpected"; then
+  if grep -qF -- "$unexpected" <<< "$output"; then
     ((FAIL++)); echo "  FAIL: $test_name — unexpected '$unexpected' found"
   else
     ((PASS++)); echo "  PASS: $test_name"

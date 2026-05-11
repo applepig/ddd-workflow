@@ -117,9 +117,7 @@ docs/
 
 | Slash Command | 用途 |
 |---------------|------|
-| `/ddd.architect-refactor` | 架構層級重構——模組邊界、依賴方向、職責分配 |
 | `/ddd.agent-browser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
-| `/ddd.create-hooks` | 設定 Claude Code hooks（安全防護、lint、commit review） |
 
 ## 核心原則
 

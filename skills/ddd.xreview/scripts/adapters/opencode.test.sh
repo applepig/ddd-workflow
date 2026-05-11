@@ -43,7 +43,7 @@ MOCK_EOF
 
   assert_exit_code "opencode adapter exits 0" "$rc" 0
   assert_contains "opencode adapter calls cli" "$output" "MOCK_CALLED: opencode run"
-  assert_contains "opencode adapter passes reviewer agent" "$output" "--agent ddd.xreviewer"
+  assert_contains "opencode adapter passes reviewer agent" "$output" "--agent ddd-reviewer"
   assert_contains "opencode adapter passes model" "$output" "--model github-copilot/gpt-5.4"
   assert_contains "opencode adapter forwards stdin" "$output" "MOCK_STDIN: test review prompt content"
   assert_contains "opencode adapter uses --format json" "$output" "--format json"
@@ -195,6 +195,155 @@ MOCK_EOF
   assert_exit_code "opencode jq-missing exits 1" "$rc" 1
   assert_contains "opencode jq-missing stderr message" "$output" \
     "XREVIEW_ERROR: jq not found"
+
+  # ============================================================
+  echo "--- Test: opencode worker mode dispatches from invocation name ---"
+  # ============================================================
+  cat > "$MOCK_DIR/opencode" << 'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/opencode"
+  ln -sf "$ADAPTER_DIR/opencode.sh" "$MOCK_DIR/opencode-worker.sh"
+
+  output=$(PATH="$MOCK_DIR:$PATH" bash "$MOCK_DIR/opencode-worker.sh" --help 2>&1)
+  rc=$?
+
+  assert_exit_code "opencode worker help exits 0" "$rc" 0
+  assert_contains "opencode worker help uses worker usage" "$output" "Usage: opencode-worker.sh"
+  assert_contains "opencode worker help lists description flag" "$output" "--description"
+  assert_contains "opencode worker help lists subagent type flag" "$output" "--subagent-type"
+  assert_contains "opencode worker help lists isolation flag" "$output" "--isolation"
+
+  output=$(PATH="$MOCK_DIR:$PATH" bash "$ADAPTER_DIR/opencode.sh" 2>&1)
+  rc=$?
+
+  if [[ "$rc" -ne 0 ]]; then
+    ((PASS++)); echo "  PASS: opencode original filename dispatches to reviewer mode"
+  else
+    ((FAIL++)); echo "  FAIL: opencode original filename should require reviewer positional args"
+  fi
+  assert_contains "opencode reviewer mode usage mentions opencode.sh" "$output" "Usage: opencode.sh"
+
+  # ============================================================
+  echo "--- Test: opencode worker parses flags and emits lifecycle events ---"
+  # ============================================================
+  cat > "$MOCK_DIR/opencode" << 'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+printf '%s\n' '{"type":"text","timestamp":1,"sessionID":"s1","part":{"type":"text","text":"hello"}}'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/opencode"
+
+  output=$(PATH="$MOCK_DIR:$PATH" bash "$MOCK_DIR/opencode-worker.sh" \
+    --description test-desc \
+    --model some/model \
+    --subagent-type ddd-developer \
+    --prompt "hi" 2>&1)
+  rc=$?
+
+  assert_exit_code "opencode worker flag parsing exits 0" "$rc" 0
+  assert_contains "opencode worker emits description" "$output" "[opencode-worker] DESCRIPTION test-desc"
+  assert_contains "opencode worker emits subagent type" "$output" "[opencode-worker] SUBAGENT_TYPE ddd-developer"
+  assert_contains "opencode worker emits model" "$output" "[opencode-worker] MODEL some/model"
+  assert_contains "opencode worker emits log file path" "$output" "[opencode-worker] LOG_FILE /"
+  assert_contains "opencode worker emits result file path" "$output" "[opencode-worker] RESULT_FILE /"
+  assert_contains "opencode worker emits done lifecycle" "$output" "[opencode-worker] DONE exit=0"
+
+  if echo "$output" | grep -qE 'WORKTREE_CREATED|WORKTREE_REUSED'; then
+    ((FAIL++)); echo "  FAIL: opencode worker emitted worktree lifecycle without isolation"
+  else
+    ((PASS++)); echo "  PASS: opencode worker does not emit worktree lifecycle without isolation"
+  fi
+
+  # ============================================================
+  echo "--- Test: opencode worker jq filter writes simplified events and result ---"
+  # ============================================================
+  cat > "$MOCK_DIR/opencode" << 'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+printf '%s\n' \
+  '{"type":"step_start","timestamp":1,"sessionID":"s1","part":{}}' \
+  '{"type":"step_finish","timestamp":2,"sessionID":"s1","part":{"reason":"end_turn","tokens":{"total":100},"cost":0.001}}' \
+  '{"type":"tool_use","timestamp":3,"sessionID":"s1","part":{"tool":"bash","state":{"input":{"command":"echo hi"},"metadata":{"exit":0}}}}' \
+  '{"type":"tool_use","timestamp":4,"sessionID":"s1","part":{"tool":"read","title":"reading file"}}' \
+  '{"type":"text","timestamp":5,"sessionID":"s1","part":{"type":"text","text":"first answer"}}' \
+  '{"type":"text","timestamp":6,"sessionID":"s1","part":{"type":"text","text":"second answer"}}'
+exit 0
+MOCK_EOF
+  chmod +x "$MOCK_DIR/opencode"
+
+  output=$(PATH="$MOCK_DIR:$PATH" bash "$MOCK_DIR/opencode-worker.sh" \
+    --description jq-filter \
+    --prompt "hi" 2>&1)
+  rc=$?
+
+  assert_exit_code "opencode worker jq filter exits 0" "$rc" 0
+
+  log_path=$(echo "$output" | grep -oE '\[opencode-worker\] LOG_FILE [^ ]+' | awk '{print $3}')
+  result_path=$(echo "$output" | grep -oE '\[opencode-worker\] RESULT_FILE [^ ]+' | awk '{print $3}')
+
+  if [[ -f "$log_path" ]]; then
+    ((PASS++)); echo "  PASS: opencode worker log file exists"
+  else
+    ((FAIL++)); echo "  FAIL: opencode worker log file missing: '$log_path'"
+  fi
+
+  if [[ -f "$result_path" ]]; then
+    ((PASS++)); echo "  PASS: opencode worker result file exists"
+  else
+    ((FAIL++)); echo "  FAIL: opencode worker result file missing: '$result_path'"
+  fi
+
+  log_content=""
+  result_content=""
+  [[ -f "$log_path" ]] && log_content="$(cat "$log_path")"
+  [[ -f "$result_path" ]] && result_content="$(cat "$result_path")"
+
+  if echo "$log_content" | grep -qF 'step_start'; then
+    ((FAIL++)); echo "  FAIL: opencode worker log should skip step_start events"
+  else
+    ((PASS++)); echo "  PASS: opencode worker log skips step_start events"
+  fi
+
+  assert_contains "opencode worker log includes step finish" "$log_content" "STEP_DONE reason=end_turn"
+  assert_contains "opencode worker log includes bash command" "$log_content" "EXEC echo hi"
+  assert_contains "opencode worker log includes bash exit code" "$log_content" "exit=0"
+  assert_contains "opencode worker log includes non-bash tool" "$log_content" "TOOL read"
+  assert_contains "opencode worker log includes text message" "$log_content" "MESSAGE first answer"
+
+  log_prefix_ok=1
+  if [[ -z "$log_content" ]]; then
+    log_prefix_ok=0
+  else
+    while IFS= read -r line; do
+      if [[ ! "$line" =~ ^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\] ]]; then
+        log_prefix_ok=0
+        break
+      fi
+    done <<< "$log_content"
+  fi
+  if [[ "$log_prefix_ok" -eq 1 ]]; then
+    ((PASS++)); echo "  PASS: opencode worker log lines have timestamp prefix"
+  else
+    ((FAIL++)); echo "  FAIL: opencode worker log lines missing timestamp prefix"
+  fi
+
+  expected_result=$'first answer\n\nsecond answer'
+  if [[ "$result_content" == "$expected_result" ]]; then
+    ((PASS++)); echo "  PASS: opencode worker result joins text events with blank line"
+  else
+    ((FAIL++)); echo "  FAIL: opencode worker result mismatch"
+    echo "     got: $result_content"
+  fi
+
+  if echo "$output" | grep -qE 'STEP_DONE|EXEC echo hi|TOOL read|MESSAGE first answer'; then
+    ((FAIL++)); echo "  FAIL: opencode worker stdout leaked filtered log events"
+  else
+    ((PASS++)); echo "  PASS: opencode worker stdout contains lifecycle only for non-error events"
+  fi
 
   # Universal contracts (missing prompt, missing CLI, passthrough).
   run_universal_adapter_contracts opencode

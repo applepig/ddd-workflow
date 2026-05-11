@@ -40,7 +40,7 @@ description: >
 5. **寫入 plan.md** — 存到 `docs/<編號>-<名稱>/plan.md`
 6. **Plan Self-Review** — inline 檢查 Placeholder / 一致性 / Scope / 歧義四項（見下方）
 7. **使用者審閱 plan.md** — 請使用者 review 寫好的檔案，取得最終確認
-8. **引導進入 /ddd.spec** — 轉交到規格制定階段
+8. **接續 `/ddd.spec` 撰寫 spec.md** — invoke `/ddd.spec` skill，規劃結論填入 spec 的「背景」與「ADR」段落
 
 ## Process Flow
 
@@ -54,7 +54,7 @@ digraph ddd_brainstorming {
     "寫入 plan.md" [shape=box];
     "Plan Self-Review\n(inline 修正)" [shape=box];
     "使用者審閱 plan.md？" [shape=diamond];
-    "引導 /ddd.spec" [shape=doublecircle];
+    "接續 /ddd.spec 撰寫 spec.md" [shape=doublecircle];
 
     "探索專案 context" -> "逐一追問釐清需求";
     "逐一追問釐清需求" -> "提出 2-3 個方案";
@@ -65,11 +65,11 @@ digraph ddd_brainstorming {
     "寫入 plan.md" -> "Plan Self-Review\n(inline 修正)";
     "Plan Self-Review\n(inline 修正)" -> "使用者審閱 plan.md？";
     "使用者審閱 plan.md？" -> "寫入 plan.md" [label="要求修改"];
-    "使用者審閱 plan.md？" -> "引導 /ddd.spec" [label="通過"];
+    "使用者審閱 plan.md？" -> "接續 /ddd.spec 撰寫 spec.md" [label="通過"];
 }
 ```
 
-**終止狀態是引導 `/ddd.spec`。** brainstorming 結束後**唯一**可以執行的下一步 skill 是 `/ddd.spec`。不要 invoke `/ddd.tasks`、`/ddd.work`、`/ddd.architect-refactor`，或任何其他實作 skill。
+**終止狀態是完成 `/ddd.spec` 流程。** plan.md 確認後直接 invoke `/ddd.spec` 接續撰寫 spec.md，不要結束讓使用者自己跑。不要 invoke `/ddd.tasks`、`/ddd.work`，或任何其他實作 skill。
 
 ## The Process
 
@@ -77,12 +77,14 @@ digraph ddd_brainstorming {
 
 - 先查專案現況（檔案、文件、最近的 commits）
 - **決策點必須用 `AskUserQuestion` 工具**——不可用一般對話文字代替。這確保流程在決策點明確暫停、等待使用者輸入（AGENTS.md 規定）
+- **先給最小必要上下文，再問決策題**——先說明，再提問。
 - **能從 codebase 查到的答案自己查**——用 Read、Grep、或 Explore agent，不要問使用者那些翻一下檔案就能知道的事
 - 問細節問題前，先評估範圍：如果需求描述了多個獨立子系統（例如「做一個有聊天、檔案儲存、計費、數據分析的平台」），立刻標記出來。不要在一個需要先拆解的專案上浪費問題去鑽細節
 - 如果專案太大、一份 plan 裝不下，協助使用者拆成子專案：哪些部分是獨立的、彼此如何關聯、該以什麼順序建造。然後對第一個子專案走正常的設計流程。每個子專案都有自己的 plan → spec → tasks → work cycle
 - 範圍合適的專案，一次一題地追問以釐清想法
 - 能用 2-4 個選項框架的問題就用 `AskUserQuestion` 的選項格式呈現——開放式問題只在無法預判答案範圍時使用
 - **一則訊息只問一個問題**——如果某個主題需要更多探索，拆成多則訊息
+- 在 review／調研／brainstorming 場景，先給摘要或 findings，再用 `AskUserQuestion` 收斂方向。
 - 聚焦在理解：目的、限制、成功條件
 
 ### 探索方案
@@ -140,10 +142,10 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 
 等使用者回應。如果要求修改，改完後**重跑 Plan Self-Review**。使用者確認後才能進下一步。
 
-### 進入實作
+### 接續規格制定
 
-- 引導使用者執行 `/ddd.spec` 撰寫正式規格
-- **不要** invoke 任何其他 skill。`/ddd.spec` 是下一步
+- 直接 invoke `/ddd.spec` skill 撰寫 spec.md，規劃結論填入 spec 的「背景」與「ADR」段落
+- **不要** invoke 任何其他 skill。`/ddd.spec` 是唯一的下一步
 
 ## plan.md 大綱
 
@@ -175,6 +177,7 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 - **一次一題** — 不要用多個問題轟炸使用者
 - **選擇題優先** — 能用選項框架的問題比開放式問題更容易回答
 - **決策點用 `AskUserQuestion`** — 不可用對話文字代替（AGENTS.md）
+- **先說明再提問** — 先給最小必要上下文，再用 `AskUserQuestion`
 - **先探索後提問** — 能從 codebase 得到的答案自己查，不要問使用者（AGENTS.md）
 - **YAGNI 徹底執行** — 從所有設計中積極砍功能。越早砍越便宜，不要把「以後可能需要」帶進 spec
 - **探索替代方案** — 定案前永遠先提 2-3 個方案，推薦項放第一
@@ -188,6 +191,8 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 
 ## 結束條件
 
-使用者確認 plan.md 後，引導使用者執行 `/ddd.spec`。
+`/ddd.spec` 流程完成、使用者確認規格後，引導使用者執行 `/ddd.tasks`。
+
+在任何中途回合若準備收尾但尚未結束流程，仍需用 `AskUserQuestion` 提供 2-4 個具體下一步選項。
 
 如有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在同資料夾的 `research.md` 中。
