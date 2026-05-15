@@ -8,10 +8,12 @@
     "deploy:claude": "node scripts/cli.js deploy claude",
     "deploy:gemini": "node scripts/build.js && node scripts/cli.js deploy gemini",
     "deploy:codex": "node scripts/build.js && node scripts/cli.js deploy codex",
+    "deploy:opencode": "node scripts/build.js && node scripts/cli.js deploy opencode",
     "undeploy": "node scripts/cli.js undeploy",
     "undeploy:claude": "node scripts/cli.js undeploy claude",
     "undeploy:gemini": "node scripts/cli.js undeploy gemini",
     "undeploy:codex": "node scripts/cli.js undeploy codex",
+    "undeploy:opencode": "node scripts/cli.js undeploy opencode",
     "test": "node scripts/cli.js test",
     "test:unit": "vitest run",
     "build": "node scripts/build.js"

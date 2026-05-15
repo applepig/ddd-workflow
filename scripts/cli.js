@@ -224,6 +224,7 @@ function deployOpencode() {
   const target = join(HOME, '.config', 'opencode')
   mkdirSync(target, { recursive: true })
 
+  linkFile(join(SRC, 'config', 'opencode-tui.json'), join(target, 'tui.json'))
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(DIST, 'opencode', 'agents'), join(target, 'agents'), 'agent')
 }
@@ -292,6 +293,7 @@ function undeployCodex() {
 
 function undeployOpencode() {
   log('=== opencode ===')
+  unlinkIfOurs(join(HOME, '.config', 'opencode', 'tui.json'), '~/.config/opencode/tui.json')
   unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'skills'))
   unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'agents'))
 }
@@ -493,6 +495,7 @@ function testCodex() {
 function testOpencode() {
   log('=== opencode 驗證 ===')
   let ok = true
+  if (!checkSymlink(join(HOME, '.config', 'opencode', 'tui.json'), '~/.config/opencode/tui.json')) ok = false
   countInstalledLinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills ddd*')
   if (!checkSkillLocalScriptSymlinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills')) ok = false
   countInstalledLinks(join(HOME, '.config', 'opencode', 'agents'), '~/.config/opencode/agents ddd*')
