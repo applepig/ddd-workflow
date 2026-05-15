@@ -1,5 +1,62 @@
 #!/usr/bin/env node
 
+// ==========================================================================
+// session-trigger.mjs — Rolling session window keepalive for AI coding CLIs
+// ==========================================================================
+//
+// ## Usage
+//
+//   node session-trigger.mjs            # run once (one-shot)
+//   crontab: 0 7,12,17 * * 1-5 /path/to/session-trigger.mjs 2>&1
+//
+// ## Setup
+//
+//   # Create a dedicated HOME so Claude won't load your CLAUDE.md / persona:
+//   mkdir -p ~/.session-trigger
+//   ln -s ~/.claude ~/.session-trigger/.claude
+//   touch ~/.session-trigger/CLAUDE.md          # empty file overrides yours
+//
+//   Logs are written to ~/.session-trigger/session-trigger.log
+//
+// ## How the 5-hour rolling window works
+//
+//   Claude Code (Max/Pro) and Codex CLI (Plus/Pro) each use a 5-hour
+//   rolling rate-limit window. The window starts from your FIRST request
+//   and resets 5 hours later. If you start coding at 09:00, hit the limit
+//   at 10:00, you wait until 14:00 (5h from 09:00).
+//
+//   This script sends a cheap "hi" ping BEFORE you sit down to work, so
+//   the window starts early and resets sooner — reducing your actual wait
+//   time from hours to minutes.
+//
+// ## How this script works
+//
+//   1. Triggers each CLI in parallel (Claude + Codex) with minimal-token
+//      flags (cheapest model, no tools, custom system prompt, etc.)
+//   2. Verifies each trigger succeeded by parsing the rate-limit response:
+//      - Claude: `rate_limit_event` in --output-format json stdout
+//      - Codex: `token_count` event in ~/.codex/sessions/ file
+//   3. On failure, applies retry logic based on the window expiry time:
+//      - Expires within TOLERANCE (45min) → wait, then retry once
+//      - Expires beyond TOLERANCE → skip, wait for the next cron tick
+//      - Already expired → retry immediately
+//      - Unknown expiry → retry after RETRY_DELAY (30s)
+//
+// ## Customization
+//
+//   All tunables are in the constants block below:
+//
+//   - TOLERANCE_MS   — how close to expiry before we wait-and-retry
+//   - RETRY_DELAY_MS — fallback retry delay when expiry time is unknown
+//   - EXEC_TIMEOUT_MS — kill CLI if it hangs longer than this
+//   - TZ             — timezone for log timestamps
+//   - TRIGGER_HOME   — isolated HOME dir for Claude (avoids CLAUDE.md)
+//   - AGENTS[]       — add/remove CLIs here; each entry needs:
+//       name, cmd (argv array), parseResult (returns {ok, resets_at, reply}),
+//       and optionally cwd / env overrides
+//
+// ==========================================================================
+
 import { execFile, spawn } from "node:child_process"
 import { appendFile, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
