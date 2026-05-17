@@ -48,6 +48,7 @@ const OPENCODE_PLUGIN_FILES = [
 
 const OPENCODE_TUI_PLUGIN_FILES = [
   'opencode-codex-usage-status.tsx',
+  'opencode-codex-usage-format.js',
 ]
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
