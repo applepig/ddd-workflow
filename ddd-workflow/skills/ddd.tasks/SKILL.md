@@ -1,26 +1,37 @@
 ---
 name: ddd.tasks
 description: >
-  任務拆解：將 spec.md 分解為 milestone + task checklist，產出 tasks.md。
+  任務拆解：必要時將 spec.md 的輕量 Milestones 抽出為獨立 tasks.md，處理複雜依賴、平行工作線與跨 agent 派工。
   Trigger: "break down tasks", "create a task list", "split into milestones",
   "拆任務", "建 task list", "規劃實作步驟", /ddd.tasks。
-  spec.md 確認後、需要拆解為可測試的增量 milestone 時使用。
+  spec.md 確認後、需要複雜執行協調時使用；簡單 sprint 直接用 spec.md Milestones 進入 /ddd.work。
 ---
 
 # ddd.tasks — 任務拆解
 
-任務拆解階段。將 spec.md 拆解為可執行、可測試的 milestone 與 task。
+任務拆解階段。只有當 spec.md 內的輕量 Milestones 不足以支撐執行協調時，才建立獨立 tasks.md。
 
 <HARD-GATE>
 嚴禁在 spec.md 未獲使用者確認前拆任務。
-嚴禁跳過平行評估——不分析就宣稱「不可平行」是偷懶不是決策。
+嚴禁把 tasks.md 當成每個 sprint 的必備文件。簡單 sprint 應直接回到 spec.md Milestones。
+嚴禁用巨大 tasks.md 硬接過大的 scope；太複雜時必須先拆 sprint。
 </HARD-GATE>
+
+## Decision Gate
+
+開始拆解前，先判斷是否真的需要獨立 tasks.md：
+
+- **不需要 tasks.md**：spec.md 已有 1~3 個清楚 Milestone、沒有平行工作線、沒有複雜匯合點、task 總數約 10 個以內。此時不要產生 tasks.md，回到 spec.md 補強 Milestones 後引導 `/ddd.work`。
+- **需要 tasks.md**：需要多 agent / 多 worktree 平行派工、跨模組依賴、介面先行、匯合點、或 task 上下文太長，放在 spec.md 會干擾需求閱讀。
+- **需要拆 sprint**：拆解後預期超過 5 個 milestone、超過約 15 個 task、或涵蓋多個可獨立交付的子系統。此時停止產生 tasks.md，建議回到 `/ddd.plan` 或 `/ddd.spec` 拆成多個 sprint。
+
+tasks.md 是複雜執行協調工具，不是 traceability 補丁。若只是為了避免 spec/task detach 而加很多對照欄位，優先把 tasks 留在 spec.md。
 
 ## Scope Check
 
-開始拆解前，先檢查 spec 的範圍：
+若 Decision Gate 判定需要獨立 tasks.md，再檢查 spec 的範圍：
 
-- 若 spec 涵蓋**多個獨立子系統**（例如前台 + 後台管理 + 排程服務），應拆成獨立的 tasks.md——每份獨立可交付、可測試。
+- 若 spec 涵蓋**多個獨立子系統**（例如前台 + 後台管理 + 排程服務），應先拆成多個 sprint，而不是建立一份巨大 tasks.md。
 - 若 spec 過大但子系統間有強依賴，標記出來並建議使用者在 spec 層級先拆分，再回來拆任務。
 - 若 spec 範圍合理（單一功能或緊密相關的功能群），直接進入拆解。
 
@@ -28,15 +39,16 @@ description: >
 
 你必須為以下每個項目建立 task 並依序完成：
 
-1. **讀取規格** — 讀取當前 sprint 的 spec.md，確認所有驗收條件
-2. **拆解任務** — 將功能拆成 milestone + task（見下方指引）
-3. **撰寫 tasks.md** — 按格式寫入檔案
-4. **Self-Review** — 依下方 Self-Review 清單自我檢查，修正問題
-5. **任務審查** — 呈現給使用者，根據回饋調整，等待確認
+1. **讀取規格** — 讀取當前 sprint 的 spec.md，確認目標、非目標、驗收條件、邊界案例、ADR 與既有 Milestones
+2. **Decision Gate** — 判定：直接用 spec.md、建立 tasks.md、或拆 sprint
+3. **拆解任務** — 僅在需要 tasks.md 時，將功能拆成 milestone + task（見下方指引）
+4. **撰寫 tasks.md** — 按格式寫入檔案
+5. **Self-Review** — 依下方 Self-Review 清單自我檢查，修正問題
+6. **任務審查** — 呈現給使用者，根據回饋調整，等待確認
 
 ## 拆解指引
 
-- 將功能拆成 2~5 個 milestone，每個 milestone 必須是一個「可獨立交付且可測試的增量」。
+- 將功能拆成 2~5 個 milestone，每個 milestone 必須是一個「可獨立交付且可測試的增量」。超過此範圍通常代表應拆 sprint。
 - 每個 task 的拆解必須符合 **Agentic TDD** 限制：
   - 測試與實作分離：不要把「寫測試與實作」混在同一個 task 中，應確保測試先行 (Test-First)。
   - 原子性：每個 task 只能專注修改單一行為或模組。
@@ -166,7 +178,7 @@ description: >
 
 撰寫完 tasks.md 後，以新鮮眼光對照 spec 自我檢查。這是你自己跑的 checklist，不是派 subagent。
 
-**1. Spec 覆蓋度**：逐條掃描 spec 的驗收條件，每條都能指向至少一個 task 嗎？列出遺漏。
+**1. Spec 覆蓋度**：逐條掃描 spec 的目標、非目標、驗收條件、邊界案例與 ADR，每個會影響實作的項目都能在 tasks.md 中被保留或反映嗎？列出遺漏。
 
 **2. Task 完整性掃描**：檢查是否有以下問題：
 - 模糊的 task 描述（「實作登入功能」而非「撰寫 POST /auth/login endpoint 測試 (Red)」）
@@ -176,12 +188,13 @@ description: >
 
 **3. 依賴一致性**：平行工作線之間的介面契約是否在分線前的 task 中確立？Milestone 之間的依賴方向是否合理——後面的 milestone 是否真的依賴前面的產出？
 
-發現問題直接修正，不需重新 review。若發現 spec 的驗收條件沒有對應 task，補上。
+發現問題直接修正，不需重新 review。若發現 tasks.md 只是把 spec 內容機械轉成更長的 checklist，刪除 tasks.md 草稿，回到 spec.md Milestones。
 
 ## 產出
 
-`docs/<編號>-<名稱>/tasks.md`
+- 需要獨立執行計畫時：`docs/<編號>-<名稱>/tasks.md`
+- 不需要獨立執行計畫時：更新 `docs/<編號>-<名稱>/spec.md` 的 Milestones，不建立 tasks.md
 
 ## 結束條件
 
-使用者確認任務規劃後，試情況引導使用者執行 `/ddd.xreview` 或 `/ddd.work`。
+使用者確認後，引導使用者執行 `/ddd.work`。若 Decision Gate 判定需要拆 sprint，停止在規劃階段並引導回 `/ddd.plan` 或 `/ddd.spec`。

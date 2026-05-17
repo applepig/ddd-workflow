@@ -191,7 +191,7 @@ Self-Review 通過後，請使用者審閱 plan.md 才能繼續：
 
 ## 結束條件
 
-`/ddd.spec` 流程完成、使用者確認規格後，引導使用者執行 `/ddd.tasks`。
+`/ddd.spec` 流程完成、使用者確認規格後，依 spec 內 Milestones 複雜度引導使用者執行 `/ddd.work` 或 `/ddd.tasks`。
 
 在任何中途回合若準備收尾但尚未結束流程，仍需用 `AskUserQuestion` 提供 2-4 個具體下一步選項。
 

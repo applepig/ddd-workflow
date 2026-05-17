@@ -1,22 +1,22 @@
 ---
 name: ddd.work
 description: >
-  TDD 開發執行：以 Red → Green → Refactor 循環實作 tasks.md 中的任務。
+  TDD 開發執行：以 Red → Green → Refactor 循環實作 spec.md Milestones 或 tasks.md 中的任務。
   遇到 🔀 平行工作線時自動切換 coordinator 模式，派發 opencode worker 平行開發。
   Trigger: "start implementing", "begin development", "let's code", "do TDD",
   "開始實作", "開始寫", "動工", /ddd.work。
-  tasks.md 確認後、準備寫程式碼時使用。
+  spec.md 已確認、且必要的 tasks.md（若有）也確認後，準備寫程式碼時使用。
 ---
 
 # ddd.work — 開發執行
 
-開發執行階段。以 TDD 循環逐一完成 tasks.md 中的 milestone。
+開發執行階段。以 TDD 循環逐一完成任務來源中的 milestone。任務來源優先使用 `tasks.md`（若存在且已確認），否則使用 `spec.md` 的 Milestones。
 
 不指定 milestone 編號時，從第一個未完成的 milestone 開始。
 
 ## 模式判定
 
-讀取當前 milestone 時，根據結構判定執行模式：
+讀取當前 milestone 時，根據任務來源結構判定執行模式：
 
 - **序列模式**：milestone 內沒有 `🔀 可平行工作線` → 主行程逐一執行 TDD 循環
 - **平行模式**：milestone 內有 `🔀 可平行工作線` → 切換為 coordinator，派發 opencode worker
@@ -38,7 +38,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 ### 每個 Milestone 的循環
 
 1. **鎖定範圍**
-   - 讀取 tasks.md，確認當前 milestone 的所有 task
+   - 讀取任務來源（spec.md Milestones 或 tasks.md），確認當前 milestone 的所有 task
    - 讀取 spec.md 中對應的驗收條件
 
 2. **TDD 開發循環（Red → Green → Refactor）**
@@ -52,11 +52,11 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 
 4. **自我驗收**
    - 執行所有相關測試，確認全部通過
-   - 執行 E2E 驗證（若 tasks.md 的工作線有標註驗證方式，依其步驟執行）
+   - 執行 E2E 驗證（若任務來源有標註驗證方式，依其步驟執行）
    - 檢查是否符合 spec 中的驗收條件
 
 5. **更新文件**
-   - `tasks.md`：勾選已完成的 task（`- [x]`）
+   - 任務來源：勾選已完成的 task（`- [x]`）
    - `works.md`：記錄本次 milestone 的技術決策與問題解決
 
 6. **回報使用者**
@@ -77,7 +77,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 ### Phase 1: 準備派發
 
 1. **解析工作線**
-   - 從 tasks.md 讀取所有 `[A]`、`[B]`… 工作線
+   - 從 tasks.md 讀取所有 `[A]`、`[B]`… 工作線（平行模式必須使用獨立 tasks.md）
    - 確認每條線的範圍（檔案路徑）、依賴、驗證方式
 
 2. **組裝 worker prompt**
@@ -109,7 +109,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
    （列出 worker 實作時可能需要讀取的完整檔案路徑，作為 fallback。
      Worker 可用 Read tool 按需讀取，不必全部事先貼入。）
    - `docs/<編號>-<名稱>/spec.md`
-   - `docs/<編號>-<名稱>/tasks.md`
+   - `docs/<編號>-<名稱>/tasks.md`（若存在）
    - （其他相關的 source files）
 
    ## 專案慣例
@@ -238,7 +238,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 * **No Test Modification**：在實作階段（Green），**絕對禁止修改測試檔案**來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即 **Undo（撤回）**，禁止在錯誤的基礎上疊加修補（打地鼠）。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。Spec 更新確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。若變更影響獨立 tasks.md，也必須同步更新並確認。確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 隔離**：所有派出的 worker 一律帶 `--isolation worktree`。Worker 在獨立的 worktree（`$PROJECT_ROOT/.worktrees/opencode/<slug>/`）中工作、測試，但不得自行 commit；commit 由 coordinator merge 後、經使用者確認才執行，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。
@@ -250,7 +250,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 ## 產出
 
 - 通過測試的程式碼
-- 更新後的 `tasks.md`（勾選進度）
+- 更新後的任務來源（`spec.md` Milestones 或 `tasks.md`，勾選進度）
 - 更新後的 `works.md`（開發日誌）
 - Git commits
 
