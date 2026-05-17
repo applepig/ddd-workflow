@@ -60,5 +60,5 @@ description: >
 
 ## 結束條件
 
-`/ddd.spec` 流程完成、使用者確認規格後，引導使用者執行 `/ddd.tasks`。
+`/ddd.spec` 流程完成、使用者確認規格後，依 spec 內 Milestones 複雜度引導使用者執行 `/ddd.work` 或 `/ddd.tasks`。
 如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。
