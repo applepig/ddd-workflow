@@ -44,12 +44,11 @@ export function listSessions(): SessionInfo[] {
 }
 
 /**
- * 建立 detached tmux session，送 cc 指令啟動 Claude。
- * 不預先產 UUID——讓 Claude 自行決定 session ID，之後由 syncSessionId 讀取。
+ * 建立 detached tmux session，送指令啟動指定工具。
  */
-export function createSession(session_name: string, dir: string): void {
+export function createSession(session_name: string, dir: string, tool: 'cc' | 'oc' = 'cc'): void {
   execFileSync('tmux', ['new-session', '-d', '-s', session_name, '-c', dir], { stdio: 'pipe' })
-  execFileSync('tmux', ['send-keys', '-t', session_name, 'cc', 'Enter'], { stdio: 'pipe' })
+  execFileSync('tmux', ['send-keys', '-t', session_name, tool, 'Enter'], { stdio: 'pipe' })
 }
 
 /**
