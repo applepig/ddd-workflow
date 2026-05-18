@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+node scripts/subtree-status.mjs --hook post-rewrite

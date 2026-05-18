@@ -16,7 +16,11 @@
     "undeploy:opencode": "node scripts/cli.js undeploy opencode",
     "test": "node scripts/cli.js test",
     "test:unit": "vitest run",
-    "build": "node scripts/build.js"
+    "build": "node scripts/build.js",
+    "setup:hooks": "node scripts/setup-githooks.mjs",
+    "subtree:status": "node scripts/subtree-status.mjs --hook manual",
+    "subtree:push": "git subtree push --prefix=ddd-workflow ddd-workflow dev",
+    "subtree:pull": "git subtree pull --prefix=ddd-workflow ddd-workflow dev --squash"
   },
   "dependencies": {
     "gray-matter": "^4.0.3"
