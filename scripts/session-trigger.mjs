@@ -7,7 +7,7 @@
 // ## Usage
 //
 //   node session-trigger.mjs            # run once (one-shot)
-//   crontab: 0 7,12,17 * * 1-5 /path/to/session-trigger.mjs 2>&1
+//   crontab: 0 7,12,17 * * 1-5 /path/to/session-trigger.mjs >/dev/null 2>&1
 //
 // ## Setup
 //
