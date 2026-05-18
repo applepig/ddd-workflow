@@ -1,2 +1,5 @@
 #!/usr/bin/env sh
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$hook_dir/.." && pwd)
+cd "$repo_root" || exit 0
 node scripts/subtree-status.mjs --hook post-commit

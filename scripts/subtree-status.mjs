@@ -189,6 +189,8 @@ function reportSubtreeSync() {
   }
 
   const remote_commit = git(['rev-parse', SUBTREE_REMOTE_REF])
+  const split_tree = git(['rev-parse', `${split_commit}^{tree}`])
+  const remote_tree = git(['rev-parse', `${remote_commit}^{tree}`])
   if (split_commit === remote_commit) {
     emit(
       'info',
@@ -198,6 +200,19 @@ function reportSubtreeSync() {
       [],
       false,
       { split_commit, remote_commit },
+    )
+    return
+  }
+
+  if (split_tree === remote_tree) {
+    emit(
+      'info',
+      'SUBTREE_CLEAN',
+      `${SUBTREE_PREFIX}/ 內容已與 ${SUBTREE_REMOTE}/${SUBTREE_BRANCH} 同步，但 split commit history 不同。`,
+      '不需要額外動作。下次有新的 ddd-workflow 變更時，再用 npm run subtree:push 或一般 ddd-workflow PR 流程同步。',
+      [],
+      false,
+      { split_commit, remote_commit, split_tree, remote_tree },
     )
     return
   }
