@@ -1,7 +1,7 @@
 ---
 name: ddd.spec
 description: >
-  撰寫規格書：產出包含 User Story、驗收條件、API 契約、ADR 的 spec.md。
+  撰寫規格書：產出包含 User Story、驗收條件、API 契約、ADR、輕量 Milestones 的 spec.md。
   Trigger: "write a spec", "define requirements", "draft acceptance criteria",
   "寫規格", "定義需求", "驗收條件", /ddd.spec。
   功能需要正式規格才能開始實作時使用。
@@ -42,7 +42,7 @@ digraph spec_flow {
     "呈現給使用者" [shape=box];
     "使用者確認？" [shape=diamond];
     "根據回饋修改" [shape=box];
-    "引導 /ddd.tasks" [shape=doublecircle];
+    "引導 /ddd.work 或 /ddd.tasks" [shape=doublecircle];
 
     "準備工作" -> "探索 codebase";
     "探索 codebase" -> "需求分析";
@@ -55,7 +55,7 @@ digraph spec_flow {
     "呈現給使用者" -> "使用者確認？";
     "使用者確認？" -> "根據回饋修改" [label="no"];
     "根據回饋修改" -> "Spec self-review";
-    "使用者確認？" -> "引導 /ddd.tasks" [label="yes"];
+    "使用者確認？" -> "引導 /ddd.work 或 /ddd.tasks" [label="yes"];
 }
 ```
 
@@ -114,6 +114,16 @@ digraph spec_flow {
 - 決策：選用 X 方案
 - 原因：...
 - 替代方案：Y（為何不選）
+
+## Milestones
+
+### Milestone 1: <名稱>
+> 預期結果：完成後可觀察到什麼
+> 驗證方式：`測試指令` 或手動驗收步驟
+
+- [ ] 撰寫/更新測試（Red）
+- [ ] 實作最小功能（Green）
+- [ ] Refactor 並確認測試維持通過
 ```
 
 > **ADR 寫作要點**：重點是記錄「為什麼選 A 而不選 B」——未來的維護者需要的是決策脈絡，而非單純的結論。替代方案不需要長篇大論，一兩句說明被排除的理由即可。
@@ -123,7 +133,7 @@ digraph spec_flow {
 寫完 spec.md 後，用新鮮的眼光檢查：
 
 1. **Placeholder 掃描**：有沒有「TBD」、「待確認」、空白段落？補完或移至 Open Questions
-2. **內部一致性**：目標、User Story、驗收條件之間有沒有矛盾？介面設計是否支撐所有驗收條件？
+2. **內部一致性**：目標、User Story、驗收條件、Milestones 之間有沒有矛盾？介面設計是否支撐所有驗收條件？
 3. **Scope 檢查**：這個範圍適合一個 sprint 嗎？還是需要再拆？
 4. **歧義檢查**：有沒有哪個驗收條件能被兩種方式解讀？挑一個寫明確
 
@@ -131,9 +141,9 @@ digraph spec_flow {
 
 ## User Review Gate
 
-Self-review 通過後，向使用者呈現 spec：
+Self-review 通過後，向使用者呈現 spec。預設 spec 內的 Milestones 已足夠執行：
 
-> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`。請審閱內容，有需要調整的地方告訴我。確認後我們就進入 `/ddd.tasks` 拆解任務。」
+> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`，其中已包含可執行的 Milestones。請審閱內容，有需要調整的地方告訴我。確認後可直接進入 `/ddd.work`；只有需要平行派工或複雜依賴時才進入 `/ddd.tasks`。」
 
 等待使用者回應。如果要求修改，改完後重跑 Self-Review。使用者確認後才結束。
 
@@ -144,4 +154,4 @@ Self-review 通過後，向使用者呈現 spec：
 
 ## 結束條件
 
-使用者確認規格後，引導使用者執行 `/ddd.tasks`。
+使用者確認規格後，若 Milestones 已足夠執行，引導使用者執行 `/ddd.work`；若需要平行派工、複雜依賴或跨 agent 協調，引導使用者執行 `/ddd.tasks`。

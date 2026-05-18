@@ -1,28 +1,18 @@
 /** @jsxImportSource @opentui/solid */
 import { readFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { createMemo, createSignal, Show } from "solid-js"
+import { limitColumns } from "./opencode-codex-usage-format.js"
 
-const USAGE_FILE = ".opencode/codex-usage.json"
-const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
+const DATA_DIR = process.env.OPENCODE_CODEX_USAGE_DIR || path.join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage")
+const USAGE_FILE = path.join(DATA_DIR, "codex-usage.json")
 
-function usagePaths(api) {
-  const root = api.state.path.worktree && api.state.path.worktree !== "/" ? api.state.path.worktree : api.state.path.directory
-  return [
-    root ? path.join(root, USAGE_FILE) : undefined,
-    api.state.path.directory ? path.join(api.state.path.directory, USAGE_FILE) : undefined,
-    path.join(process.cwd(), USAGE_FILE),
-    path.join(PLUGIN_DIR, "..", "codex-usage.json"),
-  ].filter((item, index, list) => item && list.indexOf(item) === index)
-}
-
-async function readUsage(api) {
-  for (const file of usagePaths(api)) {
-    try {
-      return JSON.parse(await readFile(file, "utf8"))
-    } catch {}
-  }
+async function readUsage() {
+  try {
+    return JSON.parse(await readFile(USAGE_FILE, "utf8"))
+  } catch {}
   return undefined
 }
 
@@ -32,27 +22,13 @@ function colorByUsage(theme, pct) {
   return theme.info
 }
 
-function formatRemaining(resetAt, now) {
-  if (!resetAt) return "--:--"
-
-  const remaining = Math.max(0, Math.floor(resetAt - now / 1000))
-  const days = Math.floor(remaining / 86400)
-  const hours = Math.floor((remaining % 86400) / 3600)
-  const minutes = Math.floor((remaining % 3600) / 60)
-
-  if (days > 0) return `${days}d${hours}h`
-  if (hours > 0) return `${hours}h${minutes}m`
-  return `${minutes}m`
-}
-
 function LimitView(props) {
   const theme = () => props.api.theme.current
-  const pct = createMemo(() => Math.round(props.limit?.used_percent ?? 0))
+  const columns = createMemo(() => limitColumns(props.label, props.limit, props.now))
 
   return (
     <text fg={theme().textMuted}>
-      {props.label} <span style={{ fg: colorByUsage(theme(), pct()) }}>{pct()}%</span> reset{" "}
-      {formatRemaining(props.limit?.reset_at, props.now)}
+      {columns().label} <span style={{ fg: colorByUsage(theme(), columns().percent_value) }}>{columns().percent}</span> reset {columns().reset}
     </text>
   )
 }
@@ -63,10 +39,9 @@ function UsageView(props) {
 
   return (
     <Show when={props.usage()}>
-      <box flexDirection="row" gap={1} flexShrink={0}>
+      <box flexDirection="column" flexShrink={0}>
         <LimitView api={props.api} label="5hr" limit={primary()} now={props.now()} />
-        <text fg={props.api.theme.current.textMuted}>|</text>
-        <LimitView api={props.api} label="weekly" limit={secondary()} now={props.now()} />
+        <LimitView api={props.api} label="week" limit={secondary()} now={props.now()} />
       </box>
     </Show>
   )
@@ -81,7 +56,7 @@ const tui = async (api) => {
     if (refreshInFlight) return
     refreshInFlight = true
     try {
-      setUsage(await readUsage(api))
+      setUsage(await readUsage())
     } finally {
       refreshInFlight = false
     }

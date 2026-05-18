@@ -1,23 +1,21 @@
 import { appendFile, mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 
 const CODEX_USAGE_CAPTURE = Symbol.for("opencode.codexUsageCapture.fetch")
-const CODEX_USAGE_CAPTURE_STATE = Symbol.for("opencode.codexUsageCapture.state")
 const CODEX_PATH = "/backend-api/codex/responses"
-const USAGE_FILE = ".opencode/codex-usage.json"
-const LOG_FILE = ".opencode/openai-response-debug.ndjson"
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
+const DATA_DIR = process.env.OPENCODE_CODEX_USAGE_DIR || path.join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage")
+const USAGE_FILE = "codex-usage.json"
+const LOG_FILE = "openai-response-debug.ndjson"
 const DEBUG = process.env.OPENCODE_CODEX_USAGE_DEBUG === "1"
 
-function rootDir(input) {
-  return input.worktree && input.worktree !== "/" ? input.worktree : input.directory
+function usagePath() {
+  return path.join(DATA_DIR, USAGE_FILE)
 }
 
-function usagePath(input) {
-  return path.join(rootDir(input), USAGE_FILE)
-}
-
-function logPath(input) {
-  return path.join(rootDir(input), LOG_FILE)
+function logPath() {
+  return path.join(DATA_DIR, LOG_FILE)
 }
 
 function requestUrl(input) {
@@ -85,16 +83,16 @@ function codexHeadersObject(headers) {
   )
 }
 
-async function writeUsage(input, usage) {
-  const file = usagePath(input)
+async function writeUsage(usage) {
+  const file = usagePath()
   await mkdir(path.dirname(file), { recursive: true })
   await Bun.write(file, JSON.stringify(usage, null, 2) + "\n")
 }
 
-async function writeDebug(input, startedAt, url, response) {
+async function writeDebug(startedAt, url, response) {
   if (!DEBUG) return
 
-  const file = logPath(input)
+  const file = logPath()
   await mkdir(path.dirname(file), { recursive: true })
   await appendFile(
     file,
@@ -111,30 +109,28 @@ async function writeDebug(input, startedAt, url, response) {
   )
 }
 
-function capture(input, startedAt, requestInput, response) {
+function capture(startedAt, requestInput, response) {
   const url = requestUrl(requestInput)
   if (!url || !isCodexResponseRequest(url)) return
 
   const usage = usageFromHeaders(response.headers)
   if (!usage) return
 
-  void writeUsage(input, usage).catch(() => {})
-  void writeDebug(input, startedAt, url, response).catch(() => {})
+  void writeUsage(usage).catch(() => {})
+  void writeDebug(startedAt, url, response).catch(() => {})
 }
 
 export default {
   id: "ddd:opencode-codex-usage-capture",
-  server: async (input) => {
-    globalThis[CODEX_USAGE_CAPTURE_STATE] = { input }
+  server: async () => {
     if (globalThis[CODEX_USAGE_CAPTURE]) return {}
 
     const originalFetch = globalThis.fetch.bind(globalThis)
     globalThis[CODEX_USAGE_CAPTURE] = originalFetch
     globalThis.fetch = async (requestInput, init) => {
       const startedAt = Date.now()
-      const currentInput = globalThis[CODEX_USAGE_CAPTURE_STATE]?.input ?? input
       const response = await originalFetch(requestInput, init)
-      capture(currentInput, startedAt, requestInput, response)
+      capture(startedAt, requestInput, response)
       return response
     }
 

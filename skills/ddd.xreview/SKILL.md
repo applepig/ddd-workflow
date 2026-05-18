@@ -22,7 +22,7 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md`、`tasks.md` 路徑。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及 `tasks.md` 路徑（若存在）。
 - **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
   1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
   2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
@@ -40,10 +40,10 @@ review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_fil
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務清單：<tasks.md 路徑>
+- 任務來源：<spec.md Milestones 或 tasks.md 路徑>
 - 變更：請執行 `<git diff 指令>` 取得
 
-先讀取 sprint 文件理解目標與驗收條件，再檢視程式碼變更。
+先讀取 sprint 文件理解目標、驗收條件與任務來源，再檢視程式碼變更。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```
