@@ -42,6 +42,15 @@ const SKILL_LOCAL_SCRIPT_SYMLINKS = [
   },
 ]
 
+const OPENCODE_PLUGIN_FILES = [
+  'opencode-codex-usage-capture.js',
+]
+
+const OPENCODE_TUI_PLUGIN_FILES = [
+  'opencode-codex-usage-status.tsx',
+  'opencode-codex-usage-format.js',
+]
+
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 /** @param {string} msg */
@@ -148,6 +157,56 @@ function linkDir(source_dir, target_dir, label) {
   }
 }
 
+/**
+ * 清理 opencode plugin 目錄中本專案建立、但不在 keep 清單內的舊 codex usage plugin symlink。
+ * @param {string} target_dir
+ * @param {Set<string>} keep
+ */
+function cleanOpencodeUsagePluginLinks(target_dir, keep) {
+  if (!existsSync(target_dir)) return
+
+  for (const item of readdirSync(target_dir)) {
+    if (!item.startsWith('opencode-codex-usage-')) continue
+    if (keep.has(item)) continue
+
+    const full = join(target_dir, item)
+    if (!lstatExists(full) || !lstatSync(full).isSymbolicLink()) continue
+
+    const link_target = resolve(readlinkSync(full))
+    if (!link_target.startsWith(resolve(ROOT))) continue
+
+    rmSync(full)
+    log(`  移除舊 opencode plugin: ${item}`)
+  }
+}
+
+/**
+ * 驗證 opencode usage plugin 目錄沒有本專案殘留的舊 symlink。
+ * @param {string} target_dir
+ * @param {Set<string>} keep
+ * @param {string} label
+ * @returns {boolean}
+ */
+function checkNoStaleOpencodeUsagePluginLinks(target_dir, keep, label) {
+  if (!existsSync(target_dir)) return true
+
+  let ok = true
+  for (const item of readdirSync(target_dir)) {
+    if (!item.startsWith('opencode-codex-usage-')) continue
+    if (keep.has(item)) continue
+
+    const full = join(target_dir, item)
+    if (!lstatExists(full) || !lstatSync(full).isSymbolicLink()) continue
+
+    const link_target = resolve(readlinkSync(full))
+    if (!link_target.startsWith(resolve(ROOT))) continue
+
+    warn(`${label}: stale opencode usage plugin symlink remains: ${item} → ${link_target}`)
+    ok = false
+  }
+  return ok
+}
+
 // ─── Deploy ──────────────────────────────────────────────────────────────────
 
 /**
@@ -225,6 +284,18 @@ function deployOpencode() {
   mkdirSync(target, { recursive: true })
 
   linkFile(join(SRC, 'config', 'opencode-tui.json'), join(target, 'tui.json'))
+  const plugins_dir = join(target, 'plugins')
+  mkdirSync(plugins_dir, { recursive: true })
+  cleanOpencodeUsagePluginLinks(plugins_dir, new Set(OPENCODE_PLUGIN_FILES))
+  for (const file of OPENCODE_PLUGIN_FILES) {
+    linkFile(join(SRC, 'scripts', file), join(plugins_dir, file))
+  }
+  const tui_plugins_dir = join(target, 'tui-plugins')
+  mkdirSync(tui_plugins_dir, { recursive: true })
+  cleanOpencodeUsagePluginLinks(tui_plugins_dir, new Set(OPENCODE_TUI_PLUGIN_FILES))
+  for (const file of OPENCODE_TUI_PLUGIN_FILES) {
+    linkFile(join(SRC, 'scripts', file), join(tui_plugins_dir, file))
+  }
   linkDir(join(SRC, 'skills'), join(target, 'skills'), 'skill')
   linkDir(join(DIST, 'opencode', 'agents'), join(target, 'agents'), 'agent')
 }
@@ -294,6 +365,14 @@ function undeployCodex() {
 function undeployOpencode() {
   log('=== opencode ===')
   unlinkIfOurs(join(HOME, '.config', 'opencode', 'tui.json'), '~/.config/opencode/tui.json')
+  for (const file of OPENCODE_PLUGIN_FILES) {
+    unlinkIfOurs(join(HOME, '.config', 'opencode', 'plugins', file), `~/.config/opencode/plugins/${file}`)
+  }
+  for (const file of OPENCODE_TUI_PLUGIN_FILES) {
+    unlinkIfOurs(join(HOME, '.config', 'opencode', 'tui-plugins', file), `~/.config/opencode/tui-plugins/${file}`)
+  }
+  cleanOpencodeUsagePluginLinks(join(HOME, '.config', 'opencode', 'plugins'), new Set())
+  cleanOpencodeUsagePluginLinks(join(HOME, '.config', 'opencode', 'tui-plugins'), new Set())
   unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'skills'))
   unlinkDirIfOurs(join(HOME, '.config', 'opencode', 'agents'))
 }
@@ -371,6 +450,24 @@ function checkSymlink(path, label) {
   if (!lstatSync(path).isSymbolicLink()) { warn(`${label} 存在但不是 symlink`); return false }
   const target = readlinkSync(path)
   log(`  ✅ ${label} → ${target}`)
+  return true
+}
+
+/**
+ * 驗證 symlink 存在且指向指定 target。
+ * @param {string} path
+ * @param {string} label
+ * @param {string} expected_target
+ * @returns {boolean}
+ */
+function checkSymlinkTarget(path, label, expected_target) {
+  if (!checkSymlink(path, label)) return false
+  const actual = resolve(readlinkSync(path))
+  const expected = resolve(expected_target)
+  if (actual !== expected) {
+    warn(`${label} target mismatch: expected ${expected}, got ${actual}`)
+    return false
+  }
   return true
 }
 
@@ -496,6 +593,30 @@ function testOpencode() {
   log('=== opencode 驗證 ===')
   let ok = true
   if (!checkSymlink(join(HOME, '.config', 'opencode', 'tui.json'), '~/.config/opencode/tui.json')) ok = false
+  for (const file of OPENCODE_PLUGIN_FILES) {
+    if (!checkSymlinkTarget(
+      join(HOME, '.config', 'opencode', 'plugins', file),
+      `~/.config/opencode/plugins/${file}`,
+      join(SRC, 'scripts', file),
+    )) ok = false
+  }
+  for (const file of OPENCODE_TUI_PLUGIN_FILES) {
+    if (!checkSymlinkTarget(
+      join(HOME, '.config', 'opencode', 'tui-plugins', file),
+      `~/.config/opencode/tui-plugins/${file}`,
+      join(SRC, 'scripts', file),
+    )) ok = false
+  }
+  if (!checkNoStaleOpencodeUsagePluginLinks(
+    join(HOME, '.config', 'opencode', 'plugins'),
+    new Set(OPENCODE_PLUGIN_FILES),
+    '~/.config/opencode/plugins',
+  )) ok = false
+  if (!checkNoStaleOpencodeUsagePluginLinks(
+    join(HOME, '.config', 'opencode', 'tui-plugins'),
+    new Set(OPENCODE_TUI_PLUGIN_FILES),
+    '~/.config/opencode/tui-plugins',
+  )) ok = false
   countInstalledLinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills ddd*')
   if (!checkSkillLocalScriptSymlinks(join(HOME, '.config', 'opencode', 'skills'), '~/.config/opencode/skills')) ok = false
   countInstalledLinks(join(HOME, '.config', 'opencode', 'agents'), '~/.config/opencode/agents ddd*')

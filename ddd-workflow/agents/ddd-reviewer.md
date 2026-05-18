@@ -55,7 +55,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 ### 1. 蒐集資訊
 
 - 讀取 spec.md 了解預期行為
-- 讀取 tasks.md 了解完成範圍
+- 讀取任務來源了解完成範圍：優先讀 tasks.md（若存在），否則讀 spec.md 的 Milestones
 - 執行 `git --no-pager diff` 或 `git --no-pager diff main...HEAD` 取得變更
 - 瀏覽相關檔案了解上下文
 

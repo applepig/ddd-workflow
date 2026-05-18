@@ -84,11 +84,13 @@ describe('renderMenu', () => {
     expect(output).toContain('~/Dropbox/projects/5-aistudio')
   })
 
-  it('should include "Start new session here" as last option', () => {
+  it('should include cc and oc options', () => {
     const output = renderMenu(sessions, '/home/user/projects/foo', 0)
 
-    expect(output).toContain('Start new session here')
+    expect(output).toContain('Start cc here')
+    expect(output).toContain('Start oc here')
     expect(output).toContain('[3]')
+    expect(output).toContain('[4]')
   })
 
   it('should show current directory in new session option', () => {
@@ -138,12 +140,13 @@ describe('renderMenu', () => {
     expect(output).toContain('q')
   })
 
-  it('should handle empty sessions list with only new session option', () => {
+  it('should handle empty sessions list with cc and oc options', () => {
     const output = renderMenu([], '/home/user/projects/foo', 0)
 
     expect(output).toContain('[1]')
-    expect(output).toContain('Start new session here')
-    expect(output).not.toContain('[2]')
+    expect(output).toContain('Start cc here')
+    expect(output).toContain('[2]')
+    expect(output).toContain('Start oc here')
   })
 })
 
@@ -152,7 +155,7 @@ describe('handleInput', () => {
     { name: 'cr-AGENTS', dir: '/home/user/projects/AGENTS' },
     { name: 'cr-aistudio', dir: '/home/user/projects/aistudio' },
   ]
-  const total_items = 3 // 2 sessions + 1 new
+  const total_items = 4 // 2 sessions + 2 new (cc + oc)
 
   describe('number keys', () => {
     it('should select session when pressing valid number', () => {
@@ -169,11 +172,18 @@ describe('handleInput', () => {
       expect(action).toEqual({ type: 'attach', session_name: 'cr-aistudio' })
     })
 
-    it('should create new session when pressing last number', () => {
+    it('should create cc session when pressing 3', () => {
       const state: MenuState = { selected: 0, total: total_items }
       const action = handleInput('3', state, sessions, '/tmp')
 
-      expect(action).toEqual({ type: 'create', dir: '/tmp' })
+      expect(action).toEqual({ type: 'create', dir: '/tmp', tool: 'cc' })
+    })
+
+    it('should create oc session when pressing 4', () => {
+      const state: MenuState = { selected: 0, total: total_items }
+      const action = handleInput('4', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'create', dir: '/tmp', tool: 'oc' })
     })
 
     it('should ignore number out of range', () => {
@@ -229,11 +239,18 @@ describe('handleInput', () => {
       expect(action).toEqual({ type: 'attach', session_name: 'cr-AGENTS' })
     })
 
-    it('should create new session when enter on last item', () => {
+    it('should create cc session when enter on cc option', () => {
       const state: MenuState = { selected: 2, total: total_items }
       const action = handleInput('ENTER', state, sessions, '/tmp')
 
-      expect(action).toEqual({ type: 'create', dir: '/tmp' })
+      expect(action).toEqual({ type: 'create', dir: '/tmp', tool: 'cc' })
+    })
+
+    it('should create oc session when enter on oc option', () => {
+      const state: MenuState = { selected: 3, total: total_items }
+      const action = handleInput('ENTER', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'create', dir: '/tmp', tool: 'oc' })
     })
   })
 
@@ -268,8 +285,15 @@ describe('handleInput', () => {
       expect(action).toEqual({ type: 'terminate', session_name: 'cr-aistudio' })
     })
 
-    it('should return none when pressing x on "Start new session" option', () => {
+    it('should return none when pressing x on cc option', () => {
       const state: MenuState = { selected: 2, total: total_items }
+      const action = handleInput('x', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'none' })
+    })
+
+    it('should return none when pressing x on oc option', () => {
+      const state: MenuState = { selected: 3, total: total_items }
       const action = handleInput('x', state, sessions, '/tmp')
 
       expect(action).toEqual({ type: 'none' })
@@ -299,8 +323,15 @@ describe('handleInput', () => {
       })
     })
 
-    it('should return none when pressing r on "Start new session" option', () => {
+    it('should return none when pressing r on cc option', () => {
       const state: MenuState = { selected: 2, total: total_items }
+      const action = handleInput('r', state, sessions, '/tmp')
+
+      expect(action).toEqual({ type: 'none' })
+    })
+
+    it('should return none when pressing r on oc option', () => {
+      const state: MenuState = { selected: 3, total: total_items }
       const action = handleInput('r', state, sessions, '/tmp')
 
       expect(action).toEqual({ type: 'none' })

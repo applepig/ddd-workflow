@@ -13,7 +13,7 @@ export interface MenuState {
 /** 選單動作 */
 export type MenuAction =
   | { type: 'attach'; session_name: string }
-  | { type: 'create'; dir: string }
+  | { type: 'create'; dir: string; tool: 'cc' | 'oc' }
   | { type: 'terminate'; session_name: string }
   | { type: 'restart'; session_name: string; dir: string }
   | { type: 'move'; selected: number }
@@ -57,11 +57,16 @@ export function renderMenu(
     lines.push('')
   }
 
-  const new_idx = sessions.length
-  const new_marker = selected === new_idx ? '>' : ' '
-  const new_num = new_idx + 1
   const cwd_display = shortenDir(cwd)
-  lines.push(`${new_marker} [${new_num}] ○ Start new session here (${cwd_display})`)
+  const cc_idx = sessions.length
+  const cc_marker = selected === cc_idx ? '>' : ' '
+  const cc_num = cc_idx + 1
+  lines.push(`${cc_marker} [${cc_num}] ○ Start cc here (${cwd_display})`)
+
+  const oc_idx = sessions.length + 1
+  const oc_marker = selected === oc_idx ? '>' : ' '
+  const oc_num = oc_idx + 1
+  lines.push(`${oc_marker} [${oc_num}] ○ Start oc here (${cwd_display})`)
 
   lines.push('')
   lines.push('  ↑↓/數字 選擇  Enter 連線  x 終止  r 重啟  q 離開')
@@ -91,7 +96,10 @@ export function handleInput(
     if (idx < sessions.length) {
       return { type: 'attach', session_name: sessions[idx].name }
     }
-    return { type: 'create', dir: cwd }
+    if (idx === sessions.length) {
+      return { type: 'create', dir: cwd, tool: 'cc' }
+    }
+    return { type: 'create', dir: cwd, tool: 'oc' }
   }
 
   // Arrow keys
@@ -129,7 +137,10 @@ export function handleInput(
     if (state.selected < sessions.length) {
       return { type: 'attach', session_name: sessions[state.selected].name }
     }
-    return { type: 'create', dir: cwd }
+    if (state.selected === sessions.length) {
+      return { type: 'create', dir: cwd, tool: 'cc' }
+    }
+    return { type: 'create', dir: cwd, tool: 'oc' }
   }
 
   return { type: 'none' }
@@ -182,17 +193,10 @@ async function main(): Promise<void> {
   const cwd = process.cwd()
   let sessions = listAndSync()
 
-  // 沒有任何 session 時，直接建立新 session
-  if (sessions.length === 0) {
-    const session_name = generateSessionName(cwd, sessions)
-    console.log(`Creating new session: ${session_name}`)
-    createSession(session_name, cwd)
-    attachSession(session_name)
-    return
-  }
+  // 沒有任何 session 時，也顯示選單讓使用者選 cc 或 oc
 
   // 顯示互動選單
-  let total = sessions.length + 1
+  let total = sessions.length + 2
   let selected = 0
   let prev_lines = 0
 
@@ -241,8 +245,8 @@ async function main(): Promise<void> {
           cleanup()
           draw('', prev_lines)
           const new_name = generateSessionName(cwd, sessions)
-          console.log(`Creating new session: ${new_name}`)
-          createSession(new_name, cwd)
+          console.log(`Creating new session: ${new_name} (${action.tool})`)
+          createSession(new_name, cwd, action.tool)
           attachSession(new_name)
           resolve()
           break
@@ -250,7 +254,7 @@ async function main(): Promise<void> {
         case 'terminate': {
           killSession(action.session_name)
           sessions = listAndSync()
-          const new_total = sessions.length + 1
+          const new_total = sessions.length + 2
           total = new_total
           if (selected >= new_total) selected = new_total - 1
           prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
@@ -266,7 +270,7 @@ async function main(): Promise<void> {
             createSession(action.session_name, action.dir)
           }
           sessions = listAndSync()
-          total = sessions.length + 1
+          total = sessions.length + 2
           prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
           break
         }

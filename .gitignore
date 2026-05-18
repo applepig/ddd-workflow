@@ -4,3 +4,5 @@ node_modules/
 *.backup.*
 /.worktrees/
 /reference/
+/.opencode/codex-usage.json
+/.opencode/openai-response-debug.ndjson
