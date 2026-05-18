@@ -13,5 +13,6 @@
     "input_select_line_end": "shift+end,ctrl+shift+e",
     "input_select_buffer_home": "shift+pageup",
     "input_select_buffer_end": "shift+pagedown"
-  }
+  },
+  "plugin": ["./tui-plugins/opencode-codex-usage-status.tsx"]
 }
