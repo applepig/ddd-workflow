@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   existsSync,
   lstatSync,
+  statSync,
   readFileSync,
   mkdirSync,
   readlinkSync,
@@ -15,6 +16,7 @@ import { spawnSync } from 'node:child_process'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const RUNNER_PATH = join(ROOT, 'ddd-workflow', 'scripts', 'agent-runner.sh')
+const SESSION_TRIGGER_PATH = join(ROOT, 'ddd-workflow', 'scripts', 'session-trigger.mjs')
 const XREVIEW_ENTRYPOINT = join(
   ROOT,
   'ddd-workflow',
@@ -76,6 +78,11 @@ function createInstalledClaudeFixture(home_dir) {
 }
 
 describe('shared agent runner symlink layout', () => {
+  it('should keep the cron session trigger script in the workflow scripts directory', () => {
+    expect(existsSync(SESSION_TRIGGER_PATH)).toBe(true)
+    expect(statSync(SESSION_TRIGGER_PATH).mode & 0o111).not.toBe(0)
+  })
+
   it('should expose xreview orchestrator as a symlink to the shared runner', () => {
     expect(existsSync(XREVIEW_ENTRYPOINT)).toBe(true)
     expect(lstatSync(XREVIEW_ENTRYPOINT).isSymbolicLink()).toBe(true)
