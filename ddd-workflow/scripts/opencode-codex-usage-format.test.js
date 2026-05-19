@@ -3,10 +3,32 @@ import { describe, expect, it } from "vitest"
 import { limitColumns, usedPercent } from "./opencode-codex-usage-format.js"
 
 describe("opencode codex usage format", () => {
-  it("treats elapsed reset time as 0 percent usage", () => {
+  it("treats elapsed reset time as unknown usage", () => {
     const now = 1_000_000
 
-    expect(usedPercent({ used_percent: 87, reset_at: 999 }, now)).toBe(0)
+    expect(usedPercent({ used_percent: 87, reset_at: 999 }, now)).toBe(undefined)
+  })
+
+  it("uses placeholders when no usage data exists", () => {
+    const now = 1_000_000
+
+    expect(limitColumns("5hr", undefined, now)).toEqual({
+      label: " 5hr",
+      percent: " --%",
+      percent_value: undefined,
+      reset: "--:--",
+    })
+  })
+
+  it("uses placeholders when reset time has elapsed", () => {
+    const now = 1_000_000
+
+    expect(limitColumns("5hr", { used_percent: 87, reset_at: 999 }, now)).toEqual({
+      label: " 5hr",
+      percent: " --%",
+      percent_value: undefined,
+      reset: "--:--",
+    })
   })
 
   it("keeps usage before reset time", () => {
