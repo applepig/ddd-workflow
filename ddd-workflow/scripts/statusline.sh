@@ -70,6 +70,7 @@ CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 # 允許測試覆蓋快取路徑和 credentials 路徑
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
+: "${STATUSLINE_INVOCATION_LOG:=/tmp/claude/statusline-invocations.log}"
 
 # ─── OAuth + API Functions ───────────────────────────────────────────────────
 
@@ -128,25 +129,8 @@ fetchUsageAPI() {
     fi
   fi
 
-  # 快取過期——檢查 throttle：若其他 session 近期已請求過，用舊快取
+  # 快取過期——仍重新請求 API，避免長時間停留在 stale usage。
   mkdir -p "$cache_dir"
-  if [[ -f "$throttle_file" ]]; then
-    local throttle_mtime now throttle_age
-    throttle_mtime=$(stat -c %Y "$throttle_file" 2>/dev/null) || throttle_mtime=0
-    now=$(date +%s)
-    throttle_age=$(( now - throttle_mtime ))
-    if (( throttle_age < CACHE_MAX_AGE )); then
-      # 有人最近打過了但 cache 沒更新（API 可能失敗），用舊快取
-      if [[ -f "$cache_file" ]]; then
-        cat "$cache_file"
-        return 0
-      fi
-      echo ""
-      return 0
-    fi
-  fi
-
-  # 標記：我要打 API 了
   touch "$throttle_file"
 
   # 呼叫 API
@@ -244,6 +228,37 @@ colorByPct() {
   else
     echo "$GREEN"
   fi
+}
+
+# 記錄 statusline 主流程被呼叫的頻率。
+# 設 STATUSLINE_INVOCATION_LOG=0 或空字串可停用。
+logStatuslineInvocation() {
+  local mode="$1"
+  local cols="$2"
+
+  if [[ -z "${STATUSLINE_INVOCATION_LOG:-}" || "${STATUSLINE_INVOCATION_LOG:-}" == "0" ]]; then
+    return 0
+  fi
+
+  local log_dir model project
+  log_dir="$(dirname "$STATUSLINE_INVOCATION_LOG")"
+  mkdir -p "$log_dir" 2>/dev/null || return 0
+
+  model="${json_model_id//$'\t'/ }"
+  model="${model//$'\n'/ }"
+  project="${json_project_dir//$'\t'/ }"
+  project="${project//$'\n'/ }"
+
+  printf '%s\tpid=%s\tppid=%s\tmode=%s\tcols=%s\tmodel=%s\tproject=%s\tusage=%s\treset_at=%s\n' \
+    "$(date -Is 2>/dev/null || date)" \
+    "$$" \
+    "${PPID:-}" \
+    "$mode" \
+    "$cols" \
+    "$model" \
+    "$project" \
+    "${json_used_pct:-}" \
+    "${json_resets_at:-}" >> "$STATUSLINE_INVOCATION_LOG" 2>/dev/null || true
 }
 
 # ─── 測試模式：只載入函式，不執行主流程 ─────────────────────────────────────
@@ -480,13 +495,21 @@ fi
 
 SEP="${NBSP}|${NBSP}"
 
-# Fallback chain: Parent TTY detection → $STATUSLINE_TERM_COLS → tput cols → 80
-term_cols=$(_detect_term_cols)
-: "${term_cols:=${STATUSLINE_TERM_COLS:-}}"
+# Fallback chain: $STATUSLINE_TERM_COLS → Parent TTY detection → tput cols → 80
+term_cols="${STATUSLINE_TERM_COLS:-}"
+: "${term_cols:=$(_detect_term_cols)}"
 : "${term_cols:=$(tput cols 2>/dev/null)}"
 : "${term_cols:=80}"
 
-if (( term_cols < 100 )); then
+if (( term_cols < 60 )); then
+  output_mode="compact"
+else
+  output_mode="full"
+fi
+
+logStatuslineInvocation "$output_mode" "$term_cols"
+
+if [[ "$output_mode" == "compact" ]]; then
   # ─── Compact 模式：單行輸出 ──────────────────────────────────────────────
   # 格式: Opus 4.6 | Context 8% | Usage 84% | Reset 10m
   compact_sep=" | "
@@ -494,14 +517,8 @@ if (( term_cols < 100 )); then
   # CTX 色彩：0-60% 綠、60-80% 橘、80%+ 紅
   compact_ctx_color=$(colorByPct "$ctx_pct")
 
-  # USG 色彩：對齊完整版 Session bar（0-79% 藍、80-89% 橘、90%+ 紅）
-  if (( json_used_pct >= 90 )); then
-    compact_usg_color="$RED"
-  elif (( json_used_pct >= 80 )); then
-    compact_usg_color="$YELLOW"
-  else
-    compact_usg_color="$CYAN"
-  fi
+  # USG 色彩：對齊 compact 百分比門檻（0-59% 綠、60-79% 橘、80%+ 紅）
+  compact_usg_color=$(colorByPct "$json_used_pct")
 
   # RES：只顯示最精簡的倒數（不上色）
   if (( json_resets_at > 0 && json_resets_at > now )); then
@@ -518,9 +535,9 @@ if (( term_cols < 100 )); then
   fi
 
   output="${RST}${model_short}"
-  output+="${compact_sep}Context ${compact_ctx_color}${ctx_pct}%${RST}"
-  output+="${compact_sep}Usage ${compact_usg_color}${json_used_pct}%${RST}"
-  output+="${compact_sep}Reset ${compact_res}"
+  output+="${compact_sep}CTX ${compact_ctx_color}${ctx_pct}%${RST}"
+  output+="${compact_sep}USG ${compact_usg_color}${json_used_pct}%${RST}"
+  output+="${compact_sep}RES ${compact_res}"
 
   echo -n "$output"
 else
