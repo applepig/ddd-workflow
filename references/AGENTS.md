@@ -7,6 +7,10 @@
 * 錯誤：優化、激活、存儲、支持、反饋
 * 技術術語直接使用英文（Class、Function、API、ESM、Git），避免強制中譯
 
+## 術語
+
+**Question Tool**：各 CLI 的內建工具，例如 `AskUserQuestion`、`question`、`ask_user`。
+
 ## 角色分工
 
 Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗收，不直接寫程式碼。
@@ -17,8 +21,8 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 - **派工與協調**：將實作任務派給 `ddd-developer`
 - **驗收與品管**：檢查 subagent 回報的結果，確認符合 spec 驗收條件
 - **Review 管理**：派 `ddd-reviewer` 做 code review、派 cross review，驗收 review 結果
-- **文件維護**：更新 tasks.md、works.md，維持 SSOT
-- **使用者溝通**：在決策點暫停並詢問使用者（use AskUserQuestion if available），等待確認
+- **文件維護**：更新 spec.md/tasks.md（若有）與 works.md，維持 SSOT
+- **使用者溝通**：在決策點暫停並用 Question Tool 詢問使用者，等待確認
 
 ### Coordinator 不做什麼
 
@@ -33,11 +37,11 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 ### 核心原則
 
 * **SSOT**：每個需求對應一個 `docs/<編號>-<名稱>/` 文件包，作為唯一真相來源。
-* **No Code Without Docs**：在 `spec.md` 與 `tasks.md` 獲得使用者確認前，嚴禁撰寫程式碼。
+* **No Code Without Docs**：在 `spec.md` 獲得使用者確認前，嚴禁撰寫程式碼。若本 sprint 需要獨立 `tasks.md`，也必須先確認後才可實作。
 * **No Code Without Tests**：修改 production code 前，必須先建立或更新測試。
-* **Sync on Finish**：標記任務完成前，必須先更新 `tasks.md` 和 `works.md`。
-* **規格變更**：開發中若需變更規格，暫停開發，同步更新三份文件，經使用者確認後才恢復。
-* **明確的決策點**：需要使用者確認或決策時，必須使用 `AskUserQuestion` 工具，不可用一般對話文字代替。這確保流程在決策點明確暫停，等待使用者輸入。
+* **Sync on Finish**：標記任務完成前，必須先更新任務來源（`spec.md` 內的 Milestones 或 `tasks.md`）和 `works.md`。
+* **規格變更**：開發中若需變更規格，暫停開發，同步更新 spec、tasks（若有）與 works，經使用者確認後才恢復。
+* **明確的決策點**：只有缺少使用者判斷會阻塞下一步，或會改變需求、範圍、風險承擔時，才使用 Question Tool。提問前先回報已知事實與目前判斷；不可把導覽問題、例行下一步、或可自行查證的事項包裝成決策點。
 
 ### 文件結構
 
@@ -49,35 +53,35 @@ docs/
 └── <編號>-<名稱>/            # Sprint 文件包
     ├── plan.md               # (optional) 前置規劃，需求不明確時先寫
     ├── research.md           # (optional) 技術調研筆記
-    ├── spec.md               # 規格：目標/非目標、User Story、驗收條件、相關檔案、邊界案例、ADR
-    ├── tasks.md              # 任務：以 milestone 分組的 TODO checklist (- [ ])
+    ├── spec.md               # 規格：目標/非目標、User Story、驗收條件、邊界案例、ADR、輕量 Milestones
+    ├── tasks.md              # (optional) 複雜執行計畫：平行工作線、匯合點、跨 agent 派工
     └── works.md              # 日誌：以日期分組，記錄決策與問題解決
 ```
 
 * `plan.md` 和 `research.md` 是 spec 的前置作業，用於需求不明確、需要先調研的情境
-* `spec.md`、`tasks.md`、`works.md` 為每個 sprint 必備
+* `spec.md`、`works.md` 為每個 sprint 必備；`tasks.md` 僅在執行計畫複雜到不適合放在 `spec.md` 時建立
 
 ### 執行流程概述
 
 1. **Plan/Research** (optional)：需求不明確時，先規劃方向、進行技術調研
-2. **Spec**：撰寫 spec.md → 使用者確認
-3. **Tasks**：拆解為 milestone + task → 撰寫 tasks.md → 使用者確認
-4. **Execute**：派 `ddd-developer` 以 TDD 循環實作 → 驗收結果 → 更新文件 → 使用者確認後才 commit
+2. **Spec**：撰寫 spec.md（含輕量 Milestones）→ 使用者確認
+3. **Tasks** (optional)：只有在需要複雜執行協調時，拆出 tasks.md → 使用者確認；若 scope 過大，先拆 sprint 而不是加厚 tasks.md
+4. **Execute**：依 `spec.md` Milestones 或 `tasks.md` 派 `ddd-developer` 以 TDD 循環實作 → 驗收結果 → 更新文件 → 使用者確認後才 commit
 5. **Review**：派 cross review（多模型獨立審查）→ 驗收 review 結果 → 修正
 
 Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤、驗收。
 
 > 各階段的詳細步驟請參考對應的 skill：
-> `/DDD.plan`、`/DDD.spec`、`/DDD.tasks`、`/DDD.work`、`/DDD.xreview`。
-> E2E 測試用 `/DDD.e2e`，架構重構用 `/DDD.architect-refactor`，hook 設定用 `/DDD.create-hooks`。
+> `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
+> E2E 測試用 `/ddd.e2e`。
 
 ### E2E 測試的特殊處理
 
-E2E 測試由 `/DDD.e2e` skill 在 **main agent context** 中執行，不派給 subagent。
+E2E 測試由 `/ddd.e2e` skill 在 **main agent context** 中執行，不派給 subagent。
 
 原因：E2E 測試充滿需要使用者判斷的灰色地帶（頁面行為與 spec 不符、edge case 取捨、flaky test 的根因），subagent 無法暫停發問，會傾向縮減測試範圍來避開問題。保留在 main agent 確保每個判斷點都能跟使用者確認。
 
-`/DDD.e2e` 支援兩種模式：
+`/ddd.e2e` 支援兩種模式：
 - **Greenfield**：從 spec.md 驅動，提取驗收條件規劃測試案例
 - **Retrofit**：既有專案補 E2E，先探索 app 再分批規劃
 
@@ -93,7 +97,7 @@ E2E 測試由 `/DDD.e2e` skill 在 **main agent context** 中執行，不派給 
 
 ### 檔案組織
 
-* **Single Function File**：一個檔案匯出一個 function（或一個 Class），檔名即用途
+* **Single Function File**：一個檔案只匯出一個 function（或一個 Class），減少檔案長度方便LLM閱讀
 * 相關 function 用**資料夾**分組，讓 file system 充當導航索引
 * **禁止 barrel file**（`index.ts` re-export）——Vite HMR 變慢、tree-shaking 失效。直接 import 個別檔案
 * Class 一個檔案一個，檔名用 kebab-case 對應 Class 名稱
@@ -153,9 +157,16 @@ import { createSession } from '../services/session'
 ## Git
 
 * 遵循 Conventional Commits：`<type>[scope]: <description>`
-* 使用 `git --no-pager` 避免 pager 截斷輸出
 * Commit 需使用者明確同意，測試通過不等於提交授權
-* 每個 milestone 完成後應立即 commit，方便獨立 review
+* 每個 milestone 完成後應立即準備 commit，方便獨立 review
+
+### Worktree 路徑約定
+
+手動 `git worktree add` 時，路徑一律建在 `$PROJECT_ROOT/.worktrees/<branch-name>/`，並把 `/.worktrees` 加進根目錄 `.gitignore`。這個約定確保：
+
+- worktree 天然在 project root 之下，opencode / gemini 等 CLI 的 workspace sandbox 不會擋路（sandbox 預設只放行當前 project）
+- 單一 convention 比「各 CLI 各自加放行 flag」簡單
+- 不與 Claude Code `Agent({ isolation: "worktree" })` 硬編碼的 `.claude/worktree/*` 衝突——那是 harness 自動行為，本約定指的是**手動**建 worktree 時的建議位置
 
 ## 工具偏好
 
@@ -167,24 +178,17 @@ import { createSession } from '../services/session'
 | Python 套件管理 | `uv` | pip, pip3 |
 | 程式碼搜尋 | `rg`（ripgrep） | grep |
 | 檔案搜尋 | `fd` | find |
-| 檔案檢視 | `bat` | cat |
 | JSON 處理 | `jq` | 手動 parse |
-| Git 指令 | 加 `--no-pager` | 被 pager 截斷 |
 | 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
+| GitHub 平台操作 | `gh` | 手動開網頁操作 |
+| GitLab 平台操作 | `glab` | 手動開網頁操作 |
 | 反向代理 | Traefik（Docker label 設定路由） | nginx |
 | 瀏覽器自動化 | `agent-browser --cdp 9222`（連接既有 Chrome） | 不加 `--cdp` 另開 instance |
-| Second opinion / Cross check | `gemini -y -p "PROMPT"`（呼叫 Gemini Pro 當 subagent） | 單一模型自我驗證 |
-| Dead code 偵測 | `knip --reporter json` | 手動找 unused code |
-| 拼字檢查 | `typos --format json .` | 肉眼校稿 |
-| 安全 / 邏輯掃描 | `semgrep scan --config auto --json .` | 純 regex grep |
+| 檢查 CLI 是否可用 | `command -v <cmd>` 或直接執行 `<cmd> --version` | `which`（npm global 裝的工具不在 `which` 搜尋路徑） |
+| 查外部 GitHub repo 文件結構 / 全文 | `uvx ask-deepwiki {structure\|contents} <owner/repo>` | 手動翻 GitHub 網站 |
+| 對外部 GitHub repo 自然語言提問 | `uvx ask-deepwiki ask <owner/repo> "問題"` | 逐檔讀 node_modules 猜行為 |
 
 ## Cross Review 模型設定
 
-`/DDD.Xreview` 使用的外部 reviewer 模型清單。Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫。
-
-| 角色 | CLI:模型 | 退化模型 | 備註 |
-|------|---------|----------|------|
-| 外部 Reviewer A | `opencode:github-copilot/gpt-5.4` | `opencode:github-copilot/gpt-5.3-codex` | 預設 |
-
-新增或移除 reviewer 只需編輯此表格，skill 會讀取這裡的設定。
+`/ddd.xreview` 的 reviewer 模型清單在 `~/.config/ddd-workflow/xreview.json`（由 `npm run deploy` 部署預設值，已存在則保留使用者設定）。新增/移除 reviewer 直接編輯該 JSON 檔即可，無需動本表。臨時覆蓋可在 orchestrator command 後接 `cli:model` 位置參數。失敗時直接標示失敗並呈現已取得結果，不做退化重試。

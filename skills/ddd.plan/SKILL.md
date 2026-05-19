@@ -1,55 +1,64 @@
 ---
-name: DDD.Plan
+name: ddd.plan
 description: >
-  需求還模糊時的前置規劃——釐清方向、探索可能性、產出 plan.md。
-  Use when the user says "plan a feature", "clarify requirements", "figure out
-  what to build", "I have an idea", "scope a feature", "what should we build",
-  or invokes "/DDD.plan". Even if the user just describes a rough concept,
-  this skill helps shape it into actionable direction before writing a spec.
+  前置規劃：既有專案中延伸/修改功能時，釐清方向、探索可能性，產出 plan.md。
+  適用於 brownfield——有既有 code 當錨點、要在現行架構上增修。
+  如果是新專案或新模組（greenfield），改用 /ddd.brainstorming。
+  Trigger: "plan a feature", "plan an extension", "clarify requirements",
+  "figure out how to extend", "規劃擴充", "規劃改動", "既有系統加功能",
+  "規劃功能", "釐清需求", /ddd.plan。
+  在既有 codebase 上做延伸時，即使只是粗略描述概念，也應觸發此 skill 來定型方向。
 ---
 
-# DDD:plan — 前置規劃
+# ddd.plan — 前置規劃（brownfield）
 
-前置規劃階段。當需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
+前置規劃階段。在既有專案中延伸或修改功能、需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
 
-## 嚴格禁令 (Never Do)
+**適用範圍**：brownfield——有既有 code 當錨點、要在現行架構上增修。如果是新專案或新模組，沒有既有 code 可以參考，改用 `/ddd.brainstorming`。
 
-- **嚴禁撰寫程式碼**：過早實作會讓討論從「該做什麼」偏移到「怎麼做」，導致需求被技術限制反向塑形。此階段純粹是需求釐清，不可產出任何實作程式碼、假資料或修改專案設定檔。
-- **嚴禁自行腦補需求**：AI 傾向用「合理猜測」填補模糊地帶，但猜錯的假設一旦進入後續文件就很難被發現。需求模糊時必須提問釐清，不可自行假設商業邏輯。
+<HARD-GATE>
+嚴禁撰寫程式碼或修改專案設定檔，直到 plan.md 獲使用者確認。
+嚴禁自行假設商業邏輯，需求模糊時必須提問。
+</HARD-GATE>
 
-## 執行步驟
+## 反模式：「這個太簡單不需要 plan」
 
-1. **閱讀現有文件**
-   - 優先查閱 `docs/PRD.md` 或 `docs/README.md` 了解專案大背景（若存在）。
-   - 檢查 `docs/` 目錄下是否已有類似或相關的需求文件。
+每個需求都要走這個流程。一個小功能、一個設定調整、一個看似明確的修改——全部都要。「簡單」的需求正是未經檢驗的假設最容易造成浪費的地方。Plan 可以很短（真正簡單的需求寫幾句話就好），但你必須呈現給使用者確認。
 
-2. **建立文件包 (Optional)**
-   - 如果這是一個全新的需求，確認或建立 `docs/<編號>-<名稱>/` 資料夾
-   - 建立 `plan.md`
+## Checklist
 
-3. **需求釐清（Grill Me 模式）**
-   - 沿著決策樹逐一追問，直到雙方對每個分支都達成共識
-   - 每次只聚焦一個決策點，解決後再往下走
-   - **能靠 codebase 回答的問題自己去查**，不要問使用者（用 Explore agent、Grep、Read）
-   - 只有真正需要使用者判斷的問題才用 AskUserQuestion 提出
-   - 持續追問直到沒有未解決的分支為止
+你必須為以下每個項目建立 task 並依序完成：
 
-4. **撰寫 plan.md**（維持以下大綱結構）
-   - **背景 (Background)**：為什麼要做這個功能、解決什麼痛點
-   - **粗略目標 (High-level Goals)**：條列式描述預期達成的目標
-   - **可能的方向 (Potential Directions)**：列出 2~3 個可行方案及其優缺點
-   - **待釐清事項 (Open Questions)**：尚未解決的技術或規格問題（若有需要調研的，直接用原生工具查完再寫進來）
-   - **下一步建議 (Next Step)**：建議直接寫 spec，或說明還缺什麼資訊
+1. **探索專案上下文** — 讀現有文件（PRD.md、README.md）、查 codebase、檢查是否有相關需求文件、讀取 plan.md（如有，當作草稿起點）
+2. **建立文件包** — 確認或建立 `docs/<編號>-<名稱>/` 資料夾（若為新需求）
+3. **範圍評估** — 判斷需求是否涉及多個獨立子系統；若是，先協助拆分為獨立 sprint，再逐一深入。不要在巨大範圍上鑽細節
+4. **逐一追問釐清需求** — Grill Me 模式（見下方）
+5. **提出 2-3 個方案** — 附取捨分析與你的推薦
+6. **使用者確認方向** — 將規劃結論（背景、選定方案、取捨）摘要呈現，等使用者確認
+7. **接續 `/ddd.spec` 撰寫 spec.md** — invoke `/ddd.spec` skill，跳過其「準備工作」（已完成），規劃結論填入 spec 的「背景」與「ADR」段落
 
-5. **交付**
-   - 將 plan.md 內容呈現給使用者確認
-   - 根據回饋調整，直到使用者同意方向
+## Grill Me 模式
+
+- **一次一題**：沿著決策樹逐一追問，每次只聚焦一個決策點，解決後再往下走
+- **選擇題優先**：能用 2-4 個選項框架化的問題，就用 AskUserQuestion 的多選項格式呈現，降低使用者的認知負擔。開放式問題只在無法預判答案範圍時使用
+- **能靠 codebase 回答的問題自己去查**，不要問使用者（用 Explore agent、Grep、Read）
+- 只有真正需要使用者判斷的問題才用 AskUserQuestion 提出
+- **在分歧點提出方案**：遇到多種可行路徑時，提出 2-3 個方案及各自取捨，附上你的推薦——讓使用者做選擇題而非申論題
+- 持續追問直到沒有未解決的分支為止
+
+## Key Principles
+
+- **YAGNI**：在 plan 階段就積極砍功能——越早砍越便宜，不要把「以後可能需要」的東西帶進 spec
+- **一次一題**：不要用多個問題轟炸使用者
+- **選擇題優先**：降低認知負擔
+- **先探索後提問**：能從 codebase 得到的答案不要問使用者
+- **漸進式確認**：分段呈現，逐段確認，不要一次丟出整份文件
 
 ## 產出
 
-`docs/<編號>-<名稱>/plan.md`
+`docs/<編號>-<名稱>/spec.md`（經由 `/ddd.spec` 流程產出）
 
 ## 結束條件
 
-使用者確認方向後，引導使用者執行 `/DDD.spec`。
+`/ddd.spec` 流程完成、使用者確認規格後，依 spec 內 Milestones 複雜度引導使用者執行 `/ddd.work` 或 `/ddd.tasks`。
 如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。

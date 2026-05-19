@@ -1,109 +1,87 @@
 ---
-name: DDD.Xreview
+name: ddd.xreview
 description: >
-  Cross review——使用多種模型進行 cross review，採用分段約束 prompt 提升 finding 品質。
-  Claude subagent 固定使用，外部模型透過指定的 CLI 呼叫，具體模型清單見 AGENTS.md。
-  Use when the user says "review code", "cross review", "let's review",
-  "check my changes", "review this sprint", or invokes "/DDD.xreview".
-  Use after development work to get independent code review from multiple
-  AI models before committing or pushing.
+  Cross review：派多個獨立 AI 模型平行審查程式碼，交叉比對 findings 降低單一模型盲點，
+  驗證高嚴重度問題後再交使用者決策。
+  Trigger: "review code", "cross review", "let's review", "check my changes",
+  "審查程式碼", "code review", "review 一下", /ddd.xreview。
+  開發完成後、commit 或 push 前使用。
 ---
 
-# DDD:xreview — Cross Review
+# ddd.xreview — Cross Review
 
-使用多種獨立模型交叉審查程式碼變更。Claude subagent 固定參與，外部模型透過指定的 CLI 呼叫——具體使用哪些模型見 AGENTS.md 的「Cross Review 模型設定」。
+派多個獨立模型平行審查，交叉比對 findings，**由 coordinator 驗證 Critical/Important 再呈給使用者**。主流程聚焦在「蒐集各方觀點 → 驗證 → 決策」，執行細節交給 orchestrator script。
 
-不同模型有不同的訓練資料與推理傾向，交叉比對能找出單一模型容易忽略的問題。分段約束 prompt 確保每個 finding 都有程式碼證據、嚴重度和信心評估。
+## 嚴格禁令
 
-## 嚴格禁令 (Never Do)
-
-- **嚴禁自動修改程式碼**：review 的目的是產出建議，不是直接改 code。所有修改必須由使用者確認後才執行。
-- **嚴禁省略任一 reviewer 的意見**：即使結論相似，仍須完整呈現各方觀點。使用者需要看到獨立觀點才能做出判斷。
-- **嚴禁在 command line 暴露 prompt 內容**：外部 CLI 一律用 stdin pipe 傳 prompt。
+- **禁止自動修改程式碼**：review 產出建議，不直接改 code。修改必須由使用者確認後才執行
+- **禁止省略任一 reviewer 的意見**：即使結論相似，仍須完整呈現各方觀點
+- **禁止以 main agent self-review 取代 cross review**：所有 reviewer 都失敗時直接告知使用者，不自己頂上
 
 ## 執行步驟
 
 ### 1. 確認 Review 範圍
 
-確認要 review 什麼：
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及 `tasks.md` 路徑（若存在）。
+- **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
+  1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
+  2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
+     - 有未提交變更 → 確認要 review uncommitted 還是整個 branch diff
+     - 在 feature branch 且無未提交變更 → 確認 `git diff <upstream>...HEAD`
+     - 在 main/dev 上且無未提交變更 → 詢問要 review 什麼
 
-- **Sprint 文件路徑**：當前 sprint 的 `spec.md`、`tasks.md` 位置
-- **變更範圍**：是 uncommitted changes（`git diff HEAD`）還是 branch diff（`git diff main...HEAD`）
+各 reviewer 會自己讀檔案與跑 git，不需把完整內容塞進 prompt。
 
-不需要將完整內容傳給各個 reviewer，每個 reviewer 會自行蒐集。
-
-### 2. 組裝 Review Prompt 並寫入暫存檔
-
-讀取 `references/review-prompt.md` 模板，將步驟 1 確認的範圍資訊填入 placeholder：
-
-- `{{SPEC_PATH}}`：spec.md 的路徑
-- `{{TASKS_PATH}}`：tasks.md 的路徑
-- `{{GIT_DIFF_CMD}}`：實際的 git diff 指令
-
-所有 reviewer 使用**相同的 prompt**。prompt 採用分段約束結構，每個段落控制 reviewer 行為的一個面向——詳見 `references/review-prompt.md`。
-
-**組裝後寫入暫存檔**，避免在多個 Bash 呼叫中重複嵌入同一份 prompt（浪費 context window）：
+### 2. 組 Prompt 暫存檔
 
 ```bash
-review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md)
-cat > "$review_prompt_file" << 'PROMPT_EOF'
-<填入完整的 review prompt>
-PROMPT_EOF
+review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_file" << 'XREVIEW_EOF'
+請依照 ddd-reviewer 角色定義執行獨立 code review。
+
+審查範圍：
+- Sprint 規格：<spec.md 路徑>
+- 任務來源：<spec.md Milestones 或 tasks.md 路徑>
+- 變更：請執行 `<git diff 指令>` 取得
+
+先讀取 sprint 文件理解目標、驗收條件與任務來源，再檢視程式碼變更。
+XREVIEW_EOF
 echo "$review_prompt_file"
 ```
 
-### 3. 平行派出 Reviewer
+審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶，prompt 只指定範圍即可。
 
-所有 reviewer 都設定 `run_in_background: true`，平行執行不阻塞。
+### 3. 派 Orchestrator
 
-**[A] Claude Reviewer**（固定，Agent tool）：
+公開入口維持 skill-local script：`scripts/xreview-orchestrator.sh`。此檔案是 shared `agent-runner.sh` 的 symlink entrypoint；runner 會依 invocation basename 進入 `xreview` mode。Coordinator 不需也不應直接呼叫 shared runner 實體路徑。
+
+**Claude Code**（Monitor 可用）：
 
 ```
-Agent({
-  subagent_type: "ddd-reviewer",
-  prompt: "這是一次 cross review，你負責 Claude 端的獨立審查。\n請閱讀 <review_prompt_file 路徑> 中的 review prompt 並依照指示執行 code review。\n審查完成後依照 prompt 中的輸出格式回報。",
-  run_in_background: true
+Monitor({
+  command: "bash ~/.claude/skills/ddd.xreview/scripts/xreview-orchestrator.sh $review_prompt_file; rc=$?; rm -f $review_prompt_file; exit $rc",
+  timeout_ms: 3600000,
+  persistent: false,
+  description: "xreview 平行派 N 個 reviewer"
 })
 ```
 
-Claude subagent 從暫存檔讀取完整 prompt（使用 Read tool），避免在 main agent context 中重複嵌入整份 prompt。
-
-**[B+] 外部 Reviewer**（依 AGENTS.md 模型清單，每個模型一個 xreview-runner.sh）：
+**其他 host**（Gemini / Codex / OpenCode，走 blocking mode）：
 
 ```bash
-bash ~/.claude/skills/ddd.xreview/scripts/xreview-runner.sh \
-  "$review_prompt_file" <cli>:<model>
+XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_prompt_file"; rc=$?; rm -f "$review_prompt_file"; exit "$rc"
 ```
 
-`<cli>:<model>` 從 AGENTS.md 的「Cross Review 模型設定」表格讀取。例如 `opencode:github-copilot/gpt-5.4`。
+模型覆蓋、短名等用法見 `references/cli-reference.md`。
 
-以 `Bash({ command: ..., run_in_background: true })` 執行。對表格中建議的模型都派一個。
+### 4. 收集結果
 
-> `xreview-runner.sh` 是刻意保持精簡的 shell proxy：只包 timeout（預設 600 秒），支援多種 CLI（opencode、gemini、codex），根據 `<cli>:<model>` 格式自動分發到對應的 CLI。它不對 review 內容做語意判斷；但若 CLI 自己在 stderr 明確吐出 error marker，runner 會把那次執行視為失敗，補一行 `XREVIEW_ERROR` summary。不含冒號的 model 參數會向後相容地視為 `opencode:<model>`。
->
-> 各 CLI 的呼叫慣例、read-only 機制與注意事項詳見 `references/cli-adapters.md`。
+orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。讀取各 RETURN 的 `<final-path>`，空檔標失敗。
 
-### 4. 失敗處理與退化
+事件格式與邊界案例見 `references/orchestrator-internals.md`。
 
-**失敗處理**：`xreview-runner.sh` 不判讀 review 內容。它只處理 process 層級訊號：
+### 5. 整合、驗證、呈現
 
-- `timeout`：輸出 `XREVIEW_ERROR: timed out ...`
-- CLI 非零 exit code：輸出 `XREVIEW_ERROR: <cli> exited with code ...`
-- CLI 自己透過 stderr 回傳的明確錯誤：原樣保留在輸出中，並轉成失敗
-- 未知 CLI：輸出 `XREVIEW_ERROR: unknown cli: ...`
-- CLI 未安裝：輸出 `XREVIEW_ERROR: cli not found: ...`
-
-Coordinator 只需檢查 Bash 回報的 exit code，或輸出是否含 `XREVIEW_ERROR`；不要再對 reviewer 內容做額外語意判斷。
-
-**退化策略**——Bash 回報非零 exit code，或 output 含 `XREVIEW_ERROR` 時：
-
-1. 查 AGENTS.md 表格中該模型的「退化模型」欄位
-2. 有退化模型：重試一次，替換 model 參數
-3. 沒有退化模型或退化也失敗：在報告中標示該 reviewer 失敗，呈現已取得的結果
-
-### 5. 整合與呈現
-
-收到所有結果後，整理成交叉比對報告。報告結構根據實際完成的 reviewer 數量動態調整：
+**5.1 組對照表**
 
 ```markdown
 # Cross Review 報告
@@ -111,64 +89,67 @@ Coordinator 只需檢查 Bash 回報的 exit code，或輸出是否含 `XREVIEW_
 ## Reviewer 組成
 | Reviewer | 模型 | 狀態 |
 |----------|------|------|
-| Claude | (inherit) | ✅ 完成 |
-| 外部 A | <model-id> | ✅ 完成 / ❌ 失敗 |
-| ... | ... | ... |
-
----
+| claude | claude-opus-4-7 | ✅ 完成 |
+| opencode | gpt-5.x | ✅ 完成 |
+| gemini | gemini-3-pro-preview | ❌ 失敗（timeout） |
 
 ## 各 Reviewer 評估
-<每個成功的 reviewer 各一個 section，完整呈現其 review 結果>
-
----
+<每個有效 reviewer 一個 section，完整呈現 review 結果>
 
 ## 交叉比對
-| 維度 | Claude | 外部 A | ... | 共識 |
-|------|--------|--------|-----|------|
-| 正確性 | ... | ... | ... | 一致/分歧 |
-| ... | ... | ... | ... | ... |
+| 問題 | claude | opencode | gemini | 共識 |
+|------|--------|----------|--------|------|
+| <問題摘要> | Critical/Important/未提及 | ... | ... | 一致/分歧 |
 
-## 共識問題（多數 reviewer 都指出）
-<最值得優先處理的問題>
+## 共識問題
+<最值得優先處理>
 
 ## 分歧點
-<列出意見不同的地方，說明各自的理由>
+<意見不同之處>
 
 ## 共識優點
 <多方都認可的設計>
 ```
 
-### 6. 使用者決策
+**5.2 Coordinator 驗證 Critical / Important findings**
 
-用 AskUserQuestion 向使用者確認：
-- 哪些建議要採納並修正？
-- 哪些可以忽略？
-- 是否需要針對特定問題深入討論？
+彙整完成後、呈給使用者前，coordinator 先自行驗證中～高嚴重度的 findings：
 
-使用者決定後，由主 agent 派 ddd-developer 執行修正。
+1. 從報告篩 Critical / Important findings
+2. 逐一讀 finding 引用的程式碼確認問題是否真實存在
+3. 標記每個 finding：
+   - ✅ **確認**：問題存在，附上修正建議與優先度
+   - ⚠️ **存疑**：無法確認或情境不明，保留給使用者判斷
+   - ❌ **False Positive**：問題不存在或 reviewer 誤讀，說明理由
 
-## 注意事項
+**原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
-- 所有 reviewer 共享相同的 AGENTS.md coding style 規範，不需要在 prompt 中重複
-- Reviewer 自己有能力讀檔案、跑 git 指令，prompt 只需指定 review 範圍
-- 執行時間可能較長（90-180 秒），務必使用 `run_in_background` 避免阻塞
-- **安全性**：外部 CLI 一律用 stdin pipe 傳 prompt，嚴禁用命令列參數直接帶入
-- 若變更範圍太大，考慮按 milestone 拆分 review
-- 若某個 reviewer 超時或失敗且退化也失敗，先呈現已取得的結果，提示使用者
-- **暫存檔清理**：所有 reviewer 完成後，執行 `rm -f "$review_prompt_file"` 清理暫存檔
+### 6. 逐條決策
 
-## 前提條件
+對步驟 5.2 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，用 Question Tool 逐條詢問使用者修正方向。
 
-- **外部 CLI**：至少安裝一種（opencode、gemini、codex），並設定好認證。各 CLI 的安裝與設定詳見 `references/cli-adapters.md`
-- **OpenCode reviewer agent**（若使用 opencode）：需部署到 `~/.config/opencode/agents/ddd.xreviewer.md`（見 `references/cli-adapters.md`）
-  - **關鍵**：所有 permission key 必須明確設為 `allow` 或 `deny`（或 glob whitelist）。未設定的 key 在 `run` 模式下預設 `"ask"`，會導致進程永久掛住。`external_directory` 需設 whitelist 允許 `/tmp/*`，否則某些模型建立暫存檔後無法讀回。
-- 若所有外部 CLI 均未安裝，skill 會退化為僅 Claude subagent 的單方 review
+**批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
+
+**每個 issue 一題**，格式：
+
+- `header`：`"Issue #N"`
+- `question`：一句話說明問題
+- `preview`：引用的問題程式碼片段（含檔案路徑與行號）
+- `options`：根據 reviewer 意見與 coordinator 驗證結果，列出具體可行的修法方案（各方案在 description 簡述怎麼改），加上「不修，跳過」。使用者可透過自動附加的 Other 給自訂指示
+
+收集完所有決策後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
 
 ## 產出
 
-- Cross Review 對照報告（在對話中呈現）
-- 使用者確認後的程式碼修正（由 ddd-developer 執行）
+- Cross Review 對照報告（對話中呈現）
+- 使用者確認後的程式碼修正（由 `ddd-developer` 執行）
 
 ## 結束條件
 
 使用者確認 review 結果，修正完成（或決定不修正）。
+
+## 進一步閱讀
+
+- `references/cli-reference.md` — 模型覆蓋、短名、部署前提
+- `references/orchestrator-internals.md` — 事件語意、timeout、content-layer 失敗、config
+- `references/cli-adapters.md` — 各 CLI 的安裝、認證、JSON 抽取機制
