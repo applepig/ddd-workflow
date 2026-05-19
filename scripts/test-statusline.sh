@@ -454,12 +454,18 @@ result=$(echo "$MOCK_STATUS_JSON" | \
   STATUSLINE_TEST_MODE="" \
   STATUSLINE_CACHE_FILE="$test_m2_cache_file" \
   STATUSLINE_CREDENTIALS_FILE="$test_m2_cred_file" \
+  STATUSLINE_INVOCATION_LOG="${TEST_TMP_DIR}/statusline-invocations.log" \
   STATUSLINE_TERM_COLS=80 \
   bash "$STATUSLINE_SH" 2>/dev/null)
 
 # 輸出應包含 42%（API 值）而非 75%（StatusJSON 值）
 assert_contains "should show API utilization (42%) in Session bar" "$result" "42%"
 assert_not_contains "should NOT show StatusJSON used_pct (75%)" "$result" "75%"
+
+invocation_log=$(cat "${TEST_TMP_DIR}/statusline-invocations.log" 2>/dev/null || true)
+assert_contains "should log statusline invocation" "$invocation_log" "mode="
+assert_contains "should log invocation terminal cols" "$invocation_log" "cols="
+assert_contains "should log invocation usage" "$invocation_log" "usage=42"
 
 # Test: API 有資料時，resets_at 被轉為 epoch（顯示為倒數計時器）
 echo ""
