@@ -78,6 +78,8 @@ mkdir -p docs/16-subtree-sync-hooks
 
 直接在 feature branch 內編輯 `ddd-workflow/` 與 parent repo 檔案，並把對應文件包一起 commit：
 
+**禁止直接在 `main` 上修改或 commit `ddd-workflow/`。** 即使是 hotfix，也要先從 `dev` 建立 `feat/<編號>-<slug>`，完成後 merge 回 `dev`，再依流程同步 subtree。若不小心在 `main` 上 commit，先建立 feature branch 保住該 commit，再切回 / 建立 `dev` 用 `git merge --no-ff <feature>` 納入；不要把 `main` 當整合分支。
+
 ```bash
 vim ddd-workflow/skills/ddd.work/SKILL.md
 vim scripts/cli.js
@@ -87,6 +89,16 @@ git commit -m "feat: add subtree sync hooks"
 ```
 
 若 commit 觸及 `ddd-workflow/`，git hook 會用 JSONL 在 stderr 提示下一步，例如建議執行 `npm run subtree:push`。Hook 不會自動 push / pull；同步動作必須由使用者或 LLM agent 明確執行。
+
+若 `npm run subtree:status` 回報 `SUBTREE_DIVERGED`，先判斷是否只是 parent repo 沒有納入 `ddd-workflow/dev` 的最新 subtree history：
+
+```bash
+git fetch ddd-workflow
+git diff --stat <split_commit>..ddd-workflow/dev
+git diff --stat ddd-workflow/dev..<split_commit>
+```
+
+如果 remote 只包含本地 subtree 內容已經有的文件修正，通常不是功能衝突，而是流程順序錯誤：先在 `dev` 上執行 `npm run subtree:pull` 納入 remote history，解 conflict 時保留本地完整內容，再 `npm run subtree:push`。完成後 `npm run subtree:status` 必須回到 `SUBTREE_CLEAN`。
 
 ### 完成功能後進 dev
 
