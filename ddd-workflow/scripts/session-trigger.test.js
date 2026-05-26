@@ -4,9 +4,14 @@ import { describe, expect, it } from "vitest"
 const SOURCE = readFileSync(new URL("./session-trigger.mjs", import.meta.url), "utf8")
 
 describe("session-trigger", () => {
-  it("triggers the Codex model bucket used by interactive Codex and opencode", () => {
+  it("keeps the Codex command on the model bucket used by interactive Codex and opencode", () => {
     expect(SOURCE).toContain('"-m", "gpt-5.5"')
     expect(SOURCE).toContain('"--model", "openai/gpt-5.5"')
+  })
+
+  it("keeps the Codex trigger disabled by default", () => {
+    expect(SOURCE).toContain("const ENABLE_CODEX_TRIGGER = false")
+    expect(SOURCE).toContain("...(ENABLE_CODEX_TRIGGER ? [{")
   })
 
   it("includes opencode in the keepalive agents", () => {

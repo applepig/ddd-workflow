@@ -71,6 +71,7 @@ CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
 : "${STATUSLINE_INVOCATION_LOG:=/tmp/claude/statusline-invocations.log}"
+: "${STATUSLINE_INPUT_LOG:=/tmp/claude/statusline-input.jsonl}"
 
 # ─── OAuth + API Functions ───────────────────────────────────────────────────
 
@@ -292,6 +293,21 @@ logStatuslineInvocation() {
     "${json_resets_at:-}" >> "$STATUSLINE_INVOCATION_LOG" 2>/dev/null || true
 }
 
+logStatuslineInput() {
+  local input="$1"
+
+  if [[ -z "${STATUSLINE_INPUT_LOG:-}" || "${STATUSLINE_INPUT_LOG:-}" == "0" ]]; then
+    return 0
+  fi
+
+  local log_dir
+  log_dir="$(dirname "$STATUSLINE_INPUT_LOG")"
+  mkdir -p "$log_dir" 2>/dev/null || return 0
+
+  jq -c --arg ts "$(date -Is 2>/dev/null || date)" --argjson payload "$input" \
+    '{ts: $ts, payload: $payload}' >> "$STATUSLINE_INPUT_LOG" 2>/dev/null || true
+}
+
 # ─── 測試模式：只載入函式，不執行主流程 ─────────────────────────────────────
 if [[ "${STATUSLINE_TEST_MODE:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
@@ -306,6 +322,7 @@ eval "$(parseUsageResponse "$usage_response")"
 # ─── 讀取 JSON ───────────────────────────────────────────────────────────────
 
 json=$(cat)
+logStatuslineInput "$json"
 
 # 用 jq 一次解析所有需要的欄位
 eval "$(echo "$json" | jq -r '

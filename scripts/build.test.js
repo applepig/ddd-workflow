@@ -92,8 +92,8 @@ describe('AGENT_OVERRIDES', () => {
     expect(AGENT_OVERRIDES['ddd-reviewer']).toBeDefined()
   })
 
-  it('should set ddd-reviewer opencode mode to primary', () => {
-    expect(AGENT_OVERRIDES['ddd-reviewer'].opencode.mode).toBe('primary')
+  it('should set ddd-reviewer opencode mode to all', () => {
+    expect(AGENT_OVERRIDES['ddd-reviewer'].opencode.mode).toBe('all')
   })
 
   it('should contain bash permission whitelist for ddd-reviewer', () => {
@@ -102,6 +102,15 @@ describe('AGENT_OVERRIDES', () => {
     expect(bash_perm['*']).toBe('deny')
     expect(bash_perm['git log*']).toBe('allow')
     expect(bash_perm['git diff*']).toBe('allow')
+  })
+
+  it('should allow reviewer verification commands', () => {
+    const bash_perm = AGENT_OVERRIDES['ddd-reviewer'].opencode.permission.bash
+    expect(bash_perm['npm test*']).toBe('allow')
+    expect(bash_perm['npm run test*']).toBe('allow')
+    expect(bash_perm['pnpm test*']).toBe('allow')
+    expect(bash_perm['pnpm run test*']).toBe('allow')
+    expect(bash_perm['vitest*']).toBe('allow')
   })
 
   it('should contain external_directory permission for ddd-reviewer', () => {
@@ -366,9 +375,9 @@ describe('convertToOpencode', () => {
     expect(result).toContain('steps: 30')
   })
 
-  it('should apply ddd-reviewer override: mode becomes primary', () => {
+  it('should apply ddd-reviewer override: mode becomes all', () => {
     const result = convertToOpencode(REVIEWER_FRONTMATTER, SAMPLE_BODY, 'ddd-reviewer')
-    expect(result).toContain('mode: primary')
+    expect(result).toContain('mode: all')
     expect(result).not.toContain('mode: subagent')
   })
 

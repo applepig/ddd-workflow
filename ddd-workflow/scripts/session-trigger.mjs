@@ -77,6 +77,7 @@ const CONFIG_HOME = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
 const OPENCODE_USAGE_FILE = join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage", "codex-usage.json")
 const USER_BIN_PATHS = [join(homedir(), ".opencode", "bin"), join(homedir(), ".local", "bin")]
 const TRIGGER_PATH = [...USER_BIN_PATHS, process.env.PATH ?? ""].filter(Boolean).join(":")
+const ENABLE_CODEX_TRIGGER = false
 
 const AGENTS = [
   {
@@ -94,7 +95,7 @@ const AGENTS = [
     ],
     parseResult: parseClaudeResult,
   },
-  {
+  ...(ENABLE_CODEX_TRIGGER ? [{
     name: "codex",
     cwd: "/tmp",
     cmd: [
@@ -116,7 +117,7 @@ const AGENTS = [
       "--disable", "workspace_dependencies",
     ],
     parseResult: parseCodexResult,
-  },
+  }] : []),
   {
     name: "opencode",
     cwd: "/tmp",

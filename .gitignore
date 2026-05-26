@@ -2,7 +2,7 @@
 dist/
 node_modules/
 *.backup.*
-/.worktrees/
+/.worktree/
 /reference/
 /.opencode/codex-usage.json
 /.opencode/openai-response-debug.ndjson

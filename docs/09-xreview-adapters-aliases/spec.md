@@ -104,7 +104,7 @@ Timeout 簡化（ADR-6）
 
 Worktree 路徑約定（ADR-8）
 
-- [ ] 在 `ddd-workflow/references/AGENTS.md` 適當位置加「手動 `git worktree add` 時建議放在 `$PROJECT_ROOT/.worktrees/<branch>/`，避免 opencode / gemini workspace sandbox 擋路」
+- [ ] 在 `ddd-workflow/references/AGENTS.md` 適當位置加「手動 `git worktree add` 時建議放在 `$PROJECT_ROOT/.worktree/<branch>/`，避免 opencode / gemini workspace sandbox 擋路」
 - [ ] `ddd-workflow/skills/ddd.work/SKILL.md` 在 Phase 2 派發段落呼應這個約定（若有提到 worktree）
 
 Adapter sandbox 放行（ADR-9）
@@ -350,7 +350,7 @@ Coordinator 在 SKILL.md 步驟 7（整合與呈現之前）需主動 peek 每�
 
 ### ADR-8：Worktree 路徑約定 `./worktree`
 
-決策：建議所有 git worktree 建立在 `$PROJECT_ROOT/.worktrees/<branch-name>/`，而非專案目錄外的路徑。
+決策：建議所有 git worktree 建立在 `$PROJECT_ROOT/.worktree/<branch-name>/`，而非專案目錄外的路徑。
 
 背景：Claude Code `Agent({ isolation: "worktree" })` 目前硬編碼建在 `.claude/worktree/*`，但手動 `git worktree add` 的情況（例如 sprint worktree）沒有約定，使用者或 agent 可能建在任意位置。
 
@@ -359,7 +359,7 @@ Coordinator 在 SKILL.md 步驟 7（整合與呈現之前）需主動 peek 每�
 方案：
 
 - (a) 讓每個 CLI 各自加 `--include-directories` / `OPENCODE_CONFIG` 放行 worktree 絕對路徑——需動態偵測路徑，複雜
-- (b) **約定 worktree 建在 `$PROJECT_ROOT/.worktrees/`**（採用）：worktree 天然在 sandbox 內，所有 CLI 無須特別設定
+- (b) **約定 worktree 建在 `$PROJECT_ROOT/.worktree/`**（採用）：worktree 天然在 sandbox 內，所有 CLI 無須特別設定
 
 理由：
 

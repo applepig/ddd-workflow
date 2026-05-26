@@ -93,3 +93,32 @@
 
 - 更新 `spec.md`：將 public helper 目錄從 `tools/` 改為 `bin/`；補 status/diff/deploy-skills/bin modules；補 build agent transpile 與 full deploy gate；移除 subtree legacy 保留策略。
 - 更新 `tasks.md`：補 `tsconfig`、paths constants、`bin/` entrypoints、agent dist generation、skills install deploy、完整 deploy gate、舊 source root / subtree scripts 移除任務。
+
+## 2026-05-25
+
+### Brainstorming 討論結論：Milestones / Tasks
+
+- Milestone 1 起採新架構作為主線：`pnpm test` 直接切為 Vitest 主入口，舊 `scripts/cli.js test` 不再佔據主流程。
+- Vite build 採多 entrypoint 輸出，產生 `dist/tooling/**.mjs`；避免新版 tooling router 再變成大雜燴。
+- `package.json` 需宣告 `packageManager` 使用 pnpm，讓文件、lockfile、scripts contract 一致。
+- Agent transpiler golden fixtures 使用真實 agents 的複製版，而不是 live source 直測；root `dist/` 只放 Vite tooling，平台 agent output 只生成到 `.publish/ddd-workflow/dist/{gemini,opencode,codex}/agents`。
+- `.publish/ddd-workflow` 定義為外層 Git ignore 的 managed checkout，不是真 submodule；`publish:init` 負責 clone/設定 remote，`build` 缺 checkout 時 fail。
+- `gemini-extension.json` 是 Gemini CLI extension manifest，需作為 publish source 搬到 `src/ddd-workflow/` 並同步到 publish repo root。
+- Skill 自帶 shell entrypoint 是 skill package contract 的一部分。source 層可在 `src/ddd-workflow/_runtime/` 共用 shell lib/template，但 publish build 必須產生 skill-local `scripts/**` 實體檔。
+- Package-level runtime scripts 與 skill-owned runtime 分流：非 skill-owned runtime 部署到 `~/.config/ddd-workflow/runtime/` 或平台指定位置；user-editable config 仍在 `~/.config/ddd-workflow/` root，例如 `xreview.json`。
+- `~/.config/ddd-workflow/` 採分區模型：`xreview.json` 等 config copy-if-missing，`runtime/**` 為 generated runtime 可同名覆蓋，`state/**` 保留給未來 manifest/deploy metadata。
+- Full deploy 的 skills 安裝維持交給 `npx skills`；publish tree 內 skill runtime 必須是實體檔，讓 `npx skills` 安裝後不依賴 symlink。
+- 新 build/deploy pipeline 明確禁止 publish tree 內出現 symlink；generated deploy output 也不建立 symlink。
+- `pnpm deploy` 預設實際部署並寫入 HOME；`pnpm deploy:dry-run` 提供無副作用檢查。
+- README / CLAUDE.md 中舊 subtree 主流程需完全移除；歷史脈絡只保留在本 sprint works.md。
+
+### 已套用修正
+
+- 更新 `spec.md`：補 managed checkout、M1 test 主線、pnpm package manager、no-symlink publish、skill-owned runtime build、`~/.config/ddd-workflow/` 分區、Gemini manifest、M6/M7 決策。
+- 更新 `tasks.md`：調整 M1/M2/M3/M4/M5/M6/M7 tasks，反映 real-agent fixtures、publish-only agent dist、`_runtime/` source-only input、skill-local built runtime、copy-based deploy、no-symlink 驗證與 legacy subtree 文件移除。
+
+## 2026-05-26
+
+### xreview 修正
+
+- **Worktree 路徑約定不一致**：將目前有效設定、skill 文件、xreview opencode adapter 與既有文件中的 worktree 目錄統一為 `.worktree/`，並同步更新 `.gitignore`。

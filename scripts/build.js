@@ -67,7 +67,7 @@ export const AGENT_OVERRIDES = {
     opencode: {
       // xreview runner 用 `--agent ddd-reviewer` 載入這份為 primary system
       // prompt；agents 統一用 dash 分隔（skills 用 dot），不再 rename。
-      mode: 'primary',
+      mode: 'all',
       permission: {
         bash: {
           '*': 'deny',
@@ -84,6 +84,14 @@ export const AGENT_OVERRIDES = {
           'head *': 'allow',
           'tail *': 'allow',
           'wc *': 'allow',
+          'npm test*': 'allow',
+          'npm run test*': 'allow',
+          'npm run build*': 'allow',
+          'pnpm test*': 'allow',
+          'pnpm run test*': 'allow',
+          'pnpm build*': 'allow',
+          'pnpm run build*': 'allow',
+          'vitest*': 'allow',
         },
         external_directory: {
           '*': 'deny',
