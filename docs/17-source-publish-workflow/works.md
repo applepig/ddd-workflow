@@ -53,7 +53,7 @@
 - `agent-transpiler`：使用 fixture input + golden output exact compare，覆蓋 Gemini tool mapping、OpenCode permission/override、Codex TOML escaping。
 - `publish`：使用 temp dir integration test 驗證 allowlist/denylist、dirty guard、force 覆蓋行為。
 - `deploy`：使用 fake HOME 驗證 symlink/copy target，並要求 target 指向 `.publish/ddd-workflow/`，不可指向 `src/ddd-workflow/`。
-- `skills pack validation`：用 `npx skills add .publish/ddd-workflow --list` 作為 dotted skill name 與 package layout gate。
+- `skills pack validation`：用 `npx skills add ./.publish/ddd-workflow --list` 作為 dotted skill name 與 package layout gate。
 - `runtime scripts`：保留 bash smoke tests 與 symlink resolution tests，確保 skill-local entrypoint、shared runner、adapter 路徑不斷。
 - `package scripts`：用 pipeline smoke test 驗證 `pnpm test`、`pnpm build`、`pnpm test:pack`、`pnpm deploy:dry-run` 的順序與 gate。
 
@@ -79,7 +79,7 @@
 - `tools/` 改名為 publish package 的 `bin/`，避免和 LLM tools 混淆。
 - `bin/*.mjs` 採 build generated 模型：source 在 `src/tooling/bin/*`，產物注入 `.publish/ddd-workflow/bin/`。
 - agent transpile 放在 build 階段，產生 `.publish/ddd-workflow/dist/{gemini,opencode,codex}/agents`。
-- skills deploy 納入 `deploy-local`，由 `npx skills add .publish/ddd-workflow ...` 負責；dry-run 只列出 command。
+- skills deploy 納入 `deploy-local`，由 `npx skills add ./.publish/ddd-workflow ...` 負責；dry-run 只列出 command。
 - Milestone 3 改為 fixture/temp dir 驗證；真實完整 publish tree 驗證放到 Milestone 4/6。
 - `publish:status` / `publish:diff` 補成正式 module。
 - 完整 `deploy` 包含 `test`、`build`、`test:pack`、`deploy-local`。
@@ -122,3 +122,34 @@
 ### xreview 修正
 
 - **Worktree 路徑約定不一致**：將目前有效設定、skill 文件、xreview opencode adapter 與既有文件中的 worktree 目錄統一為 `.worktree/`，並同步更新 `.gitignore`。
+
+### 第一波 scope 修正
+
+- 使用者確認 `~/Dropbox/projects/ddd-authoring/` 是本 sprint 遷移目標；AGENTS 原 worktree 切回 `dev`，`ddd-authoring` 使用 `feat/17-source-publish-workflow`。
+- 第一波實作範圍包含 `scripts/build.js` 與 `scripts/cli.js` 的核心能力遷移到 Vite tooling pipeline。
+- 暫緩的「其他 scripts refactor」限於 `./scripts` 其他工具程式，例如 `claude-r`、subtree status、hook setup；不包含 build/deploy 主線。
+- 已建立 baseline empty commits：AGENTS `dev` 為 `chore: mark agents baseline`，`ddd-authoring` 為 `chore: mark ddd-authoring baseline`。
+
+### 第一波實作結果
+
+- 將舊 `ddd-workflow/` 搬到 `src/ddd-workflow/`，並將 package-level runtime scripts 分到 `scripts/claude/`、`scripts/opencode/`、`scripts/shared/`。
+- 將舊 `scripts/build.js` 搬成 `src/tooling/agent-transpiler/agent-transpiler.js`，並新增 Vite entrypoint `src/tooling/bin/transpile-agents.js`。
+- 建立 `src/tooling/publish/build-publish.js`，可從 `src/ddd-workflow/` 重建 `.publish/ddd-workflow/`，保留 `.git`，跳過 `_runtime/`，將 source symlink materialize 成 publish 實體檔，並產生 `.publish/ddd-workflow/dist/{gemini,opencode,codex}/agents`。
+- 建立 `src/tooling/deploy/deploy-local.js` 與 `src/tooling/bin/deploy-agents.js`。第一波 deploy contract 改為 action planner：skills 交給 `npx skills`，non-skill files 採 copy / copy-if-missing，`--dry-run` 只列動作。
+- 移除舊 `scripts/cli.js` 主流程入口，並將 `package.json` 收斂到 `pnpm test`、`pnpm run build`、`pnpm run test:pack`、`pnpm deploy:dry-run`。
+- 更新 root `README.md` 與 `CLAUDE.md`，移除 subtree / symlink deploy 作為主流程的描述。
+
+### 驗證結果
+
+- `pnpm test`：通過，8 個 test files、132 個 tests。
+- `pnpm run build`：通過，Vite 產出 `dist/tooling/**`，publish builder 產出 `.publish/ddd-workflow` 與 platform agent dist。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 成功找到 9 個 skills。
+- `pnpm deploy:dry-run`：通過，完整串起 `test -> build -> test:pack -> deploy-local --dry-run`，只輸出 action list。
+- `find .publish/ddd-workflow -type l -ls`：無輸出，確認 publish tree 沒有 symlink。
+
+### 尚未完成
+
+- `publish:init`、`publish:status`、`publish:diff` 尚未重建成正式 tooling module；目前 `publish:status` / `publish:diff` 仍是 package script 直接呼叫 Git。
+- `_runtime/` template 化尚未建立；第一波先用 publish builder materialize source 層 symlink，達成 publish no-symlink。
+- Deploy 的 uninstall、manifest/state 與完整 fake HOME e2e 尚未完成；第一波完成 action planner 與 dry-run gate。
+- `./scripts` 其他工具程式仍保留，依使用者指示不在第一波重構。

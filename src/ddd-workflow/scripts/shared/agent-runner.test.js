@@ -10,40 +10,38 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { delimiter, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import { applyDeployActions, planDeploy } from '../../../tooling/deploy/deploy-local.js'
 
-const ROOT = resolve(import.meta.dirname, '..')
-const RUNNER_PATH = join(ROOT, 'ddd-workflow', 'scripts', 'agent-runner.sh')
-const SESSION_TRIGGER_PATH = join(ROOT, 'ddd-workflow', 'scripts', 'session-trigger.mjs')
+const ROOT = resolve(import.meta.dirname, '..', '..', '..', '..')
+const SOURCE_ROOT = join(ROOT, 'src', 'ddd-workflow')
+const RUNNER_PATH = join(SOURCE_ROOT, 'scripts', 'shared', 'agent-runner.sh')
+const SESSION_TRIGGER_PATH = join(SOURCE_ROOT, 'scripts', 'shared', 'session-trigger.mjs')
 const XREVIEW_ENTRYPOINT = join(
-  ROOT,
-  'ddd-workflow',
+  SOURCE_ROOT,
   'skills',
   'ddd.xreview',
   'scripts',
   'xreview-orchestrator.sh',
 )
 const WORK_ENTRYPOINT = join(
-  ROOT,
-  'ddd-workflow',
+  SOURCE_ROOT,
   'skills',
   'ddd.work',
   'scripts',
   'work-orchestrator.sh',
 )
 const WORKER_ENTRYPOINT = join(
-  ROOT,
-  'ddd-workflow',
+  SOURCE_ROOT,
   'skills',
   'ddd.work',
   'scripts',
   'opencode-worker.sh',
 )
 const OPENCODE_ADAPTER_PATH = join(
-  ROOT,
-  'ddd-workflow',
+  SOURCE_ROOT,
   'skills',
   'ddd.xreview',
   'scripts',
@@ -68,11 +66,11 @@ function createInstalledClaudeFixture(home_dir) {
   const scripts_dir = join(claude_dir, 'scripts')
   mkdirSync(scripts_dir, { recursive: true })
   symlinkSync(
-    join(ROOT, 'ddd-workflow', 'references', 'AGENTS.md'),
+    join(SOURCE_ROOT, 'references', 'AGENTS.md'),
     join(claude_dir, 'CLAUDE.md'),
   )
   symlinkSync(
-    join(ROOT, 'ddd-workflow', 'scripts', 'statusline.sh'),
+    join(SOURCE_ROOT, 'scripts', 'claude', 'statusline.sh'),
     join(scripts_dir, 'statusline.sh'),
   )
 }
@@ -155,116 +153,33 @@ describe('agent runner mode dispatch', () => {
   })
 })
 
-describe('cli test validation for skill-local script symlinks', () => {
+describe('deploy-local planner', () => {
   let home_dir
 
   beforeEach(() => {
-    home_dir = mkdtempLike(join(tmpdir(), 'agents-cli-home-'))
-    createInstalledClaudeFixture(home_dir)
+    home_dir = mkdtempLike(join(tmpdir(), 'deploy-local-home-'))
   })
 
   afterEach(() => {
     rmSync(home_dir, { recursive: true, force: true })
   })
 
-  it('should fail npm test when installed skills directory is missing', () => {
-    const result = spawnSync('node', ['scripts/cli.js', 'test', 'claude'], {
-      cwd: ROOT,
-      encoding: 'utf-8',
-      env: { ...process.env, HOME: home_dir },
-    })
+  it('should plan skills installation through npx skills instead of symlink actions', () => {
+    const actions = planDeploy({ publish_root: SOURCE_ROOT, home_dir, targets: ['claude'] })
+    const command = actions.find((action) => action.type === 'command')
 
-    expect(result.status).toBe(1)
-    expect(result.stdout + result.stderr).toContain(
-      '~/.claude/skills: installed skills directory missing',
-    )
+    expect(command.command).toBe('npx')
+    expect(command.args).toEqual(expect.arrayContaining(['skills', 'add', SOURCE_ROOT]))
+    expect(actions.some((action) => action.type === 'copy' && action.target.includes('/skills/'))).toBe(false)
   })
 
-  it('should fail npm test when required installed skill-local scripts are missing', () => {
-    mkdirSync(join(home_dir, '.claude', 'skills', 'ddd.xreview', 'scripts'), { recursive: true })
-    mkdirSync(join(home_dir, '.claude', 'skills', 'ddd.work', 'scripts'), { recursive: true })
+  it('should copy session-trigger as generated runtime without writing during dry-run', () => {
+    const actions = planDeploy({ publish_root: SOURCE_ROOT, home_dir, targets: ['claude'] })
+    const runtime_action = actions.find((action) => action.target?.endsWith('runtime/shared/session-trigger.mjs'))
 
-    const result = spawnSync('node', ['scripts/cli.js', 'test', 'claude'], {
-      cwd: ROOT,
-      encoding: 'utf-8',
-      env: { ...process.env, HOME: home_dir },
-    })
-
-    expect(result.status).toBe(1)
-    expect(result.stdout + result.stderr).toContain(
-      'skill-local script ddd.work/scripts/work-orchestrator.sh missing',
-    )
-    expect(result.stdout + result.stderr).toContain(
-      'skill-local script ddd.xreview/scripts/xreview-orchestrator.sh missing',
-    )
-  })
-})
-
-describe('cli deploy session-trigger cron', () => {
-  let home_dir
-  let bin_dir
-  let crontab_path
-
-  beforeEach(() => {
-    home_dir = mkdtempLike(join(tmpdir(), 'agents-cli-cron-home-'))
-    bin_dir = join(home_dir, 'bin')
-    crontab_path = join(home_dir, 'crontab.txt')
-    mkdirSync(bin_dir, { recursive: true })
-    writeFileSync(join(bin_dir, 'crontab'), `#!/bin/sh
-set -eu
-if [ "\${1:-}" = "-l" ]; then
-  if [ -f "$MOCK_CRONTAB_FILE" ]; then
-    cat "$MOCK_CRONTAB_FILE"
-    exit 0
-  fi
-  echo "no crontab for test" >&2
-  exit 1
-fi
-if [ "\${1:-}" = "-" ]; then
-  cat > "$MOCK_CRONTAB_FILE"
-  exit 0
-fi
-exit 2
-`, { mode: 0o755 })
-  })
-
-  afterEach(() => {
-    rmSync(home_dir, { recursive: true, force: true })
-  })
-
-  it('should install a managed session-trigger crontab block during deploy', () => {
-    const result = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
-
-    expect(result.status).toBe(0)
-    const crontab = readFileSync(crontab_path, 'utf-8')
-    expect(crontab).toContain('# BEGIN AGENTS session-trigger')
-    expect(crontab).toContain('# END AGENTS session-trigger')
-    expect(crontab).toContain('0 7,12,17 * * 1-5 PATH=')
-    expect(crontab).toContain(join(home_dir, '.opencode', 'bin'))
-    expect(crontab).toContain(join(home_dir, '.local', 'bin'))
-    expect(crontab).toContain(SESSION_TRIGGER_PATH)
-    expect(result.stdout).toContain('更新 session-trigger crontab')
-  })
-
-  it('should replace old unmanaged session-trigger cron lines without duplicating', () => {
-    writeFileSync(crontab_path, [
-      'PATH=/usr/local/bin:/usr/bin:/bin',
-      '5 6 * * * /usr/bin/true',
-      `0 7,12,17 * * 1-5 ${SESSION_TRIGGER_PATH} 2>&1`,
-      '',
-    ].join('\n'))
-
-    const first = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
-    const second = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
-
-    expect(first.status).toBe(0)
-    expect(second.status).toBe(0)
-    const crontab = readFileSync(crontab_path, 'utf-8')
-    expect(crontab).toContain('5 6 * * * /usr/bin/true')
-    expect(crontab).not.toContain(`0 7,12,17 * * 1-5 ${SESSION_TRIGGER_PATH} 2>&1`)
-    expect(countOccurrences(crontab, '# BEGIN AGENTS session-trigger')).toBe(1)
-    expect(countOccurrences(crontab, SESSION_TRIGGER_PATH)).toBe(1)
-    expect(second.stdout).toContain('session-trigger crontab 已正確')
+    expect(runtime_action.source).toBe(SESSION_TRIGGER_PATH)
+    applyDeployActions(actions, { dry_run: true, logger: { log() {} } })
+    expect(existsSync(runtime_action.target)).toBe(false)
   })
 })
 
@@ -415,23 +330,6 @@ function runWorkOrchestrator(jobs_file, worker_script, env = {}) {
       ...env,
     },
   })
-}
-
-function runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path) {
-  return spawnSync('node', ['scripts/cli.js', 'deploy', 'claude'], {
-    cwd: ROOT,
-    encoding: 'utf-8',
-    env: {
-      ...process.env,
-      HOME: home_dir,
-      PATH: [bin_dir, process.env.PATH].filter(Boolean).join(delimiter),
-      MOCK_CRONTAB_FILE: crontab_path,
-    },
-  })
-}
-
-function countOccurrences(text, needle) {
-  return text.split(needle).length - 1
 }
 
 function getEventLines(stdout) {

@@ -14,8 +14,8 @@ import {
   convertToGemini,
   convertToOpencode,
   convertToCodex,
-  build,
-} from './build.js'
+  transpileAgents,
+} from './agent-transpiler.js'
 
 // ─── 測試資料 ──────────────────────────────────────────────────────────────────
 
@@ -469,9 +469,17 @@ describe('convertToCodex', () => {
 // ─── Task 1.10: build 主流程測試 ──────────────────────────────────────────────
 
 describe('build', () => {
-  const WORK_DIR = resolve(import.meta.dirname, '..')
+  const WORK_DIR = resolve(import.meta.dirname, '..', '..', '..')
   const dist_dir = join(WORK_DIR, 'dist')
-  const agents_src = join(WORK_DIR, 'ddd-workflow', 'agents')
+  const agents_src = join(WORK_DIR, 'src', 'ddd-workflow', 'agents')
+
+  async function build() {
+    await transpileAgents({
+      source_dir: agents_src,
+      output_dir: dist_dir,
+      logger: { log() {} },
+    })
+  }
 
   afterEach(() => {
     // 清理 dist（如果測試中建立的）

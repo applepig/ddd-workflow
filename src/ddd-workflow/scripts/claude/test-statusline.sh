@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-statusline.sh — Unit tests for statusline.sh OAuth + API + cache functions
 #
-# 執行方式：bash ddd-workflow/scripts/test-statusline.sh
+# 執行方式：bash src/ddd-workflow/scripts/claude/test-statusline.sh
 # 不需要任何外部測試框架，使用簡易 assert 函式
 
 # 不使用 set -euo pipefail，測試需要捕捉各種回傳值

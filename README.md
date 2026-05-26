@@ -1,72 +1,38 @@
-# AGENTS
+# ddd-authoring
 
-跨 AI Agent CLI 的共用設定檔與 DDD（Document Driven Development）工作流。
+`ddd-authoring` 是 ddd-workflow 的 authoring 與 publish pipeline worktree。
 
-透過 symlink 將統一的指令檔和 skills/agents 部署到多個 AI agent 的設定目錄，修改一處即全部生效。
-
-## 支援的 Agent CLI
-
-| Agent | 設定目錄 | 指令檔名稱 |
-|-------|---------|-----------|
-| Claude Code | `~/.claude/` | `CLAUDE.md` |
-| Gemini CLI | `~/.gemini/` | `GEMINI.md` |
-| Codex CLI | `~/.codex/` | `AGENTS.md` |
+日常手改內容放在 `src/ddd-workflow/`；`pnpm run build` 會產生 `.publish/ddd-workflow/`，再由 `npx skills` 與 publish package 內的 `bin/` entrypoints 供本機或公開 repo 使用。
 
 ## 專案結構
 
-```
-scripts/
-  cli.js                 # CLI 工具：deploy / undeploy / test
-src/
-  AGENTS.md              # 唯一真相來源——所有 agent 共用的指令檔
-  skills/                # DDD 工作流 skills
-    ddd.<name>/SKILL.md  # Skill 定義（YAML frontmatter + markdown）
-  agents/                # Subagent 定義
-    ddd-<role>.md        # Agent 定義（YAML frontmatter + system prompt）
+```text
+src/ddd-workflow/                  # 唯一手改 publishable source
+  skills/                          # Agent Skills package
+  agents/                          # Claude-compatible canonical agents
+  scripts/                         # package-level runtime scripts
+src/tooling/                       # Vite-built local tooling
+dist/tooling/                      # generated tooling entrypoints
+.publish/ddd-workflow/             # generated publish checkout，外層 Git ignore
 ```
 
-## 快速開始
+## 常用指令
 
 ```bash
-# 部署到所有 agent
-npm run deploy
-
-# 只部署到特定 agent
-npm run deploy:claude
-
-# 驗證部署狀態
-npm test
-
-# 移除部署
-npm run undeploy
+pnpm test
+pnpm run build
+pnpm run test:pack
+pnpm deploy:dry-run
 ```
 
-## DDD 工作流
+`pnpm deploy` 會實際寫入 HOME；先用 `pnpm deploy:dry-run` 檢查動作。
 
-Document Driven Development——先寫文件、再寫測試、最後寫程式碼。
+## 發布流程
 
-### Skills（Slash Commands）
+1. 修改 `src/ddd-workflow/` 或 `src/tooling/`。
+2. 執行 `pnpm test`。
+3. 執行 `pnpm run build`，產生 `.publish/ddd-workflow/`。
+4. 執行 `pnpm run test:pack`，確認 `npx skills` 可辨識所有 `ddd.*` skills。
+5. 檢查 `.publish/ddd-workflow` diff 後，再由 maintainer 發布公開 repo。
 
-| Skill | 用途 |
-|-------|-----|
-| `/ddd.plan` | 需求不明確時的前置規劃 |
-| `/ddd.research` | 技術調研，驗證可行性 |
-| `/ddd.spec` | 撰寫正式規格書 |
-| `/ddd.tasks` | 將 spec 拆解為 milestone + task |
-| `/ddd.work` | 以 TDD 循環執行開發任務 |
-| `/ddd.xreview` | Cross review（Gemini + Claude 獨立審查） |
-| `/ddd.code-to-spec` | 從既有程式碼反向萃取規格 |
-| `/ddd.agent-browser` | E2E 除錯（瀏覽器自動化） |
-
-### Subagents
-
-| Agent | 角色 |
-|-------|-----|
-| `ddd-developer` | 開發者，以 TDD 循環實作功能與測試 |
-| `ddd-debugger` | 系統性分析錯誤、驗證修復 |
-| `ddd-reviewer` | 獨立審查程式碼變更 |
-| `ddd-researcher` | 技術調研，評估方案 |
-
-## 開發
-
-新增 skill 或 agent 後，執行 `npm run deploy` 建立 symlink。由於是 symlink，修改 `src/` 下的檔案會即時生效，不需要重新部署。
+舊 subtree 與 symlink deploy 流程已退場；`scripts/build.js` 與 `scripts/cli.js` 的主線能力已遷移到 `src/tooling/`。

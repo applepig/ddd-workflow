@@ -1,31 +1,26 @@
 {
-  "name": "agents",
+  "name": "ddd-authoring",
   "version": "0.1.0",
-  "description": "DDD 工作流跨 AI agent CLI 安裝工具",
+  "description": "DDD workflow authoring and publish pipeline",
+  "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.25.0",
   "scripts": {
-    "deploy": "node scripts/build.js && node scripts/cli.js deploy",
-    "deploy:claude": "node scripts/cli.js deploy claude",
-    "deploy:gemini": "node scripts/build.js && node scripts/cli.js deploy gemini",
-    "deploy:codex": "node scripts/build.js && node scripts/cli.js deploy codex",
-    "deploy:opencode": "node scripts/build.js && node scripts/cli.js deploy opencode",
-    "undeploy": "node scripts/cli.js undeploy",
-    "undeploy:claude": "node scripts/cli.js undeploy claude",
-    "undeploy:gemini": "node scripts/cli.js undeploy gemini",
-    "undeploy:codex": "node scripts/cli.js undeploy codex",
-    "undeploy:opencode": "node scripts/cli.js undeploy opencode",
-    "test": "node scripts/cli.js test",
-    "test:unit": "vitest run",
-    "build": "node scripts/build.js",
-    "setup:hooks": "node scripts/setup-githooks.mjs",
-    "subtree:status": "node scripts/subtree-status.mjs --hook manual",
-    "subtree:push": "git subtree push --prefix=ddd-workflow ddd-workflow dev",
-    "subtree:pull": "git subtree pull --prefix=ddd-workflow ddd-workflow dev --squash"
+    "test": "vitest run",
+    "build:tooling": "vite build",
+    "build": "pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs",
+    "test:pack": "npx skills add ./.publish/ddd-workflow --list",
+    "deploy": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
+    "deploy:dry-run": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
+    "publish:status": "git -C .publish/ddd-workflow status --short",
+    "publish:diff": "git -C .publish/ddd-workflow diff",
+    "setup:hooks": "node scripts/setup-githooks.mjs"
   },
   "dependencies": {
     "gray-matter": "^4.0.3"
   },
   "devDependencies": {
+    "vite": "^8.0.5",
     "vitest": "^4.1.2"
   }
 }

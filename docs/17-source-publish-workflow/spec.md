@@ -2,14 +2,15 @@
 
 ## 目標
 
-重新整理 AGENTS 專案的開發、發布與部署邊界，讓外層 Git 只管理 source 與 local pipeline，公開的 `ddd-workflow` GitHub repo 則由 build 產生，避免目前 `ddd-workflow/` subtree、`dist/`、deploy symlink 三者責任交疊造成同步遺漏。
+重新整理 AGENTS 專案的開發、發布與部署邊界，將日常 authoring 移到 `~/Dropbox/projects/ddd-authoring/` worktree。AGENTS worktree 回到一般專案資料與文件位置；`ddd-authoring` worktree 則承接 ddd-workflow source、local pipeline 與 publish workflow。公開的 `ddd-workflow` GitHub repo 由 build 產生，避免目前 `ddd-workflow/` subtree、`dist/`、deploy symlink 三者責任交疊造成同步遺漏。
 
 新的工作模式以 Vite 作為本機 tooling build system。Vite 不負責 bundle Markdown 或 shell scripts；它只負責 TypeScript/JavaScript tooling、Vitest、以及可重複的 build/test/publish/deploy pipeline。Markdown、shell、JSON、TOML 等 publishable content 仍以檔案同步方式原樣進入公開 repo。
 
 新的工作模式：
 
 ```text
-src/ddd-workflow/                  # 唯一手改 source
+~/Dropbox/projects/ddd-authoring/   # feat/17-source-publish-workflow worktree
+src/ddd-workflow/                  # ddd-authoring 內唯一手改 publishable source
   -> pnpm run build                 # Vite build tooling + 產生公開 repo working tree
 .publish/ddd-workflow/              # GitHub publish repo，外層 Git ignore
   -> npx skills / bin/*             # 使用者或本機 deploy 產生平台輸出
@@ -19,7 +20,7 @@ src/ddd-workflow/                  # 唯一手改 source
 本 sprint 同時要收斂三個分類決策：
 
 - Skills 採用 Agent Skills 標準目錄，安裝與跨 agent 路徑交給 Vercel `npx skills`。
-- Agents 仍作為公開 source 發布；本 sprint 不等待外部 framework，先將既有 agent transpiler 規則 refactor 到 `src/tooling/agent-transpiler/`，再由 build 產生公開 repo 內的 `bin/` entrypoint。
+- Agents 仍作為公開 source 發布；第一波直接遷移既有 `scripts/build.js` 的 agent transpiler 規則到 Vite tooling 管線的 `src/tooling/agent-transpiler/`，再由 build 產生公開 repo 內的 `bin/` entrypoint。
 - Skill-owned runtime scripts 是 skill package contract 的一部分。source 層可在 `src/ddd-workflow/_runtime/` 共用 shell lib/template；publish build 必須產生 skill-local 實體檔到 `skills/<skill>/scripts/**`，不可依賴 symlink 或跨 skill/runtime 目錄。
 - Package-level runtime scripts（例如 Claude statusline、OpenCode Codex usage、session trigger）屬於公開 package 的一部分，保留在公開 repo 的 `scripts/` 下並改成清楚 namespace；部署時放到 `~/.config/ddd-workflow/runtime/` 或平台要求的位置。
 
@@ -32,6 +33,7 @@ src/ddd-workflow/                  # 唯一手改 source
 - 不改 DDD workflow 的產品行為、slash command 語意或 coordinator/developer/reviewer 角色分工。
 - 本 sprint 會移除舊 `ddd-workflow/` source root 與 `subtree:*` scripts，不保留作為 legacy 主流程。
 - 不把 Vite 引入為 runtime dependency；Vite 只屬於本機 build/test tooling。
+- 本 sprint 不重構 `./scripts` 下與第一波 pipeline 無關的其他工具程式；`scripts/build.js` 與 `scripts/cli.js` 屬於第一波必遷移範圍，`scripts/claude-r/`、`scripts/subtree-status.mjs`、`scripts/setup-githooks.mjs` 等另行處理。
 
 ## 背景
 
@@ -82,8 +84,8 @@ src/ddd-workflow/                  # 唯一手改 source
 - [ ] build 不複製外層 `docs/`、`reference/`、`.opencode/`、`dist/` 或 local-only 檔案到 publish repo。
 - [ ] publish repo 內的 generated platform outputs（如 `dist/`）被 publish repo 自己的 `.gitignore` 忽略。
 - [ ] publish repo 不包含任何 symlink；所有 installable output 都是實體檔。
-- [ ] `npx skills add .publish/ddd-workflow --list` 可找到所有 `ddd.*` skills，作為 dotted skill name 與 Agent Skills CLI 相容性 gate。
-- [ ] skills deploy 改由 `npx skills` 負責；publish tree 內的 skill-local `scripts/**` 必須是 build 後實體檔，`deploy-local` 會呼叫 `npx skills add .publish/ddd-workflow ...`，dry-run 只列出 command、不執行。
+- [ ] `npx skills add ./.publish/ddd-workflow --list` 可找到所有 `ddd.*` skills，作為 dotted skill name 與 Agent Skills CLI 相容性 gate。
+- [ ] skills deploy 改由 `npx skills` 負責；publish tree 內的 skill-local `scripts/**` 必須是 build 後實體檔，`deploy-local` 會呼叫 `npx skills add ./.publish/ddd-workflow ...`，dry-run 只列出 command、不執行。
 - [ ] agents 以 canonical source 放入 publish repo；既有 agent 轉換規則被 refactor 成 `src/tooling/agent-transpiler/`，並由 build 產生 publish repo 內可執行的 `bin/transpile-agents.mjs` 或等價入口。
 - [ ] 既有 agent 轉換行為維持相容：Gemini tool 名稱映射、OpenCode permission 推導、Codex TOML 輸出、per-agent override 不回歸。
 - [ ] 需要公開給使用者的 package-level runtime scripts 進入 publish repo 的 `scripts/` namespace，例如 `scripts/claude/statusline.sh`、`scripts/opencode/codex-usage-*`、`scripts/shared/session-trigger.mjs`；skill-owned runner/adapters 則 build 到各自 skill-local `scripts/`。
@@ -170,7 +172,7 @@ src/tooling/
 | `skill runtime build` | 從 `src/ddd-workflow/_runtime/` 產生 self-contained skill-local `scripts/**` 實體檔；不得依賴 symlink、package root runtime 或跨 skill 相對路徑。 | bash smoke test、no-symlink scan、skill-local path resolution test。 |
 | `package runtime scripts` | 非 skill-owned runtime scripts 在 publish repo `scripts/<platform-or-shared>/` 有清楚 namespace；deploy 到 `~/.config/ddd-workflow/runtime/` 或平台要求位置。 | fake HOME copy assertion、dry-run 無副作用測試。 |
 | `package scripts` | `test -> build -> test:pack -> deploy` 可重複執行，失敗會停在正確 gate。 | top-level pipeline smoke test。 |
-| `skills pack validation` | `npx skills` 可辨識所有 `ddd.*` skills，作為 dotted name 風險 gate。 | `npx skills add .publish/ddd-workflow --list`。 |
+| `skills pack validation` | `npx skills` 可辨識所有 `ddd.*` skills，作為 dotted name 風險 gate。 | `npx skills add ./.publish/ddd-workflow --list`。 |
 
 ### Source tree
 
@@ -233,7 +235,7 @@ src/ddd-workflow/
     "build:tooling": "vite build",
     "publish:init": "pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs",
     "build": "pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs",
-    "test:pack": "npx skills add .publish/ddd-workflow --list",
+    "test:pack": "npx skills add ./.publish/ddd-workflow --list",
     "deploy": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
     "deploy:dry-run": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
     "publish:status": "node dist/tooling/publish/status.mjs",
@@ -431,7 +433,7 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
 
 - [ ] 更新 `package.json` scripts 為新 pipeline。
 - [ ] 驗證 `pnpm deploy` 預設實際部署；`pnpm deploy:dry-run` 無副作用。
-- [ ] 驗證 `npx skills add .publish/ddd-workflow --list`。
+- [ ] 驗證 `npx skills add ./.publish/ddd-workflow --list`。
 - [ ] 驗證 `pnpm deploy` 包含 `test`、`build`、`test:pack`、`deploy-local`，且 `deploy:dry-run` 不寫入 HOME。
 - [ ] 記錄完整 pipeline 結果到 `works.md`。
 

@@ -1,23 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * AGENTS Build Tool
+ * Agent transpiler
  *
- * 讀取 ddd-workflow/agents/*.md（Claude 格式），轉換為 Gemini、OpenCode、Codex 三個平台格式，
- * 輸出到 dist/ 目錄。
- *
- * 用法：node scripts/build.js
+ * 讀取 Claude-compatible agents/*.md，轉換為 Gemini、OpenCode、Codex 三個平台格式。
  */
 
 import matter from 'gray-matter'
 import {
   readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync,
 } from 'node:fs'
-import { join, resolve, basename } from 'node:path'
-
-const ROOT = resolve(import.meta.dirname, '..')
-const AGENTS_SRC = join(ROOT, 'ddd-workflow', 'agents')
-const DIST = join(ROOT, 'dist')
+import { join, basename } from 'node:path'
 
 // ─── 映射表 ──────────────────────────────────────────────────────────────────
 
@@ -334,36 +327,47 @@ export function convertToCodex(frontmatter, body, agent_name) {
  * 確保解析失敗時不產出任何 dist/ 產物（原子性）。
  * @returns {Promise<void>}
  */
-export async function build() {
+export async function transpileAgents({
+  source_dir,
+  output_dir,
+  logger = console,
+} = {}) {
+  if (!source_dir) {
+    throw new Error('transpileAgents requires source_dir')
+  }
+
+  if (!output_dir) {
+    throw new Error('transpileAgents requires output_dir')
+  }
+
   // 掃描原始 agent 檔案
-  const agent_files = readdirSync(AGENTS_SRC).filter(f => f.endsWith('.md'))
+  const agent_files = readdirSync(source_dir).filter(f => f.endsWith('.md'))
 
   // Phase 1：解析所有原始檔（不寫入任何檔案）
   const parsed_agents = []
   for (const filename of agent_files) {
-    const filepath = join(AGENTS_SRC, filename)
+    const filepath = join(source_dir, filename)
     const raw = readFileSync(filepath, 'utf-8')
 
     let parsed
     try {
       parsed = matter(raw)
     } catch (err) {
-      console.error(`[build] 解析失敗：${filename}：${err.message}`)
-      process.exit(1)
+      throw new Error(`[agent-transpiler] 解析失敗：${filename}：${err.message}`)
     }
 
     parsed_agents.push({ filename, frontmatter: parsed.data, body: parsed.content })
   }
 
   // Phase 2：全部解析成功，清空 dist/ 並寫入
-  if (existsSync(DIST)) {
-    rmSync(DIST, { recursive: true })
+  if (existsSync(output_dir)) {
+    rmSync(output_dir, { recursive: true })
   }
 
   // 建立輸出目錄
-  const gemini_dir = join(DIST, 'gemini', 'agents')
-  const opencode_dir = join(DIST, 'opencode', 'agents')
-  const codex_dir = join(DIST, 'codex', 'agents')
+  const gemini_dir = join(output_dir, 'gemini', 'agents')
+  const opencode_dir = join(output_dir, 'opencode', 'agents')
+  const codex_dir = join(output_dir, 'codex', 'agents')
 
   mkdirSync(gemini_dir, { recursive: true })
   mkdirSync(opencode_dir, { recursive: true })
@@ -388,18 +392,18 @@ export async function build() {
     const codex_out = convertToCodex(frontmatter, body, agent_name)
     writeFileSync(join(codex_dir, `${stem}.toml`), codex_out)
 
-    console.log(`[build] ${stem}: gemini, opencode, codex`)
+    logger.log?.(`[agent-transpiler] ${stem}: gemini, opencode, codex`)
   }
 
-  console.log(`[build] 完成。輸出至 ${DIST}`)
+  logger.log?.(`[agent-transpiler] 完成。輸出至 ${output_dir}`)
 }
+
+export const build = transpileAgents
 
 // ─── CLI 入口 ─────────────────────────────────────────────────────────────────
 
 // 僅當直接執行時才跑 build()（不被測試 import 時呼叫）
 if (import.meta.url === `file://${process.argv[1]}`) {
-  build().catch(err => {
-    console.error(`[build] 錯誤：${err.message}`)
-    process.exit(1)
-  })
+  console.error('[agent-transpiler] 請改用 src/tooling/bin/transpile-agents.js 或 build 後的 dist entrypoint。')
+  process.exit(1)
 }
