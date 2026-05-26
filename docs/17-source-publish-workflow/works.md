@@ -153,3 +153,12 @@
 - `_runtime/` template 化尚未建立；第一波先用 publish builder materialize source 層 symlink，達成 publish no-symlink。
 - Deploy 的 uninstall、manifest/state 與完整 fake HOME e2e 尚未完成；第一波完成 action planner 與 dry-run gate。
 - `./scripts` 其他工具程式仍保留，依使用者指示不在第一波重構。
+
+### Remote branch 與 fake HOME deploy check
+
+- 已將 `feat/17-source-publish-workflow` 推到 GitHub remote branch `ddd-authoring`，並設定 upstream 為 `ddd-workflow/ddd-authoring`。
+- 新增 `deploy-local --home-dir <path>` 與 `--skip-skills`，讓 non-skill deploy 可套用到 fake HOME。
+- 新增 `pnpm deploy:check`，會寫入 `/tmp/ddd-workflow-deploy-check` 並跳過 `npx skills` 安裝。
+- 新增 `src/tooling/deploy/deploy-local.test.js`，驗證 fake HOME copy output、no-symlink、copy-if-missing config、dry-run 無副作用與 CLI args。
+- `pnpm deploy:check`：通過，測試 9 files / 136 tests，全流程 build 後成功寫入 `/tmp/ddd-workflow-deploy-check`。
+- `find /tmp/ddd-workflow-deploy-check -type l -ls`：無輸出，確認 fake HOME output 沒有 symlink。

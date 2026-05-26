@@ -175,12 +175,16 @@ export function planDeploy({
   publish_root = PUBLISH_ROOT,
   home_dir = homedir(),
   targets = ALL_TARGETS,
+  include_skills = true,
 } = {}) {
   const actions = [
-    planSkillsInstall({ publish_root }),
     ...planConfigDeploy({ publish_root, home_dir }),
     ...planRuntimeDeploy({ publish_root, home_dir }),
   ]
+
+  if (include_skills) {
+    actions.unshift(planSkillsInstall({ publish_root }))
+  }
 
   for (const target of targets) {
     if (target === 'claude') actions.push(...planClaudeDeploy({ publish_root, home_dir }))
@@ -218,16 +222,29 @@ export function applyDeployActions(actions, { dry_run = false, logger = console 
   }
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const dry_run = argv.includes('--dry-run')
+  const include_skills = !argv.includes('--skip-skills')
   const targets = argv.filter((arg) => ALL_TARGETS.includes(arg))
-  return { dry_run, targets: targets.length > 0 ? targets : ALL_TARGETS }
+  const home_dir_index = argv.indexOf('--home-dir')
+  const home_dir = home_dir_index === -1 ? homedir() : argv[home_dir_index + 1]
+
+  if (home_dir_index !== -1 && !home_dir) {
+    throw new Error('--home-dir requires a path')
+  }
+
+  return {
+    dry_run,
+    home_dir,
+    include_skills,
+    targets: targets.length > 0 ? targets : ALL_TARGETS,
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { dry_run, targets } = parseArgs(process.argv.slice(2))
-  const actions = planDeploy({ targets })
   try {
+    const { dry_run, home_dir, include_skills, targets } = parseArgs(process.argv.slice(2))
+    const actions = planDeploy({ home_dir, include_skills, targets })
     applyDeployActions(actions, { dry_run })
   } catch (err) {
     console.error(`[deploy-local] ${err.message}`)

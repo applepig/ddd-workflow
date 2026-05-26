@@ -23,9 +23,11 @@ pnpm test
 pnpm run build
 pnpm run test:pack
 pnpm deploy:dry-run
+pnpm deploy:check
 ```
 
 `pnpm deploy` 會實際寫入 HOME；先用 `pnpm deploy:dry-run` 檢查動作。
+`pnpm deploy:check` 會寫入 `/tmp/ddd-workflow-deploy-check` 並跳過 skills 安裝，用來檢查 non-skill deploy output。
 
 ## 發布流程
 

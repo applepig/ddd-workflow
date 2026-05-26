@@ -12,6 +12,7 @@
     "test:pack": "npx skills add ./.publish/ddd-workflow --list",
     "deploy": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
     "deploy:dry-run": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
+    "deploy:check": "pnpm test && pnpm run build && node dist/tooling/deploy/deploy-local.mjs --home-dir /tmp/ddd-workflow-deploy-check --skip-skills",
     "publish:status": "git -C .publish/ddd-workflow status --short",
     "publish:diff": "git -C .publish/ddd-workflow diff",
     "setup:hooks": "node scripts/setup-githooks.mjs"

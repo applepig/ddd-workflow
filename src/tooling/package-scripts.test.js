@@ -17,6 +17,7 @@ describe('package scripts', () => {
     expect(package_json.scripts['test:pack']).toContain('./.publish/ddd-workflow')
     expect(package_json.scripts.deploy).toContain('dist/tooling/deploy/deploy-local.mjs')
     expect(package_json.scripts['deploy:dry-run']).toContain('--dry-run')
+    expect(package_json.scripts['deploy:check']).toContain('--home-dir /tmp/ddd-workflow-deploy-check --skip-skills')
   })
 
   it('does not expose legacy subtree package scripts', () => {
