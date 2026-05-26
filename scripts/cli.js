@@ -14,7 +14,8 @@ import {
   readdirSync, statSync, symlinkSync, readlinkSync,
   renameSync, lstatSync, realpathSync
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { delimiter, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -50,6 +51,18 @@ const OPENCODE_TUI_PLUGIN_FILES = [
   'opencode-codex-usage-status.tsx',
   'opencode-codex-usage-format.js',
 ]
+
+const SESSION_TRIGGER_CRON_BEGIN = '# BEGIN AGENTS session-trigger'
+const SESSION_TRIGGER_CRON_END = '# END AGENTS session-trigger'
+const SESSION_TRIGGER_SCRIPT = join(SRC, 'scripts', 'session-trigger.mjs')
+const SESSION_TRIGGER_PATH = [
+  join(HOME, '.opencode', 'bin'),
+  join(HOME, '.local', 'bin'),
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+].join(delimiter)
+const SESSION_TRIGGER_CRON_LINE = `0 7,12,17 * * 1-5 PATH=${SESSION_TRIGGER_PATH} ${SESSION_TRIGGER_SCRIPT} >/dev/null 2>&1`
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -233,6 +246,63 @@ function deployConfig() {
   mkdirSync(config_dir, { recursive: true })
   writeFileSync(config_target, readFileSync(config_source, 'utf-8'))
   log(`  ✅ 建立 ${config_target}`)
+}
+
+function readCrontab() {
+  try {
+    return execFileSync('crontab', ['-l'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (err) {
+    const output = `${err.stdout ?? ''}${err.stderr ?? ''}`
+    if (err.status === 1 && output.includes('no crontab')) return ''
+    throw err
+  }
+}
+
+function buildSessionTriggerCrontab(existing) {
+  const lines = existing.split('\n')
+  const kept = []
+  let in_managed_block = false
+
+  for (const line of lines) {
+    if (line.trim() === SESSION_TRIGGER_CRON_BEGIN) {
+      in_managed_block = true
+      continue
+    }
+
+    if (in_managed_block) {
+      if (line.trim() === SESSION_TRIGGER_CRON_END) in_managed_block = false
+      continue
+    }
+
+    const trimmed = line.trim()
+    if (trimmed && !trimmed.startsWith('#') && line.includes(SESSION_TRIGGER_SCRIPT)) continue
+
+    kept.push(line)
+  }
+
+  const base = kept.join('\n').replace(/\n*$/, '')
+  const block = [
+    SESSION_TRIGGER_CRON_BEGIN,
+    '# Installed by `npm run deploy`. Edit ddd-workflow/scripts/session-trigger.mjs in this repo.',
+    SESSION_TRIGGER_CRON_LINE,
+    SESSION_TRIGGER_CRON_END,
+  ].join('\n')
+
+  return `${base}${base ? '\n\n' : ''}${block}\n`
+}
+
+function deploySessionTriggerCron() {
+  log('=== session trigger cron ===')
+  const current = readCrontab()
+  const next = buildSessionTriggerCrontab(current)
+
+  if (current === next) {
+    log('  session-trigger crontab 已正確')
+    return
+  }
+
+  execFileSync('crontab', ['-'], { input: next, encoding: 'utf-8' })
+  log('  更新 session-trigger crontab')
 }
 
 function deployClaude() {
@@ -680,6 +750,8 @@ function main() {
       log(`目標: ${targets.join(', ')}`)
       console.log('')
       deployConfig()
+      console.log('')
+      deploySessionTriggerCron()
       console.log('')
       for (const t of targets) { deployers[t](); console.log('') }
       log('deploy 完成。請重啟各 agent CLI 以載入新設定。')

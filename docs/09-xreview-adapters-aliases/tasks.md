@@ -168,9 +168,9 @@ M1.2、M5.4 是值得平行的區塊。若 coordinator 判斷 4 個 adapter / M5
 
 ### M5.3 Worktree 路徑約定（ADR-8）
 
-- [x] Task 5.3.1：`ddd-workflow/references/AGENTS.md` 於 Git 段落下加 `### Worktree 路徑約定`，說明 `$PROJECT_ROOT/.worktrees/<branch>/` 與與 Claude Code `.claude/worktree/*` 的區別
+- [x] Task 5.3.1：`ddd-workflow/references/AGENTS.md` 於 Git 段落下加 `### Worktree 路徑約定`，說明 `$PROJECT_ROOT/.worktree/<branch>/` 與與 Claude Code `.claude/worktree/*` 的區別
 - [x] Task 5.3.2：`ddd-workflow/skills/ddd.work/SKILL.md` 的 Phase 2 派發段落加入 blockquote 呼應 AGENTS.md 的 convention
-- [x] Task 5.3.3：根目錄 `.gitignore` 加入 `/.worktrees/`
+- [x] Task 5.3.3：根目錄 `.gitignore` 加入 `/.worktree/`
 
 ### M5.4 Adapter sandbox 放行（ADR-9）
 

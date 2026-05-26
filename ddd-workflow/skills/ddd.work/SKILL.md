@@ -181,7 +181,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
    })
    ```
 
-> **Worktree 路徑**：`opencode-worker.sh --isolation worktree` 自動建在 `$PROJECT_ROOT/.worktrees/opencode/<slug>/`，分支名為 `opencode/<slug>`，符合 AGENTS.md 的 `.worktrees/` 約定。`<slug>` 從 `--description` 衍生。
+> **Worktree 路徑**：`opencode-worker.sh --isolation worktree` 自動建在 `$PROJECT_ROOT/.worktree/opencode/<slug>/`，分支名為 `opencode/<slug>`，符合 AGENTS.md 的 `.worktree/` 約定。`<slug>` 從 `--description` 衍生。
 
 > **Worker runner 的 lifecycle 事件**：底層 `opencode-worker.sh` 仍會輸出 `[opencode-worker] DESCRIPTION ...`、`SUBAGENT_TYPE ...`、`MODEL ...`、`CWD ...`、`LOG_FILE <path>`、`RESULT_FILE <path>`、（必要時）`WORKTREE_CREATED` / `WORKTREE_REUSED`、`ERROR ...`、`WARN downstream_pipeline_failed ...`、`NDJSON_RAW <path>`，以 `DONE exit=<N>` 收尾；但這些 lifecycle 事件會進入該 worker 的 job log，不直接出現在 orchestrator stdout。
 
@@ -240,7 +240,7 @@ OpenCode worker 內部若需要再拆更小的任務，可依 OpenCode 自身的
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
 * **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。若變更影響獨立 tasks.md，也必須同步更新並確認。確認後，回到本 skill 從當前 milestone 重新鎖定範圍繼續。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
-* **Worker 隔離**：所有派出的 worker 一律帶 `--isolation worktree`。Worker 在獨立的 worktree（`$PROJECT_ROOT/.worktrees/opencode/<slug>/`）中工作、測試，但不得自行 commit；commit 由 coordinator merge 後、經使用者確認才執行，確保不會互相干擾或汙染主線。
+* **Worker 隔離**：所有派出的 worker 一律帶 `--isolation worktree`。Worker 在獨立的 worktree（`$PROJECT_ROOT/.worktree/opencode/<slug>/`）中工作、測試，但不得自行 commit；commit 由 coordinator merge 後、經使用者確認才執行，確保不會互相干擾或汙染主線。
 * **Worker 自足性**：Worker prompt 必須符合上方 template 的自足性要求——「理解任務」的上下文在 prompt 中，「執行實作」的檔案透過 tool access 按需讀取。
 * **Worker 測試紀律**：違反「Worker 完成協議」中的測試要求（未貼測試輸出、隱瞞失敗、跳過環境問題）一律視為 FAIL，coordinator 退回重做。
 * **測試失敗透明化**：即使 worker 判斷失敗「不是本次變更造成的」，仍必須在回報中明確標註哪些測試失敗、失敗原因、以及為什麼認為與本次無關。Coordinator 會驗證這個判斷。

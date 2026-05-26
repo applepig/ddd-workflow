@@ -163,7 +163,7 @@ Coordinator 用 main session 派出新版 orchestrator（sprint worktree 絕對�
 
 1. **Timeout 簡化**：只在 orchestrator 外層，adapter 不重複（ADR-6）
 2. **事件命名**：`DONE` → `RETURN`，content-layer 失敗由 coordinator peek log 判斷（ADR-7）
-3. **Worktree 路徑約定**：`$PROJECT_ROOT/.worktrees/<branch-name>/`（注意前綴的點與複數 s）（ADR-8）
+3. **Worktree 路徑約定**：`$PROJECT_ROOT/.worktree/<branch-name>/`（注意前綴的點）（ADR-8）
 4. **Sandbox 放行**：opencode 用 `OPENCODE_PERMISSION` env var（最終方案）、gemini 用 `--include-directories` flag（ADR-9）
 
 ### 下一步

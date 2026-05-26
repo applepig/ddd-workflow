@@ -75,6 +75,9 @@ const TRIGGER_HOME = join(homedir(), ".session-trigger")
 const LOG_FILE = join(TRIGGER_HOME, "session-trigger.log")
 const CONFIG_HOME = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
 const OPENCODE_USAGE_FILE = join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage", "codex-usage.json")
+const USER_BIN_PATHS = [join(homedir(), ".opencode", "bin"), join(homedir(), ".local", "bin")]
+const TRIGGER_PATH = [...USER_BIN_PATHS, process.env.PATH ?? ""].filter(Boolean).join(":")
+const ENABLE_CODEX_TRIGGER = false
 
 const AGENTS = [
   {
@@ -92,7 +95,7 @@ const AGENTS = [
     ],
     parseResult: parseClaudeResult,
   },
-  {
+  ...(ENABLE_CODEX_TRIGGER ? [{
     name: "codex",
     cwd: "/tmp",
     cmd: [
@@ -114,7 +117,7 @@ const AGENTS = [
       "--disable", "workspace_dependencies",
     ],
     parseResult: parseCodexResult,
-  },
+  }] : []),
   {
     name: "opencode",
     cwd: "/tmp",
@@ -170,14 +173,14 @@ function log(agent_name, status, message = "") {
 
 function commandExists(cmd) {
   return new Promise((resolve) => {
-    execFile("which", [cmd], (err) => resolve(!err))
+    execFile("sh", ["-c", "command -v -- \"$1\" >/dev/null", "sh", cmd], { env: { ...process.env, PATH: TRIGGER_PATH } }, (err) => resolve(!err))
   })
 }
 
 function run(cmd_args, { timeout_ms = EXEC_TIMEOUT_MS, cwd, env } = {}) {
   return new Promise((resolve) => {
     const [cmd, ...args] = cmd_args
-    const spawn_env = env ? { ...process.env, ...env } : undefined
+    const spawn_env = { ...process.env, PATH: TRIGGER_PATH, ...env }
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], cwd, env: spawn_env })
 
     let stdout = ""

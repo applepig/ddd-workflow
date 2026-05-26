@@ -10,7 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 
@@ -200,6 +200,74 @@ describe('cli test validation for skill-local script symlinks', () => {
   })
 })
 
+describe('cli deploy session-trigger cron', () => {
+  let home_dir
+  let bin_dir
+  let crontab_path
+
+  beforeEach(() => {
+    home_dir = mkdtempLike(join(tmpdir(), 'agents-cli-cron-home-'))
+    bin_dir = join(home_dir, 'bin')
+    crontab_path = join(home_dir, 'crontab.txt')
+    mkdirSync(bin_dir, { recursive: true })
+    writeFileSync(join(bin_dir, 'crontab'), `#!/bin/sh
+set -eu
+if [ "\${1:-}" = "-l" ]; then
+  if [ -f "$MOCK_CRONTAB_FILE" ]; then
+    cat "$MOCK_CRONTAB_FILE"
+    exit 0
+  fi
+  echo "no crontab for test" >&2
+  exit 1
+fi
+if [ "\${1:-}" = "-" ]; then
+  cat > "$MOCK_CRONTAB_FILE"
+  exit 0
+fi
+exit 2
+`, { mode: 0o755 })
+  })
+
+  afterEach(() => {
+    rmSync(home_dir, { recursive: true, force: true })
+  })
+
+  it('should install a managed session-trigger crontab block during deploy', () => {
+    const result = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
+
+    expect(result.status).toBe(0)
+    const crontab = readFileSync(crontab_path, 'utf-8')
+    expect(crontab).toContain('# BEGIN AGENTS session-trigger')
+    expect(crontab).toContain('# END AGENTS session-trigger')
+    expect(crontab).toContain('0 7,12,17 * * 1-5 PATH=')
+    expect(crontab).toContain(join(home_dir, '.opencode', 'bin'))
+    expect(crontab).toContain(join(home_dir, '.local', 'bin'))
+    expect(crontab).toContain(SESSION_TRIGGER_PATH)
+    expect(result.stdout).toContain('更新 session-trigger crontab')
+  })
+
+  it('should replace old unmanaged session-trigger cron lines without duplicating', () => {
+    writeFileSync(crontab_path, [
+      'PATH=/usr/local/bin:/usr/bin:/bin',
+      '5 6 * * * /usr/bin/true',
+      `0 7,12,17 * * 1-5 ${SESSION_TRIGGER_PATH} 2>&1`,
+      '',
+    ].join('\n'))
+
+    const first = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
+    const second = runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path)
+
+    expect(first.status).toBe(0)
+    expect(second.status).toBe(0)
+    const crontab = readFileSync(crontab_path, 'utf-8')
+    expect(crontab).toContain('5 6 * * * /usr/bin/true')
+    expect(crontab).not.toContain(`0 7,12,17 * * 1-5 ${SESSION_TRIGGER_PATH} 2>&1`)
+    expect(countOccurrences(crontab, '# BEGIN AGENTS session-trigger')).toBe(1)
+    expect(countOccurrences(crontab, SESSION_TRIGGER_PATH)).toBe(1)
+    expect(second.stdout).toContain('session-trigger crontab 已正確')
+  })
+})
+
 describe('work orchestrator mode', () => {
   let tmp_dir
 
@@ -347,6 +415,23 @@ function runWorkOrchestrator(jobs_file, worker_script, env = {}) {
       ...env,
     },
   })
+}
+
+function runCliDeployClaudeWithMockCrontab(home_dir, bin_dir, crontab_path) {
+  return spawnSync('node', ['scripts/cli.js', 'deploy', 'claude'], {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    env: {
+      ...process.env,
+      HOME: home_dir,
+      PATH: [bin_dir, process.env.PATH].filter(Boolean).join(delimiter),
+      MOCK_CRONTAB_FILE: crontab_path,
+    },
+  })
+}
+
+function countOccurrences(text, needle) {
+  return text.split(needle).length - 1
 }
 
 function getEventLines(stdout) {

@@ -71,6 +71,7 @@ CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
 : "${STATUSLINE_INVOCATION_LOG:=/tmp/claude/statusline-invocations.log}"
+: "${STATUSLINE_INPUT_LOG:=/tmp/claude/statusline-input.jsonl}"
 
 # ─── OAuth + API Functions ───────────────────────────────────────────────────
 
@@ -129,8 +130,24 @@ fetchUsageAPI() {
     fi
   fi
 
-  # 快取過期——仍重新請求 API，避免長時間停留在 stale usage。
+  # 快取過期——檢查 throttle：若其他 session 近期已請求過，用舊快取
   mkdir -p "$cache_dir"
+  if [[ -f "$throttle_file" ]]; then
+    local throttle_mtime now throttle_age
+    throttle_mtime=$(stat -c %Y "$throttle_file" 2>/dev/null) || throttle_mtime=0
+    now=$(date +%s)
+    throttle_age=$(( now - throttle_mtime ))
+    if (( throttle_age < CACHE_MAX_AGE )); then
+      if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"
+        return 0
+      fi
+      echo ""
+      return 0
+    fi
+  fi
+
+  # 標記：我要打 API 了
   touch "$throttle_file"
 
   # 呼叫 API
@@ -230,6 +247,21 @@ colorByPct() {
   fi
 }
 
+# 將百分比正規化成 0-100 的整數，避免 API decimal 破壞 Bash arithmetic。
+normalizePct() {
+  local pct="$1"
+  local normalized
+  normalized=$(jq -n --arg pct "$pct" '($pct | tonumber? // 0 | round) | if . < 0 then 0 elif . > 100 then 100 else . end' 2>/dev/null) || normalized=0
+  echo "$normalized"
+}
+
+# 依 bar 寬度等比例換算填滿格數，使用 round 而非 floor。
+pctToFilled() {
+  local pct="$1"
+  local width="$2"
+  echo $(( (pct * width + 50) / 100 ))
+}
+
 # 記錄 statusline 主流程被呼叫的頻率。
 # 設 STATUSLINE_INVOCATION_LOG=0 或空字串可停用。
 logStatuslineInvocation() {
@@ -261,6 +293,21 @@ logStatuslineInvocation() {
     "${json_resets_at:-}" >> "$STATUSLINE_INVOCATION_LOG" 2>/dev/null || true
 }
 
+logStatuslineInput() {
+  local input="$1"
+
+  if [[ -z "${STATUSLINE_INPUT_LOG:-}" || "${STATUSLINE_INPUT_LOG:-}" == "0" ]]; then
+    return 0
+  fi
+
+  local log_dir
+  log_dir="$(dirname "$STATUSLINE_INPUT_LOG")"
+  mkdir -p "$log_dir" 2>/dev/null || return 0
+
+  jq -c --arg ts "$(date -Is 2>/dev/null || date)" --argjson payload "$input" \
+    '{ts: $ts, payload: $payload}' >> "$STATUSLINE_INPUT_LOG" 2>/dev/null || true
+}
+
 # ─── 測試模式：只載入函式，不執行主流程 ─────────────────────────────────────
 if [[ "${STATUSLINE_TEST_MODE:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
@@ -275,6 +322,7 @@ eval "$(parseUsageResponse "$usage_response")"
 # ─── 讀取 JSON ───────────────────────────────────────────────────────────────
 
 json=$(cat)
+logStatuslineInput "$json"
 
 # 用 jq 一次解析所有需要的欄位
 eval "$(echo "$json" | jq -r '
@@ -316,10 +364,12 @@ eval "$(echo "$json" | jq -r '
 # 若 API 有資料，用 API 的 five_hour 資料覆蓋 StatusJSON 的 rate_limits
 if [[ -n "$api_five_hour_resets_at" ]]; then
   # API utilization 覆蓋 StatusJSON used_percentage
-  json_used_pct="$api_five_hour_util"
+  json_used_pct=$(normalizePct "$api_five_hour_util")
   # ISO 8601 → Unix timestamp
   json_resets_at=$(date -d "$api_five_hour_resets_at" +%s 2>/dev/null) || json_resets_at=0
 fi
+
+json_used_pct=$(normalizePct "$json_used_pct")
 
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -406,9 +456,8 @@ else
   ctx_max=$CONTEXT_CAP
 fi
 ctx_pct=$(( json_ctx_tokens * 100 / ctx_max ))
-(( ctx_pct > 100 )) && ctx_pct=100
-ctx_filled=$(( ctx_pct / 4 ))
-(( ctx_filled > BAR_WIDTH )) && ctx_filled=$BAR_WIDTH
+ctx_pct=$(normalizePct "$ctx_pct")
+ctx_filled=$(pctToFilled "$ctx_pct" "$BAR_WIDTH")
 
 # 色彩規則：0-60% 綠、60-80% 橘、80%+ 紅
 ctx_color=$(colorByPct "$ctx_pct")
@@ -435,8 +484,7 @@ else
 fi
 
 # Session bar
-session_filled=$(( json_used_pct / 4 ))
-(( session_filled > BAR_WIDTH )) && session_filled=$BAR_WIDTH
+session_filled=$(pctToFilled "$json_used_pct" "$BAR_WIDTH")
 
 # Session bar 色彩規則：0-79% 藍、80-89% 橘、90%+ 紅
 if (( json_used_pct >= 90 )); then

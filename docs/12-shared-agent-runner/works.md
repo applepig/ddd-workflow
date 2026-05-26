@@ -109,5 +109,5 @@
 - 驗證：`npx vitest run scripts/shared-agent-runner.test.js` 通過（13 passed）。
 - 驗證：`npm test` 通過；Claude / Gemini / Codex / OpenCode skill-local script symlink 驗證全綠。
 - 真實 E2E 第一次執行 `work-orchestrator.sh --jobs-file ... --cwd ...` 有抓到環境前置條件：`~/.config/opencode/agents/ddd-developer.md` 是 symlink，但 `dist/opencode/agents/` 尚未存在，導致 OpenCode 回報 `agent "ddd-developer" not found. Falling back to default agent`。補跑 `npm run build` 產生 dist 後再測。
-- 真實 E2E 第二次執行通過：`work-orchestrator.sh` 輸出 `START E2E` / `RETURN E2E` / `ALL_DONE`；worker log 顯示 `WORKTREE_REUSED /home/applepig/Dropbox/projects/AGENTS/.worktrees/opencode/e2e-no-op-smoke`、`SUBAGENT_TYPE ddd-developer`、`MODEL openai/gpt-5.5`、`DONE exit=0`；result file 最後輸出 `DONE: ddd.work OpenCode worker smoke test completed（測試結果：13 passed, 0 failed）`。
+- 真實 E2E 第二次執行通過：`work-orchestrator.sh` 輸出 `START E2E` / `RETURN E2E` / `ALL_DONE`；worker log 顯示 `WORKTREE_REUSED /home/applepig/Dropbox/projects/AGENTS/.worktree/opencode/e2e-no-op-smoke`、`SUBAGENT_TYPE ddd-developer`、`MODEL openai/gpt-5.5`、`DONE exit=0`；result file 最後輸出 `DONE: ddd.work OpenCode worker smoke test completed（測試結果：13 passed, 0 failed）`。
 - E2E 測試 prompt 改用 `npx vitest run scripts/shared-agent-runner.test.js`，避免在 worker worktree 裡跑 `npm test` 時被全域部署 symlink 指向主 repo 的預期 target 影響；這是 deploy 驗證語意，不適合作為隔離 worktree smoke test。
