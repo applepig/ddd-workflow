@@ -7,7 +7,7 @@
 // ## Usage
 //
 //   node session-trigger.mjs            # run once (one-shot)
-//   crontab: 0 7,12,17 * * 1-5 /path/to/session-trigger.mjs 2>&1
+//   crontab: 0 7,12,17 * * 1-5 /path/to/session-trigger.mjs >/dev/null 2>&1
 //
 // ## Setup
 //
@@ -31,11 +31,12 @@
 //
 // ## How this script works
 //
-//   1. Triggers each CLI in parallel (Claude + Codex) with minimal-token
+//   1. Triggers each CLI in parallel (Claude + Codex + opencode) with minimal-token
 //      flags (cheapest model, no tools, custom system prompt, etc.)
 //   2. Verifies each trigger succeeded by parsing the rate-limit response:
 //      - Claude: `rate_limit_event` in --output-format json stdout
 //      - Codex: `token_count` event in ~/.codex/sessions/ file
+//      - opencode: captured `x-codex-*` headers in ~/.config/ddd-workflow/opencode-codex-usage/codex-usage.json
 //   3. On failure, applies retry logic based on the window expiry time:
 //      - Expires within TOLERANCE (45min) → wait, then retry once
 //      - Expires beyond TOLERANCE → skip, wait for the next cron tick
@@ -72,6 +73,8 @@ const EXEC_TIMEOUT_MS = 60 * 1000     // 60 seconds
 const TZ = "Asia/Taipei"
 const TRIGGER_HOME = join(homedir(), ".session-trigger")
 const LOG_FILE = join(TRIGGER_HOME, "session-trigger.log")
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+const OPENCODE_USAGE_FILE = join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage", "codex-usage.json")
 
 const AGENTS = [
   {
@@ -98,7 +101,7 @@ const AGENTS = [
       "--ignore-user-config",
       "--ignore-rules",
       "-C", "/tmp",
-      "-m", "gpt-5.4-mini",
+      "-m", "gpt-5.5",
       "-c", `model_reasoning_effort="low"`,
       "--disable", "shell_tool",
       "--disable", "browser_use",
@@ -111,6 +114,25 @@ const AGENTS = [
       "--disable", "workspace_dependencies",
     ],
     parseResult: parseCodexResult,
+  },
+  {
+    name: "opencode",
+    cwd: "/tmp",
+    env: {
+      OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
+      OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
+    },
+    cmd: [
+      "opencode", "run", "hi",
+      "--format", "json",
+      "--model", "openai/gpt-5.5",
+      "--variant", "low",
+      "--agent", "title",
+      "--title", "session-trigger",
+      "--dir", "/tmp",
+    ],
+    parseResult: parseOpencodeResult,
   },
 ]
 
@@ -285,6 +307,44 @@ async function parseCodexResult(stdout) {
 }
 
 // ---------------------------------------------------------------------------
+// opencode: parse captured Codex usage headers
+// ---------------------------------------------------------------------------
+
+async function readFreshOpencodeUsage(started_at) {
+  for (let i = 0; i < 20; i += 1) {
+    try {
+      const usage = JSON.parse(await readFile(OPENCODE_USAGE_FILE, "utf-8"))
+      const updated_at = Date.parse(usage.updated_at)
+      if (Number.isFinite(updated_at) && updated_at >= started_at - 1000) return usage
+    } catch {}
+
+    await sleep(250)
+  }
+
+  return null
+}
+
+async function parseOpencodeResult(stdout, { started_at } = {}) {
+  const usage = await readFreshOpencodeUsage(started_at ?? 0)
+  if (!usage) return { ok: false, resets_at: null, reply: parseOpencodeReply(stdout) }
+
+  const resets_at_raw = usage.primary?.reset_at
+  const resets_at = typeof resets_at_raw === "number" ? resets_at_raw * 1000 : null
+  const ok = resets_at !== null
+
+  return { ok, resets_at, reply: parseOpencodeReply(stdout) }
+}
+
+function parseOpencodeReply(stdout) {
+  const events = parseJsonl(stdout)
+  const texts = events
+    .filter((e) => e.type === "text" && typeof e.part?.text === "string")
+    .map((e) => e.part.text)
+
+  return texts.length ? texts.join(" ") : null
+}
+
+// ---------------------------------------------------------------------------
 // Core trigger logic
 // ---------------------------------------------------------------------------
 
@@ -342,6 +402,7 @@ async function triggerAgent(agent) {
 }
 
 async function attemptTrigger(agent) {
+  const started_at = Date.now()
   const { stdout, stderr, exit_code } = await run(agent.cmd, { cwd: agent.cwd, env: agent.env })
 
   if (exit_code === "TIMEOUT") {
@@ -355,7 +416,7 @@ async function attemptTrigger(agent) {
     return { ok: false, resets_at: null, reply: null }
   }
 
-  return await agent.parseResult(stdout)
+  return await agent.parseResult(stdout, { started_at })
 }
 
 async function retryTrigger(agent) {
