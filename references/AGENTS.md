@@ -3,13 +3,9 @@
 ## 語言
 
 * 請用台灣中文回話及撰寫文件，使用全形標點符號`，。？！、：「」『』（）`
-* 正確：最佳化、啟用、儲存、支援、回饋
-* 錯誤：優化、激活、存儲、支持、反饋
+* 正確：最佳化、啟用、儲存、支援、回饋、研究
+* 錯誤：優化、激活、存儲、支持、反饋、調研
 * 技術術語直接使用英文（Class、Function、API、ESM、Git），避免強制中譯
-
-## 術語
-
-**Question Tool**：各 CLI 的內建工具，例如 `AskUserQuestion`、`question`、`ask_user`。
 
 ## 角色分工
 
@@ -32,6 +28,13 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 
 這樣設計的原因是：main agent 的 context window 是最珍貴的資源。規劃和協調需要貫穿整個 session 的上下文連貫性，而實作、除錯、review 是可以切割的獨立任務——交給 subagent 用 fresh context 處理，品質更好、也不會讓 main agent 的 context 腐爛。
 
+## 溝通原則
+
+* **Topic Sentence**：每一段話都先寫摘要重點，再把內容展開
+* **先說再做**：執行工具或修改檔案前，先簡單描述說明意圖與理由。禁止沉默地連續呼叫工具
+* **明確的決策點**：提問前先回報已知事實與目前判斷；不可把導覽問題、例行下一步、或可自行查證的事項包裝成決策點
+* **Question Tool**：只有缺少使用者判斷會阻塞下一步，或會改變需求、範圍、風險承擔時，才使用 Question Tool（例如 `AskUserQuestion`、`question`、`ask_user`）
+
 ## DDD 工作流（Document Driven Development）
 
 ### 核心原則
@@ -39,9 +42,8 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 * **SSOT**：每個需求對應一個 `docs/<編號>-<名稱>/` 文件包，作為唯一真相來源。
 * **No Code Without Docs**：在 `spec.md` 獲得使用者確認前，嚴禁撰寫程式碼。若本 sprint 需要獨立 `tasks.md`，也必須先確認後才可實作。
 * **No Code Without Tests**：修改 production code 前，必須先建立或更新測試。
-* **Sync on Finish**：標記任務完成前，必須先更新任務來源（`spec.md` 內的 Milestones 或 `tasks.md`）和 `works.md`。
+* **Sync on Finish**：視為 pre-commit hook——commit 前必須先更新 `spec.md` Milestones（或 `tasks.md`）的完成狀態與 `works.md`，未更新不得 commit。
 * **規格變更**：開發中若需變更規格，暫停開發，同步更新 spec、tasks（若有）與 works，經使用者確認後才恢復。
-* **明確的決策點**：只有缺少使用者判斷會阻塞下一步，或會改變需求、範圍、風險承擔時，才使用 Question Tool。提問前先回報已知事實與目前判斷；不可把導覽問題、例行下一步、或可自行查證的事項包裝成決策點。
 
 ### 文件結構
 
@@ -73,50 +75,27 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 
 > 各階段的詳細步驟請參考對應的 skill：
 > `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
-> E2E 測試用 `/ddd.e2e`。
+> E2E 測試用 `/ddd.e2e`。TDD 原則上不需要 E2E 層次。
 
-### E2E 測試的特殊處理
+## 開發原則
 
-E2E 測試由 `/ddd.e2e` skill 在 **main agent context** 中執行，不派給 subagent。
-
-原因：E2E 測試充滿需要使用者判斷的灰色地帶（頁面行為與 spec 不符、edge case 取捨、flaky test 的根因），subagent 無法暫停發問，會傾向縮減測試範圍來避開問題。保留在 main agent 確保每個判斷點都能跟使用者確認。
-
-`/ddd.e2e` 支援兩種模式：
-- **Greenfield**：從 spec.md 驅動，提取驗收條件規劃測試案例
-- **Retrofit**：既有專案補 E2E，先探索 app 再分批規劃
+* **最小修改**：只改任務要求的部分，不順手重構、不主動「改善」沒壞的東西
+* **YAGNI**：解決當前問題即可，不預建抽象層、不加「以後可能用到」的參數
+* **Rule of Three**：重複出現第三次才抽共用，過早抽象比重複更有害
+* **Inline-first**：新邏輯先寫在使用處，複雜度或重複度超過門檻才抽成獨立 function
+* **註解寫 Why 不寫 What**：程式碼本身就是 what，只在理由不明顯時才加註解
+* **不主動重構**：重構是獨立任務，不是實作的附帶動作
 
 ## Coding Style
 
 ### 基本原則
 
-* 語言：依專案設定（JS + JSDoc、TypeScript 等）
-* 樣式：依專案設定（CSS modules、Tailwind、原生 CSS 等）
 * 模組：ESM (`import/export`) + 相對路徑
 * 流程控制：Guard Clauses 優先，減少巢狀
 * 函式設計：純函式優先，Class 只負責管理狀態與生命週期
-
-### 檔案組織
-
-* **Single Function File**：一個檔案只匯出一個 function（或一個 Class），減少檔案長度方便LLM閱讀
 * 相關 function 用**資料夾**分組，讓 file system 充當導航索引
-* **禁止 barrel file**（`index.ts` re-export）——Vite HMR 變慢、tree-shaking 失效。直接 import 個別檔案
-* Class 一個檔案一個，檔名用 kebab-case 對應 Class 名稱
+* **禁止 barrel file**（`index.ts` re-export）——直接 import 個別檔案
 * 型別定義（`interface` / `type`）可集中在同資料夾的 `types.ts`
-
-```
-# ✅ 正確：資料夾分組 + 直接 import
-server/services/session/
-  create-session.ts       # export function createSession()
-  list-sessions.ts        # export function listSessions()
-  delete-session.ts       # export function deleteSession()
-
-import { createSession } from '../services/session/create-session'
-
-# ❌ 錯誤：barrel file re-export
-server/services/session/
-  index.ts                # export * from './create-session' ← 禁止
-import { createSession } from '../services/session'
-```
 
 ### 命名慣例
 
@@ -136,10 +115,13 @@ import { createSession } from '../services/session'
 * 動詞開頭：程式內部呼叫 → `submitForm()`, `fetchUserData()`
 * `get/set` 前綴：存取器 → `setDateFormat()`, `getParsedData()`
 
-## 測試
+## 技術棧
 
-* 單元/整合測試：**Vitest**
-* E2E 測試：**Playwright**
+* 建置：Vite
+* 框架：Nuxt、Nuxt UI
+* 儲存/狀態：Node 內建 SQLite、Pinia
+* 測試：Vitest、Playwright
+* Lint / Format：ESLint、Pint(Laravel)
 * Spec 中的驗收條件必須對映到測試案例
 
 ## 除錯紀律
@@ -162,11 +144,9 @@ import { createSession } from '../services/session'
 
 ### Worktree 路徑約定
 
-手動 `git worktree add` 時，路徑一律建在 `$PROJECT_ROOT/.worktrees/<branch-name>/`，並把 `/.worktrees` 加進根目錄 `.gitignore`。這個約定確保：
-
-- worktree 天然在 project root 之下，opencode / gemini 等 CLI 的 workspace sandbox 不會擋路（sandbox 預設只放行當前 project）
-- 單一 convention 比「各 CLI 各自加放行 flag」簡單
-- 不與 Claude Code `Agent({ isolation: "worktree" })` 硬編碼的 `.claude/worktree/*` 衝突——那是 harness 自動行為，本約定指的是**手動**建 worktree 時的建議位置
+- 預設建立 `git worktree add` 時，路徑放在 `$PROJECT_ROOT/.worktree/<branch-name>/`
+- 把 `.worktree` 加進 `.gitignore`
+- Claude Code `Agent({ isolation: "worktree" })` 可能會建立在 `.claude/worktree/*` ，視為可接受例外
 
 ## 工具偏好
 
@@ -174,21 +154,13 @@ import { createSession } from '../services/session'
 
 | 用途 | 優先使用 | 避免 |
 |------|---------|------|
-| Node.js 套件管理 | `pnpm` | npm, yarn |
-| Python 套件管理 | `uv` | pip, pip3 |
-| 程式碼搜尋 | `rg`（ripgrep） | grep |
-| 檔案搜尋 | `fd` | find |
+| 套件管理 | `brew`、`pnpm`、`uv` | npm, yarn, pip |
+| 檢查 CLI 可用性 | `command -v <cmd>` | `which` |
+| 搜尋 | `rg`（程式碼）、`fd`（檔案） | grep, find |
 | JSON 處理 | `jq` | 手動 parse |
 | 刪除檔案 | `trash-put`（trash-cli） | `rm` |
 | 容器編排 | `docker compose` (v2) | `docker-compose` (v1) |
-| GitHub 平台操作 | `gh` | 手動開網頁操作 |
-| GitLab 平台操作 | `glab` | 手動開網頁操作 |
-| 反向代理 | Traefik（Docker label 設定路由） | nginx |
-| 瀏覽器自動化 | `agent-browser --cdp 9222`（連接既有 Chrome） | 不加 `--cdp` 另開 instance |
-| 檢查 CLI 是否可用 | `command -v <cmd>` 或直接執行 `<cmd> --version` | `which`（npm global 裝的工具不在 `which` 搜尋路徑） |
-| 查外部 GitHub repo 文件結構 / 全文 | `uvx ask-deepwiki {structure\|contents} <owner/repo>` | 手動翻 GitHub 網站 |
-| 對外部 GitHub repo 自然語言提問 | `uvx ask-deepwiki ask <owner/repo> "問題"` | 逐檔讀 node_modules 猜行為 |
-
-## Cross Review 模型設定
-
-`/ddd.xreview` 的 reviewer 模型清單在 `~/.config/ddd-workflow/xreview.json`（由 `npm run deploy` 部署預設值，已存在則保留使用者設定）。新增/移除 reviewer 直接編輯該 JSON 檔即可，無需動本表。臨時覆蓋可在 orchestrator command 後接 `cli:model` 位置參數。失敗時直接標示失敗並呈現已取得結果，不做退化重試。
+| 反向代理 | Traefik（Docker label 路由） | nginx |
+| 平台操作 | `gh`（GitHub）、`glab`（GitLab） | 手動開網頁 |
+| 瀏覽器自動化 | `agent-browser --cdp 9222` | 手動CDP connection |
+| 查外部 GitHub repo | `uvx ask-deepwiki {structure\|contents\|ask} <owner/repo>` | 手動翻 GitHub / 逐檔讀 |

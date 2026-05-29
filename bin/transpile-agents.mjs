@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+import{createRequire as e}from"node:module";e(import.meta.url);import{t}from"../chunks/agent-transpiler-DsvG0Flo.mjs";import{join as n}from"node:path";var r=process.cwd();t({source_dir:n(r,`agents`),output_dir:n(r,`dist`)}).catch(e=>{console.error(`[transpile-agents] ${e.message}`),process.exit(1)});

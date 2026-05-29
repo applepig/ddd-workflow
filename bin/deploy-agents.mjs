@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+import{createRequire as e}from"node:module";e(import.meta.url);import{ALL_TARGETS as t,applyDeployActions as n,planDeploy as r}from"../deploy/deploy-local.mjs";var i=process.argv.includes(`--dry-run`),a=process.argv.slice(2).filter(e=>t.includes(e)),o=r({publish_root:process.cwd(),targets:a.length>0?a:t}).filter(e=>e.type!==`command`);try{n(o,{dry_run:i})}catch(e){console.error(`[deploy-agents] ${e.message}`),process.exit(1)}

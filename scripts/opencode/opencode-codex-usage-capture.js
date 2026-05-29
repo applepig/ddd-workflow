@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises"
+import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 
@@ -86,7 +86,7 @@ function codexHeadersObject(headers) {
 async function writeUsage(usage) {
   const file = usagePath()
   await mkdir(path.dirname(file), { recursive: true })
-  await Bun.write(file, JSON.stringify(usage, null, 2) + "\n")
+  await writeFile(file, JSON.stringify(usage, null, 2) + "\n")
 }
 
 async function writeDebug(startedAt, url, response) {

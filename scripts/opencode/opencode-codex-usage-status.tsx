@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
-import { createMemo, createSignal, Show } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { limitColumns } from "./opencode-codex-usage-format.js"
 
 const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
@@ -38,12 +38,10 @@ function UsageView(props) {
   const secondary = createMemo(() => props.usage()?.secondary)
 
   return (
-    <Show when={props.usage()}>
-      <box flexDirection="column" flexShrink={0}>
-        <LimitView api={props.api} label="5hr" limit={primary()} now={props.now()} />
-        <LimitView api={props.api} label="week" limit={secondary()} now={props.now()} />
-      </box>
-    </Show>
+    <box flexDirection="column" flexShrink={0}>
+      <LimitView api={props.api} label="5hr" limit={primary()} now={props.now()} />
+      <LimitView api={props.api} label="week" limit={secondary()} now={props.now()} />
+    </box>
   )
 }
 

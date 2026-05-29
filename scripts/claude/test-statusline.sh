@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-statusline.sh — Unit tests for statusline.sh OAuth + API + cache functions
 #
-# 執行方式：bash ddd-workflow/scripts/test-statusline.sh
+# 執行方式：bash src/ddd-workflow/scripts/claude/test-statusline.sh
 # 不需要任何外部測試框架，使用簡易 assert 函式
 
 # 不使用 set -euo pipefail，測試需要捕捉各種回傳值
@@ -100,6 +100,14 @@ assert_line_count() {
     echo "    actual line count:   $actual_count"
     FAIL_COUNT=$(( FAIL_COUNT + 1 ))
   fi
+}
+
+count_occurrences() {
+  local text="$1"
+  local needle="$2"
+  local without
+  without="${text//${needle}/}"
+  echo $(( (${#text} - ${#without}) / ${#needle} ))
 }
 
 print_summary() {
@@ -250,6 +258,7 @@ echo ""
 echo "--- Cache write: should create cache file ---"
 
 rm -f "$TEST_CACHE_FILE"
+rm -f "${TEST_CACHE_DIR}/statusline-usage.throttle"
 export PATH="${TEST_TMP_DIR}:${OLD_PATH}"
 
 fetchUsageAPI "test-token-123" > /dev/null
@@ -286,6 +295,7 @@ echo "--- Cache expired: should call API again ---"
 
 echo "$MOCK_API_RESPONSE" > "$TEST_CACHE_FILE"
 touch -d "120 seconds ago" "$TEST_CACHE_FILE"
+rm -f "${TEST_CACHE_DIR}/statusline-usage.throttle"
 
 cat > "$MOCK_CURL_SCRIPT" << 'SCRIPT'
 #!/usr/bin/env bash
@@ -300,6 +310,29 @@ five_hour_util=$(echo "$result" | jq -r '.five_hour.utilization')
 assert_equals "should return fresh API data after cache expired" "77" "$five_hour_util"
 
 export PATH="$OLD_PATH"
+
+# Test: throttle 新鮮時，其他 session 應使用舊快取，不重複呼叫 API
+echo ""
+echo "--- Cache expired + fresh throttle: should use stale cache ---"
+
+echo "$MOCK_API_RESPONSE" > "$TEST_CACHE_FILE"
+touch -d "120 seconds ago" "$TEST_CACHE_FILE"
+touch "${TEST_CACHE_DIR}/statusline-usage.throttle"
+
+cat > "$MOCK_CURL_SCRIPT" << 'SCRIPT'
+#!/usr/bin/env bash
+echo '{"five_hour":{"utilization":99,"resets_at":"2099-01-01T00:00:00Z"},"seven_day":{"utilization":99,"resets_at":"2099-01-01T00:00:00Z"},"extra_usage":{"is_enabled":false}}'
+exit 0
+SCRIPT
+ln -sf "$MOCK_CURL_SCRIPT" "${TEST_TMP_DIR}/curl"
+export PATH="${TEST_TMP_DIR}:${OLD_PATH}"
+
+result=$(fetchUsageAPI "test-token-123")
+five_hour_util=$(echo "$result" | jq -r '.five_hour.utilization')
+assert_equals "should return stale cache when throttle is fresh" "42" "$five_hour_util"
+
+export PATH="$OLD_PATH"
+rm -f "${TEST_CACHE_DIR}/statusline-usage.throttle"
 
 # Test: API 失敗時 fallback 到舊快取
 echo ""
@@ -454,12 +487,18 @@ result=$(echo "$MOCK_STATUS_JSON" | \
   STATUSLINE_TEST_MODE="" \
   STATUSLINE_CACHE_FILE="$test_m2_cache_file" \
   STATUSLINE_CREDENTIALS_FILE="$test_m2_cred_file" \
+  STATUSLINE_INVOCATION_LOG="${TEST_TMP_DIR}/statusline-invocations.log" \
   STATUSLINE_TERM_COLS=80 \
   bash "$STATUSLINE_SH" 2>/dev/null)
 
 # 輸出應包含 42%（API 值）而非 75%（StatusJSON 值）
 assert_contains "should show API utilization (42%) in Session bar" "$result" "42%"
 assert_not_contains "should NOT show StatusJSON used_pct (75%)" "$result" "75%"
+
+invocation_log=$(cat "${TEST_TMP_DIR}/statusline-invocations.log" 2>/dev/null || true)
+assert_contains "should log statusline invocation" "$invocation_log" "mode="
+assert_contains "should log invocation terminal cols" "$invocation_log" "cols="
+assert_contains "should log invocation usage" "$invocation_log" "usage=42"
 
 # Test: API 有資料時，resets_at 被轉為 epoch（顯示為倒數計時器）
 echo ""
@@ -487,6 +526,37 @@ result_no_api=$(echo "$MOCK_STATUS_JSON" | \
 assert_contains "should show StatusJSON used_pct (75%)" "$result_no_api" "75%"
 # 輸出應包含 --:--（因為 StatusJSON 的 resets_at=0）
 assert_contains "should show --:-- when resets_at is 0" "$result_no_api" "--:--"
+
+# Test: API decimal utilization 應 round 成整數，bar 依 BAR_WIDTH 比例繪製
+echo ""
+echo "--- API decimal utilization: should round percentage and bar cells ---"
+
+api_cache_decimal='{"five_hour":{"utilization":42.6,"resets_at":"2099-04-02T15:30:00Z"},"seven_day":{"utilization":18,"resets_at":"2099-04-05T00:00:00Z"},"extra_usage":{"is_enabled":false}}'
+test_decimal_cache_dir="${TEST_TMP_DIR}/decimal-cache"
+test_decimal_cache_file="${test_decimal_cache_dir}/statusline-usage-cache.json"
+mkdir -p "$test_decimal_cache_dir"
+echo "$api_cache_decimal" > "$test_decimal_cache_file"
+touch "$test_decimal_cache_file"
+
+test_decimal_cred_dir="${TEST_TMP_DIR}/decimal-cred"
+test_decimal_cred_file="${test_decimal_cred_dir}/.credentials.json"
+mkdir -p "$test_decimal_cred_dir"
+echo '{"claudeAiOauth":{"accessToken":"test-token"}}' > "$test_decimal_cred_file"
+
+result_decimal=$(echo "$MOCK_STATUS_JSON" | \
+  STATUSLINE_TEST_MODE="" \
+  STATUSLINE_CACHE_FILE="$test_decimal_cache_file" \
+  STATUSLINE_CREDENTIALS_FILE="$test_decimal_cred_file" \
+  STATUSLINE_INVOCATION_LOG=0 \
+  STATUSLINE_TERM_COLS=80 \
+  bash "$STATUSLINE_SH" 2>/dev/null)
+
+assert_contains "should show rounded API utilization (43%)" "$result_decimal" "43%"
+assert_not_contains "should not show raw decimal utilization" "$result_decimal" "42.6%"
+
+line2_decimal=$(printf '%s' "$result_decimal" | sed -n '2p')
+filled_count=$(count_occurrences "$line2_decimal" "$FILL_CHAR")
+assert_equals "43% session bar should fill 11 cells" "11" "$filled_count"
 
 # ─── Test: M3 — Compact 模式 ────────────────────────────────────────────────
 
