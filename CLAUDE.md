@@ -19,6 +19,13 @@ dist/tooling/                      # generated tooling entrypoints
 - `pnpm run test:pack` 執行 `npx skills add ./.publish/ddd-workflow --list`，作為 dotted skill name 與 package layout gate。
 - `pnpm deploy:dry-run` 會串起 `test -> build -> test:pack -> deploy-local --dry-run`，不寫入 HOME。
 
+## Git 策略
+
+- 外層 repo 是 local authoring repo，不推 GitHub branch。
+- GitHub 上的 `applepig/ddd-workflow` 只接受 `.publish/ddd-workflow/` 內層 publish checkout 的 commit。
+- 更新公開 PR 時，只在 `.publish/ddd-workflow/` 內 commit / push；不要把外層 `feat/*`、`ddd-authoring` 或其他 local branch 推到 GitHub。
+- 目前 publish PR branch 是 `publish/17-source-publish-workflow`，對應 PR：`https://github.com/applepig/ddd-workflow/pull/15`。
+
 ## 常用指令
 
 ```bash
