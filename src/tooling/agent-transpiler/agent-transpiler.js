@@ -403,7 +403,7 @@ export const build = transpileAgents
 // ─── CLI 入口 ─────────────────────────────────────────────────────────────────
 
 // 僅當直接執行時才跑 build()（不被測試 import 時呼叫）
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url.endsWith('/agent-transpiler.js') && import.meta.url === `file://${process.argv[1]}`) {
   console.error('[agent-transpiler] 請改用 src/tooling/bin/transpile-agents.js 或 build 後的 dist entrypoint。')
   process.exit(1)
 }

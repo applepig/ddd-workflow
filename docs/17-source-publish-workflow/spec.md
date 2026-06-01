@@ -445,3 +445,77 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
 - [ ] 更新 `CLAUDE.md` 或專案操作文件，移除 subtree 主流程說明。
 - [ ] 移除 `package.json` 的 `subtree:*` scripts。
 - [ ] 在 `works.md` 記錄完成狀態、測試結果與舊 subtree 流程移除結果。
+
+### Milestone 8: Deploy Manifest（Build / Deploy Lock）
+> 預期結果：build 階段產生 `.build-manifest.json`，deploy 階段產生 `~/.config/ddd-workflow/deploy.json`；deploy 可自動偵測 stale build、skip 未變更 unit、清理已移除 unit。
+> 驗證方式：`pnpm test` 涵蓋 manifest 產生與比對邏輯；`pnpm deploy:dry-run` 根據 manifest diff 列出 skip/install/remove 動作；stale build 時 deploy 被擋住。
+
+#### 設計
+
+兩份分離的 manifest：
+
+| 檔案 | 階段 | 位置 | 用途 |
+|------|------|------|------|
+| Build Manifest | build | `.publish/ddd-workflow/.build-manifest.json` | 記錄 source→publish 狀態 |
+| Deploy Manifest | deploy | `~/.config/ddd-workflow/deploy.json` | 記錄實際部署狀態（machine-local） |
+
+**Build Manifest 結構：**
+
+```jsonc
+{
+  "version": 1,
+  "sourceTreeHash": "sha256 of src/ddd-workflow/**",
+  "buildTime": "ISO-8601",
+  "units": {
+    "skill:ddd.work":              { "hash": "sha256" },
+    "agent:claude:ddd-developer":  { "hash": "sha256" },
+    "agent:gemini:ddd-developer":  { "hash": "sha256" },
+    "config:xreview":              { "hash": "sha256", "strategy": "copy-if-missing" },
+    "script:claude:statusline.sh": { "hash": "sha256" }
+  }
+}
+```
+
+**Deploy Manifest 結構：**
+
+```jsonc
+{
+  "version": 1,
+  "deployedFrom": "/path/to/.publish/ddd-workflow",
+  "deployedAt": "ISO-8601",
+  "units": {
+    "skill:ddd.work":             { "hash": "sha256", "target": "npx-skills" },
+    "agent:claude:ddd-developer": { "hash": "sha256", "target": "~/.claude/agents/ddd-developer.md" },
+    "reference:AGENTS.md":        {
+      "hash": "sha256",
+      "target": "~/.claude/CLAUDE.md",
+      "targets": ["~/.claude/CLAUDE.md", "~/.gemini/GEMINI.md", "~/.codex/AGENTS.md"]
+    },
+    "config:xreview":             { "hash": "sha256", "target": "~/.config/ddd-workflow/xreview.json", "skipped": true }
+  }
+}
+```
+
+`target` 保留為主要 / 第一個 target，讓單 target unit 維持簡單讀法；同一 unit 若會部署到多個平台 target（例如 `reference:AGENTS.md`），必須同時記錄 `targets: string[]`。remove 必須同時支援舊 manifest 的 `target` string 與新 manifest 的 `targets` array，並刪除所有 managed targets；`null` 與 `npx-skills` 仍只清理 manifest entry，不做實體刪除。
+
+**Deploy 判斷邏輯：**
+
+1. Stale build gate：重算 `sourceTreeHash`，與 build manifest 不一致 → 擋住，提示 `pnpm run build`。
+2. 對每個 unit：
+   - `strategy=copy-if-missing` + target 已存在 → skip
+   - build hash == deploy hash → skip（已最新）
+   - build hash != deploy hash → reinstall
+   - build 有、deploy 沒有 → 新增
+   - deploy 有、build 沒有 → 移除所有 managed targets + 移除 entry；`target=null` 或 `target=npx-skills` 僅清理 manifest entry，不做實體刪除
+
+**Hash 算法：** SHA-256 of sorted file contents within each unit（與 `skills-lock.json` 的 `computedHash` 同算法，但自行計算不依賴外部 lock）。`sourceTreeHash` 必須納入 source tree symlink metadata：symlink path 與 link target 變更都會改變 hash；source-only `_runtime/` 仍維持既有 skip 行為。
+
+**XReview 修正後的 deploy 約束：** manifest-aware deploy 不得在只要有任一 changed unit 時全量覆寫。`install` units 才套用 copy/command；`skip` units 不動；`remove` units 只依 deploy manifest 中明確記錄的 managed file target 刪除。copy action 必須帶 precise unit key，避免用檔名片段猜測 target 導致 Claude/Gemini/OpenCode/Codex 同名 agent 寫錯 manifest target。
+
+- [x] Build 階段產生 `.build-manifest.json`，記錄 `sourceTreeHash` 與每個 deployable unit 的 content hash。
+- [x] Deploy 階段讀取 build manifest + deploy manifest，依 hash 比對決定 skip/install/remove。
+- [x] `strategy=copy-if-missing` 的 unit，target 已存在時 skip，不比對 hash。
+- [x] Deploy 有但 build 沒有的 unit，移除 managed file target 並清理 deploy manifest entry；`npx-skills` 僅清 manifest。
+- [x] Stale build gate：deploy 前重算 sourceTreeHash，不一致時擋住並提示 rebuild。
+- [x] `deploy --dry-run` 根據 manifest diff 列出動作，不修改 deploy manifest，也不修改 HOME。
+- [x] Deploy manifest 寫入 `~/.config/ddd-workflow/deploy.json`，不進 git。

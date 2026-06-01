@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -81,17 +82,78 @@ describe('buildPublish', () => {
   })
 
   it('writes publish package metadata and platform agent dist', async () => {
+    mkdirSync(publish_root, { recursive: true })
+    spawnSync('git', ['init'], { cwd: publish_root })
+    const tooling_dist_root = join(tmp_dir, 'dist', 'tooling')
+    mkdirSync(join(tooling_dist_root, 'bin'), { recursive: true })
+    mkdirSync(join(tooling_dist_root, 'chunks'), { recursive: true })
+    mkdirSync(join(tooling_dist_root, 'deploy'), { recursive: true })
+    writeFileSync(join(tooling_dist_root, 'bin', 'transpile-agents.mjs'), 'import "../chunks/agent-transpiler-test.mjs"\n')
+    writeFileSync(join(tooling_dist_root, 'bin', 'deploy-agents.mjs'), 'import "../deploy/deploy-local.mjs"\n')
+    writeFileSync(join(tooling_dist_root, 'chunks', 'agent-transpiler-test.mjs'), 'export const ok = true\n')
+    writeFileSync(join(tooling_dist_root, 'deploy', 'deploy-local.mjs'), 'export const ok = true\n')
+
     await buildPublish({
       source_root,
       publish_root,
-      tooling_dist_root: join(tmp_dir, 'dist', 'tooling'),
+      tooling_dist_root,
       logger: { log() {} },
     })
 
     expect(existsSync(join(publish_root, 'package.json'))).toBe(true)
+    expect(existsSync(join(publish_root, 'chunks'))).toBe(false)
+    expect(existsSync(join(publish_root, 'deploy'))).toBe(false)
     expect(existsSync(join(publish_root, 'dist', 'gemini', 'agents', 'ddd-test.md'))).toBe(true)
     expect(existsSync(join(publish_root, 'dist', 'opencode', 'agents', 'ddd-test.md'))).toBe(true)
     expect(existsSync(join(publish_root, 'dist', 'codex', 'agents', 'ddd-test.toml'))).toBe(true)
+
+    const transpile_bin = readFileSync(join(publish_root, 'bin', 'transpile-agents.mjs'), 'utf8')
+    const deploy_bin = readFileSync(join(publish_root, 'bin', 'deploy-agents.mjs'), 'utf8')
+
+    expect(transpile_bin).not.toMatch(/\.\.\/chunks/)
+    expect(transpile_bin).not.toMatch(/from\s*["']gray-matter["']/)
+    expect(deploy_bin).not.toMatch(/\.\.\/chunks/)
+    expect(deploy_bin).not.toMatch(/\.\.\/deploy/)
+  })
+
+  it('should write .build-manifest.json after build', async () => {
+    mkdirSync(publish_root, { recursive: true })
+    spawnSync('git', ['init'], { cwd: publish_root })
+    const tooling_dist_root = join(tmp_dir, 'dist', 'tooling')
+    mkdirSync(join(tooling_dist_root, 'bin'), { recursive: true })
+    mkdirSync(join(tooling_dist_root, 'chunks'), { recursive: true })
+    mkdirSync(join(tooling_dist_root, 'deploy'), { recursive: true })
+    writeFileSync(join(tooling_dist_root, 'bin', 'transpile-agents.mjs'), 'import "../chunks/agent-transpiler-test.mjs"\n')
+    writeFileSync(join(tooling_dist_root, 'bin', 'deploy-agents.mjs'), 'import "../deploy/deploy-local.mjs"\n')
+    writeFileSync(join(tooling_dist_root, 'chunks', 'agent-transpiler-test.mjs'), 'export const ok = true\n')
+    writeFileSync(join(tooling_dist_root, 'deploy', 'deploy-local.mjs'), 'export const ok = true\n')
+
+    await buildPublish({
+      source_root,
+      publish_root,
+      tooling_dist_root,
+      logger: { log() {} },
+    })
+
+    const manifest_path = join(publish_root, '.build-manifest.json')
+    expect(existsSync(manifest_path)).toBe(true)
+
+    const manifest = JSON.parse(readFileSync(manifest_path, 'utf8'))
+    expect(manifest.version).toBe(1)
+    expect(manifest.sourceTreeHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(manifest.buildTime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(manifest.units).toBeDefined()
+    expect(typeof manifest.units).toBe('object')
+    expect(Object.keys(manifest.units).length).toBeGreaterThan(0)
+  })
+
+  it('fails when managed publish checkout is missing', async () => {
+    await expect(buildPublish({
+      source_root,
+      publish_root,
+      tooling_dist_root: join(tmp_dir, 'dist', 'tooling'),
+      logger: { log() {} },
+    })).rejects.toThrow(/請先執行 pnpm run publish:init/)
   })
 
   it('fails dirty managed publish checkout unless forced', () => {
@@ -101,5 +163,51 @@ describe('buildPublish', () => {
 
     expect(() => guardCleanPublish({ publish_root })).toThrow(/未提交變更/)
     expect(() => guardCleanPublish({ publish_root, allow_dirty: true })).not.toThrow()
+  })
+
+  it('runs public bin entrypoints from the publish root', async () => {
+    mkdirSync(publish_root, { recursive: true })
+    spawnSync('git', ['init'], { cwd: publish_root })
+    const tooling_dist_root = join(tmp_dir, 'dist', 'tooling')
+    const build_result = spawnSync('pnpm', ['exec', 'vite', 'build', '--outDir', tooling_dist_root], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    })
+
+    expect(build_result.status, build_result.stderr || build_result.stdout).toBe(0)
+
+    await buildPublish({
+      source_root,
+      publish_root,
+      tooling_dist_root,
+      logger: { log() {} },
+    })
+    rmSync(join(publish_root, 'dist'), { recursive: true, force: true })
+
+    const transpile_bin = readFileSync(join(publish_root, 'bin', 'transpile-agents.mjs'), 'utf8')
+    const deploy_bin = readFileSync(join(publish_root, 'bin', 'deploy-agents.mjs'), 'utf8')
+
+    const transpile_result = spawnSync('node', ['bin/transpile-agents.mjs'], {
+      cwd: publish_root,
+      encoding: 'utf8',
+    })
+    const deploy_result = spawnSync('node', ['bin/deploy-agents.mjs', '--dry-run'], {
+      cwd: publish_root,
+      encoding: 'utf8',
+    })
+
+    expect(transpile_result.status, transpile_result.stderr || transpile_result.stdout).toBe(0)
+    expect(existsSync(join(publish_root, 'dist', 'gemini', 'agents', 'ddd-test.md'))).toBe(true)
+    expect(existsSync(join(publish_root, 'dist', 'opencode', 'agents', 'ddd-test.md'))).toBe(true)
+    expect(existsSync(join(publish_root, 'dist', 'codex', 'agents', 'ddd-test.toml'))).toBe(true)
+    expect(existsSync(join(publish_root, 'node_modules'))).toBe(false)
+    expect(existsSync(join(publish_root, 'chunks'))).toBe(false)
+    expect(existsSync(join(publish_root, 'deploy'))).toBe(false)
+    expect(transpile_bin).not.toMatch(/\.\.\/chunks/)
+    expect(transpile_bin).not.toMatch(/from\s*["']gray-matter["']/)
+    expect(deploy_bin).not.toMatch(/\.\.\/chunks/)
+    expect(deploy_bin).not.toMatch(/\.\.\/deploy/)
+    expect(deploy_result.status, deploy_result.stderr || deploy_result.stdout).toBe(0)
+    expect(deploy_result.stdout).toContain('[deploy-local] copy:')
   })
 })

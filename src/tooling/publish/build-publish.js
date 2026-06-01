@@ -13,11 +13,25 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { builtinModules } from 'node:module'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { build as viteBuild } from 'vite'
 import { transpileAgents } from '../agent-transpiler/agent-transpiler.js'
+import { generateBuildManifest } from '../manifest/build-manifest.js'
 import { PUBLISH_ROOT, SOURCE_ROOT, TOOLING_DIST_ROOT } from '../shared/paths.js'
+import { assertPublishCheckout } from './status.js'
 
 const PUBLISH_SKIP_ENTRIES = new Set(['_runtime'])
+const PUBLIC_BIN_ENTRIES = ['transpile-agents', 'deploy-agents']
+const NODE_EXTERNALS = [
+  ...builtinModules,
+  ...builtinModules.map((name) => `node:${name}`),
+]
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
+const TOOLING_ROOT = existsSync(join(resolve(MODULE_DIR, '..'), 'bin', 'transpile-agents.js'))
+  ? resolve(MODULE_DIR, '..')
+  : resolve(MODULE_DIR, '../../../src/tooling')
 const force = process.argv.includes('--force')
 
 function fail(message) {
@@ -141,27 +155,31 @@ export function writePublishPackageJson({ publish_root = PUBLISH_ROOT } = {}) {
   writeFileSync(join(publish_root, 'package.json'), `${JSON.stringify(package_json, null, 2)}\n`)
 }
 
-export function copyGeneratedBins({
-  tooling_dist_root = TOOLING_DIST_ROOT,
+export async function buildPublicBins({
   publish_root = PUBLISH_ROOT,
 } = {}) {
-  const source_bin_dir = join(tooling_dist_root, 'bin')
   const target_bin_dir = join(publish_root, 'bin')
-
-  if (!existsSync(source_bin_dir)) {
-    return
-  }
-
   mkdirSync(target_bin_dir, { recursive: true })
-  for (const file of readdirSync(source_bin_dir)) {
-    if (!file.endsWith('.mjs')) {
-      continue
-    }
 
-    const target_name = basename(file)
-    cpSync(join(source_bin_dir, file), join(target_bin_dir, target_name), {
-      dereference: true,
-      preserveTimestamps: true,
+  for (const entry_name of PUBLIC_BIN_ENTRIES) {
+    await viteBuild({
+      configFile: false,
+      logLevel: 'silent',
+      build: {
+        outDir: target_bin_dir,
+        emptyOutDir: false,
+        target: 'node20',
+        rollupOptions: {
+          external: NODE_EXTERNALS,
+          input: join(TOOLING_ROOT, 'bin', `${entry_name}.js`),
+          output: {
+            format: 'es',
+            banner: 'import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);',
+            entryFileNames: `${entry_name}.mjs`,
+            codeSplitting: false,
+          },
+        },
+      },
     })
   }
 }
@@ -192,18 +210,23 @@ export async function buildPublish({
   tooling_dist_root = TOOLING_DIST_ROOT,
   logger = console,
 } = {}) {
+  assertPublishCheckout({ publish_root })
   guardCleanPublish({ publish_root, allow_dirty })
   syncPublishTree({ source_root, publish_root })
   materializeSymlinks(publish_root)
   writePublishGitignore({ publish_root })
   writePublishPackageJson({ publish_root })
-  copyGeneratedBins({ tooling_dist_root, publish_root })
+  await buildPublicBins({ tooling_dist_root, publish_root })
   await transpileAgents({
     source_dir: join(publish_root, 'agents'),
     output_dir: join(publish_root, 'dist'),
     logger,
   })
   assertNoSymlinks(publish_root)
+
+  const manifest = await generateBuildManifest({ source_root, publish_root })
+  writeFileSync(join(publish_root, '.build-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+
   logger.log?.(`[build-publish] 已同步 ${source_root} -> ${publish_root}`)
 }
 

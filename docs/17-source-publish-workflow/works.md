@@ -162,3 +162,168 @@
 - 新增 `src/tooling/deploy/deploy-local.test.js`，驗證 fake HOME copy output、no-symlink、copy-if-missing config、dry-run 無副作用與 CLI args。
 - `pnpm deploy:check`：通過，測試 9 files / 136 tests，全流程 build 後成功寫入 `/tmp/ddd-workflow-deploy-check`。
 - `find /tmp/ddd-workflow-deploy-check -type l -ls`：無輸出，確認 fake HOME output 沒有 symlink。
+
+## 2026-05-29
+
+### xreview 修正同步
+
+- 從 AGENTS `dev` 的 `fix(xreview): route gpt reviewers through codex` 同步實質 xreview 行為修正到 `ddd-authoring` source。
+- 更新 `src/ddd-workflow/config/xreview.json`：`5.x` 與 `5.5` alias 改為 `codex:gpt-5.5`。
+- 更新 `src/ddd-workflow/skills/ddd.xreview/references/cli-adapters.md`：說明 OpenCode adapter 仍可明確指定完整 `opencode:*` spec，但 GPT 5 系列預設 alias 由 `xreview.json` 決定，可能指向 Codex 或其他 CLI。
+- 未照搬 AGENTS 舊 layout 的 runner symlink path；`ddd-authoring` 仍維持 `scripts/shared/agent-runner.sh` namespace。
+
+### Publish checkout 試串
+
+- 用 `gh repo view applepig/ddd-workflow` 確認 publish repo 為 `https://github.com/applepig/ddd-workflow`，default branch 為 `main`。
+- 將 `.publish/ddd-workflow/` 初始化為 nested Git checkout，remote `origin` 指向 `https://github.com/applepig/ddd-workflow`。
+- 建立本機 branch `publish/17-source-publish-workflow`，以 `origin/main` 作為 base；尚未 commit、尚未 push。
+- `pnpm run publish:status` 現在可正確顯示 nested publish repo 的 diff。
+
+### Publish flow 驗證結果
+
+- `pnpm run build`：在 publish checkout 有未提交 diff 時會被 dirty guard 擋住，符合保護機制，但不適合初次產生 publish branch diff。
+- `pnpm run build -- --force && pnpm run publish:status && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，可作為目前手動試串流程。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- `deploy-local --dry-run`：通過，只列出 `npx skills` command 與 copy actions，不寫入 HOME。
+
+### 待補缺口
+
+- 需要正式 `publish:init` tooling，避免手動 Git init / fetch / reset 流程散落在 shell 指令。
+- 需要區分「safe build」（publish checkout 必須 clean）與「refresh publish diff」（允許覆蓋目前 publish branch working tree）的 script，例如保留 `build` 作 dirty-protected，再新增明確的 `publish:refresh` 或 `build:publish --force`。
+- `publish:status` / `publish:diff` 仍是 package script 直接呼叫 Git，尚未重建為 tested tooling module。
+- `pnpm deploy:dry-run` 目前仍會先跑不帶 `--force` 的 `pnpm run build`；若 publish checkout 保持未提交 diff，完整 deploy dry-run 會被 dirty guard 擋住，需要調整 pipeline gate。
+
+### Milestone 3.5 / 3.6 實作結果
+
+- 新增 `src/tooling/publish/init-publish.js`，提供 `publish:init` tooling entrypoint；預設 repo 為 `https://github.com/applepig/ddd-workflow`，預設 branch 為 `publish/17-source-publish-workflow`，並支援 `--repo`、`--branch`、`--base`。
+- 新增 `src/tooling/publish/status.js` 與 `src/tooling/publish/diff.js`，由 dist entrypoint 執行 nested publish checkout 的 `git status --short --branch` 與 `git diff --stat`；缺 checkout 時提示先執行 `pnpm run publish:init`。
+- 更新 `package.json`：新增 `publish:init`、`publish:refresh`，並將 `publish:status` / `publish:diff` 改為 `node dist/tooling/publish/*.mjs`。
+- 更新 `vite.config.js`：新增 `publish/init-publish`、`publish/status`、`publish/diff` Rollup input，讓 `pnpm run build:tooling` 產生對應 dist entrypoint。
+- 更新 `build-publish`：缺少 managed publish checkout 時明確 fail，避免 `pnpm run build` 自動建立或覆蓋非 managed 目錄。
+- 新增 Vitest 覆蓋：非空非 Git 目錄 fail、既有 Git checkout 不清空且可補 origin、status/diff 缺 checkout fail、package scripts contract、Vite entrypoint contract。
+
+### Coordinator 驗收
+
+- `pnpm test`：通過，12 個 test files、142 個 tests。
+- `pnpm run build:tooling`：通過，產生 `dist/tooling/publish/init-publish.mjs`、`status.mjs`、`diff.mjs` 與既有 tooling entrypoints。
+- `pnpm run publish:status`：通過，顯示 nested publish checkout branch `publish/17-source-publish-workflow` 與目前 publish diff。
+- `pnpm run publish:diff`：通過，顯示 publish diff stat。
+- `pnpm run publish:refresh`：通過，以 force 模式重建 `.publish/ddd-workflow/`，保留 nested Git checkout。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，只列出技能安裝 command 與 copy actions，未寫入 HOME。
+
+### Publish Package PR 準備
+
+- 更新 `src/ddd-workflow/README.md`，移除舊 Claude plugin / Gemini extension / manual symlink 安裝說明，改為 `npx skills` 安裝、`bin/` entrypoints、agents build/deploy 與 runtime scripts 說明。
+- 修正 publish package public bin output：`build-publish` 會一併複製 Vite generated `chunks/` 與 `deploy/` runtime，避免 `bin/*.mjs` 在公開 repo 缺相對 import。
+- 調整 Vite 設定，不再 externalize `gray-matter`，讓 `bin/transpile-agents.mjs` 可在沒有 publish `node_modules` 的公開 package 中執行。
+- `pnpm test`：通過，12 個 test files、143 個 tests。
+- `pnpm run publish:refresh`：通過。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- 在 `.publish/ddd-workflow` 執行 `node bin/transpile-agents.mjs`：通過。
+- 在 `.publish/ddd-workflow` 執行 `node bin/deploy-agents.mjs --dry-run`：通過。
+- `find .publish/ddd-workflow -type l -print`：無輸出，確認 publish tree 沒有 symlink。
+- 掃描 `.publish/ddd-workflow/**/*.mjs`：沒有 external `gray-matter` import。
+- `.publish/ddd-workflow/node_modules` 不存在，確認 public bin 驗證未依賴 publish-local dependencies。
+- `.publish/ddd-workflow` commit：`782dc5c feat: publish source workflow package`。
+- 已 push branch `publish/17-source-publish-workflow` 到 `applepig/ddd-workflow`。
+- 已建立 GitHub PR：`https://github.com/applepig/ddd-workflow/pull/15`。
+
+### Self-contained Public Bin 修正
+
+- 決策：publish package 的 public `bin/*.mjs` 應為 self-contained script；authoring `dist/tooling` 可以保留 Vite/Rollup shared chunks，但 `.publish/ddd-workflow` 不應發布 `chunks/` 或 `deploy/` runtime 目錄。
+- 更新 `build-publish`：publish 階段改為針對 `bin/transpile-agents.mjs`、`bin/deploy-agents.mjs` 逐支以 Vite programmatic build 打包，關閉 code splitting，Node builtins external，其餘 dependency bundle 進各自 script。
+- 調整 direct-run guard：`agent-transpiler.js` 與 `deploy-local.js` 只在原始檔直接執行時觸發，避免 bundle 進 public bin 後誤觸內部 CLI guard。
+- `pnpm test`：通過，12 個 test files、143 個 tests。
+- `pnpm run publish:refresh`：通過。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- 在 `.publish/ddd-workflow` 執行 `node bin/transpile-agents.mjs`：通過。
+- 在 `.publish/ddd-workflow` 執行 `node bin/deploy-agents.mjs --dry-run`：通過。
+- `.publish/ddd-workflow/chunks`、`.publish/ddd-workflow/deploy`、`.publish/ddd-workflow/node_modules` 均不存在。
+- 掃描 `.publish/ddd-workflow/bin/*.mjs`：沒有 `../chunks`、`../deploy` 或 external `gray-matter` import。
+
+## 2026-05-31
+
+### Milestone 8: Deploy Manifest（Build / Deploy Lock）
+
+#### 設計決策
+
+- 仿 `npx skills` 的 `skills-lock.json`（`computedHash` SHA-256）自建 deploy lock 機制，涵蓋 skills 以外的 agents、config、scripts、references、policies、plugins。
+- 兩份分離的 manifest：build manifest 在 `.publish/ddd-workflow/.build-manifest.json`，deploy manifest 在 `~/.config/ddd-workflow/deploy.json`（machine-local，不進 git）。
+- `config:xreview` 標記 `strategy: "copy-if-missing"`，target 已存在時無條件 skip，不比 hash。
+- Orphan detection：deploy manifest 有但 build manifest 沒有的 unit → 移除 target。
+- Stale build gate：deploy 前重算 sourceTreeHash，與 build manifest 不一致時擋住。
+
+#### 實作結果
+
+- 新增 `src/tooling/manifest/build-manifest.js`：6 個 exported 函式（computeFileHash、computeDirectoryHash、computeSourceTreeHash、computeUnitHash、discoverUnits、generateBuildManifest）。
+- 新增 `src/tooling/manifest/deploy-manifest.js`：6 個 exported 函式（readBuildManifest、readDeployManifest、diffManifests、writeDeployManifest、buildDeployManifest、checkStaleBuild）。
+- 修改 `src/tooling/publish/build-publish.js`：在 assertNoSymlinks 之後產生 `.build-manifest.json`。
+- 修改 `src/tooling/deploy/deploy-local.js`：新增 `runManifestAwareDeploy()` 整合 stale check → diff → deploy → write manifest；direct-run block 改用此函式。
+- Unit keys 涵蓋：skill、agent（claude/gemini/opencode/codex）、config、script（claude/opencode/shared）、reference、policy、plugin。
+
+#### 驗證結果
+
+- `pnpm test`：通過，14 個 test files、217 個 tests。
+- 整合測試 4 個 scenario：首次 deploy 安裝所有 units、第二次無變更全部 skip、修改 source 後只更新變更 unit、stale build gate 擋住。
+- 新增測試數：build-manifest 39 個、deploy-manifest 19 個、deploy-local 整合 15 個。
+
+## 2026-06-01
+
+### XReview 修正：Deploy Manifest 實際副作用
+
+#### 問題確認
+
+- Critical：`runManifestAwareDeploy()` 只記錄 manifest diff，沒有實際處理 `action=remove` 的 orphaned unit，導致 managed target 殘留。
+- Critical：只要有任一 changed unit，實作仍呼叫 `planDeploy()` + `applyDeployActions()` 全量 deploy，造成 `skip` unit 仍被覆寫。
+- Important：`resolveUnitTarget()` 用 `source.includes(file_hint)` 猜 target，跨平台同名 agent 可能把 Gemini/OpenCode/Codex target 記成 Claude target。
+- Important：`computeSourceTreeHash()` 只收一般檔案，忽略 source tree symlink metadata，symlink retarget 不會觸發 stale build gate。
+
+#### 實作結果
+
+- `deploy-local` 的 copy actions 補上 precise `unit` key；`resolveUnitTarget()` 先用 exact unit match，並保留 deterministic fallback 給已知 unit target。
+- `runManifestAwareDeploy()` 改為 selective apply：只套用 `install` units；`skip` units 不動；`remove` units 依 deploy manifest 中既有 `target` 刪除 managed file 並清理 manifest entry。
+- `remove` 安全邊界：忽略 `null` 與 `npx-skills` target；目前只對 manifest 明確記錄的 file target 使用 `rmSync(..., { force: true })`，不擴大處理目錄。
+- `copy-if-missing config` 維持 target 已存在時 skip，不覆寫使用者檔案；manifest 可保留 `skipped: true`。
+- `dry-run` 維持只 log diff / copy / remove 動作，不寫 deploy manifest、不修改 HOME。
+- `computeSourceTreeHash()` 與 directory hash 納入 symlink path + link target metadata；source-only `_runtime/` skip 行為維持既有測試保護。
+
+#### 測試結果
+
+- Red phase：`pnpm test -- src/tooling/deploy/deploy-local.test.js src/tooling/manifest/build-manifest.test.js` 預期失敗 4 個案例：跨平台 target mapping、changed deploy 不應覆寫 skipped target、orphan target 刪除、symlink retarget hash。
+- Green phase：同一目標測試通過，14 個 test files、221 個 tests。
+- Full validation：`pnpm test` 通過，14 個 test files、221 個 tests。
+
+#### 尚未執行
+
+- 本次 xreview 修正未執行 `pnpm run build`、`pnpm run test:pack`、`pnpm deploy:dry-run`；目前僅完成 Vitest 層驗證。
+
+### XReview 漏網修正：同一 unit 多 deploy targets
+
+#### 問題確認
+
+- `reference:AGENTS.md` 是單一 build/deploy unit，但實際 deploy 會複製到多個平台 target：Claude `~/.claude/CLAUDE.md`、Gemini `~/.gemini/GEMINI.md`、Codex `~/.codex/AGENTS.md`。
+- 前次修正雖改為 exact `action.unit` mapping，但 deploy manifest 仍只記錄第一個 target，導致 orphan removal 只能刪除第一個 target，其餘平台 reference target 會殘留。
+
+#### 實作結果
+
+- Deploy manifest 保留 `target` 作為第一個 / 主要 target，讓單 target unit 維持簡單讀法。
+- 同一 unit 若對應多個 copy actions，manifest 額外寫入 `targets: string[]`，例如 `reference:AGENTS.md` 會記錄 Claude/Gemini/Codex 三個 managed targets。
+- `applyRemoveActions()` 改為同時支援舊 manifest 的 `target` string 與新 manifest 的 `targets` array；會去重後刪除所有 managed file targets，並繼續忽略 `null` / `npx-skills`。
+
+#### 測試結果
+
+- Red phase：`pnpm test -- src/tooling/deploy/deploy-local.test.js src/tooling/manifest/build-manifest.test.js src/tooling/manifest/deploy-manifest.test.js` 預期失敗 1 個案例：`reference:AGENTS.md` manifest 缺少 `targets`。
+- Green phase：同一指定測試通過，14 個 test files、222 個 tests。
+
+#### 尚未執行
+
+- 本次漏網修正未執行完整 `pnpm test`、`pnpm run build`、`pnpm run test:pack`、`pnpm deploy:dry-run`；目前依使用者要求完成相關 Vitest 驗證。
+
+### Coordinator 補驗證
+
+- `pnpm test`：通過，14 個 test files、222 個 tests。
+- `pnpm run build`：`build:tooling` 通過，但 publish checkout dirty guard 擋住 `.publish/ddd-workflow` 覆寫；原因是目前 publish branch 已有本 sprint 未提交 diff，保護機制要求先處理 diff 或使用 `--force`。
+- `pnpm run publish:refresh`：通過，以 `--force` 重建 `.publish/ddd-workflow`，產生最新 `.build-manifest.json` 與 public bin。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，只列出 manifest diff 與 copy / command 動作，未寫入 deploy manifest 或 HOME。

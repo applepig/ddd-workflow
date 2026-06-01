@@ -51,8 +51,8 @@
 - [x] Task 3.2: 實作 `sync-publish-tree`，只同步 publishable content，並保留 managed checkout 的 `.git`（Green）
 - [x] Task 3.3: 撰寫 `.publish/ddd-workflow` dirty guard 測試：clean / dirty / force（Red）
 - [x] Task 3.4: 實作 `check-publish-dirty` 與 `build-publish` destructive sync（Green）
-- [ ] Task 3.5: 撰寫 `publish:status`、`publish:diff` temp git repo 測試（Red）
-- [ ] Task 3.6: 實作 `publish:init`、`publish:status`、`publish:diff` tooling entrypoint；`publish:init` 明確 clone/設定 remote，build 缺 checkout 時 fail（Green）
+- [x] Task 3.5: 撰寫 `publish:status`、`publish:diff` temp git repo 測試（Red）
+- [x] Task 3.6: 實作 `publish:init`、`publish:status`、`publish:diff` tooling entrypoint；`publish:init` 明確 clone/設定 remote，build 缺 checkout 時 fail（Green）
 - [x] Task 3.7: 實作 build-publish 注入 generated `bin/*.mjs`、self-contained skill runtime 實體檔，並產生 `.publish/ddd-workflow/dist/{gemini,opencode,codex}/agents`（Green）
 - [x] Task 3.8: 驗證 build 不複製外層 `docs/`、`reference/`、`.opencode/`、`dist/`、local-only 檔案（Refactor）
 - [x] Task 3.9: 驗證 `.publish/ddd-workflow` 不包含任何 symlink（Refactor）
@@ -137,11 +137,35 @@
 > 驗證方式：README、CLAUDE.md、spec.md、tasks.md、works.md 與 package scripts 一致。
 
 - [x] Task 7.1: 更新 root README 的 source / publish / deploy 說明（Green）
-- [ ] Task 7.2: 更新 publish README 的 `npx skills`、agents `bin/` entrypoints、runtime scripts 說明（Green）
+- [x] Task 7.2: 更新 publish README 的 `npx skills`、agents `bin/` entrypoints、runtime scripts 說明（Green）
 - [x] Task 7.3: 更新專案操作文件，完全移除 subtree 主流程說明；歷史脈絡只保留在 works.md（Green）
 - [x] Task 7.4: 移除 `package.json` 的 `subtree:*` scripts（Green）
 - [x] Task 7.5: 更新 `works.md` 完成狀態、測試結果與舊 subtree 流程移除結果（Green）
 - [ ] Task 7.6: 執行 self-review，確認 spec 驗收條件都對映到 task 或測試（Refactor）
+
+## Milestone 8: Deploy Manifest（序列）
+
+> 預期結果：build 產生 `.build-manifest.json`，deploy 讀取 manifest 比對 hash 決定 skip/install/remove，stale build 被擋住。
+> 驗證方式：`pnpm test` 涵蓋 manifest 產生與比對；`pnpm deploy:dry-run` 列出 manifest-aware 動作；stale source 觸發 build gate。
+
+- [x] Task 8.1: 定義 build manifest schema 與 unit hash 計算函式，撰寫 unit test（Red）
+- [x] Task 8.2: 在 `build-publish` 尾端產生 `.publish/ddd-workflow/.build-manifest.json`，記錄 `sourceTreeHash` 與每個 unit 的 content hash（Green）
+- [x] Task 8.3: 定義 deploy manifest schema 與 diff 演算法（build manifest vs deploy manifest → action list），撰寫 unit test（Red）
+- [x] Task 8.4: 在 `deploy-local` 加入 stale build gate：重算 sourceTreeHash，與 build manifest 不一致時 fail（Green）
+- [x] Task 8.5: 在 `deploy-local` 加入 manifest-aware deploy：skip unchanged、install changed/new、remove orphaned，完成後寫入 `~/.config/ddd-workflow/deploy.json`（Green）
+- [x] Task 8.6: `deploy --dry-run` 根據 manifest diff 列出 skip/install/remove 動作，不修改 deploy manifest（Green）
+- [x] Task 8.7: 整合測試：fake HOME 下跑完整 build→deploy 兩次，第二次全部 skip；改一個 source file 後第三次只 reinstall 該 unit（Refactor）
+
+### Milestone 8 XReview Hardening: 2026-06-01
+
+> 目的：修正 cross review 指出的 manifest-aware deploy false completion，確保 diff 不只用於 log，也實際控制 deploy 副作用。
+
+- [x] Task 8.X1: 補測 orphaned unit `action=remove` 會刪除 deploy manifest 中記錄的 managed file target，並清理 manifest entry。
+- [x] Task 8.X2: 補測 changed unit deploy 時，unchanged / skipped target 不會被全量 deploy 覆寫。
+- [x] Task 8.X3: 補測同名 agent 在 Claude/Gemini/OpenCode/Codex 平台的 deploy manifest target 使用 precise unit mapping，不用 source filename substring 猜測。
+- [x] Task 8.X4: 補測 source tree symlink retarget 會改變 `sourceTreeHash`，同時維持 `_runtime/` source-only skip 既有行為。
+- [x] Task 8.X5: 實作 selective apply：只套用 `install` units、`skip` units 不動、`remove` units 依既有 deploy manifest target 安全刪除；`target=null` 或 `npx-skills` 僅清理 manifest entry。
+- [x] Task 8.X6: 補測並修正同一 unit 多 target 情境：`reference:AGENTS.md` 在 Claude/Gemini/Codex 的 targets 需全部寫入 deploy manifest，orphan removal 需刪除所有 managed targets。
 
 ## Self-Review
 

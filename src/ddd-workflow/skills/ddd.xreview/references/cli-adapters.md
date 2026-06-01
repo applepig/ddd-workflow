@@ -53,7 +53,7 @@ bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md op
 echo "$prompt" | opencode run --agent ddd-reviewer --model openai/gpt-5.5
 ```
 
-在 orchestrator 的使用者介面中，GPT 5 系列預設 reviewer 以 `5.x` alias 表示；adapter 與 OpenCode CLI 實際呼叫仍需使用具體 model id（例如 `openai/gpt-5.5`）。
+OpenCode adapter 仍可用完整 spec（例如 `opencode:openai/gpt-5.5`）明確指定；預設 GPT 5 系列 reviewer alias 則由 `xreview.json` 決定，可能指向 Codex 或其他 CLI。
 
 `adapters/opencode.sh` 是刻意保持精簡的 proxy shell：
 

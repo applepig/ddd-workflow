@@ -13,7 +13,11 @@ describe('package scripts', () => {
 
   it('routes build and deploy through Vite tooling dist entrypoints', () => {
     expect(package_json.scripts['build:tooling']).toBe('vite build')
+    expect(package_json.scripts['publish:init']).toBe('pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs')
     expect(package_json.scripts.build).toContain('dist/tooling/publish/build-publish.mjs')
+    expect(package_json.scripts['publish:status']).toBe('node dist/tooling/publish/status.mjs')
+    expect(package_json.scripts['publish:diff']).toBe('node dist/tooling/publish/diff.mjs')
+    expect(package_json.scripts['publish:refresh']).toBe('pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs --force')
     expect(package_json.scripts['test:pack']).toContain('./.publish/ddd-workflow')
     expect(package_json.scripts.deploy).toContain('dist/tooling/deploy/deploy-local.mjs')
     expect(package_json.scripts['deploy:dry-run']).toContain('--dry-run')

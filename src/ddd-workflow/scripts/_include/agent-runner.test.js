@@ -17,7 +17,7 @@ import { applyDeployActions, planDeploy } from '../../../tooling/deploy/deploy-l
 
 const ROOT = resolve(import.meta.dirname, '..', '..', '..', '..')
 const SOURCE_ROOT = join(ROOT, 'src', 'ddd-workflow')
-const RUNNER_PATH = join(SOURCE_ROOT, 'scripts', 'shared', 'agent-runner.sh')
+const RUNNER_PATH = join(SOURCE_ROOT, 'scripts', '_include', 'agent-runner.sh')
 const SESSION_TRIGGER_PATH = join(SOURCE_ROOT, 'scripts', 'shared', 'session-trigger.mjs')
 const XREVIEW_ENTRYPOINT = join(
   SOURCE_ROOT,

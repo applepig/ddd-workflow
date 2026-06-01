@@ -5,9 +5,14 @@ import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import {
   applyDeployActions,
+  checkTargetExistsForUnit,
   parseArgs,
   planDeploy,
+  resolveDeployManifestPath,
+  resolveUnitTarget,
+  runManifestAwareDeploy,
 } from './deploy-local.js'
+import { generateBuildManifest } from '../manifest/build-manifest.js'
 
 function mkdtempLike(prefix) {
   const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf-8' })
@@ -108,5 +113,528 @@ describe('deploy-local CLI args', () => {
       include_skills: false,
       targets: ['claude'],
     })
+  })
+})
+
+describe('resolveDeployManifestPath', () => {
+  it('should return path under .config/ddd-workflow/deploy.json', () => {
+    const result = resolveDeployManifestPath('/home/testuser')
+    expect(result).toBe('/home/testuser/.config/ddd-workflow/deploy.json')
+  })
+})
+
+describe('resolveUnitTarget', () => {
+  it('should return npx-skills for skill units', () => {
+    const result = resolveUnitTarget('skill:ddd.work', [])
+    expect(result).toBe('npx-skills')
+  })
+
+  it('should return the target path from matching action for non-skill units', () => {
+    const actions = [
+      {
+        type: 'copy',
+        unit: 'agent:claude:ddd-developer',
+        source: '/publish/agents/ddd-developer.md',
+        target: '/home/.claude/agents/ddd-developer.md',
+        mode: 'overwrite-generated',
+      },
+    ]
+
+    const result = resolveUnitTarget('agent:claude:ddd-developer', actions)
+    expect(result).toBe('/home/.claude/agents/ddd-developer.md')
+  })
+
+  it('should use precise unit mapping when multiple platforms have the same agent name', () => {
+    const actions = planDeploy({
+      publish_root: '/publish',
+      home_dir: '/home',
+      include_skills: false,
+      targets: ['claude', 'gemini', 'opencode', 'codex'],
+    })
+
+    expect(resolveUnitTarget('agent:claude:ddd-developer', actions))
+      .toBe('/home/.claude/agents/ddd-developer.md')
+    expect(resolveUnitTarget('agent:gemini:ddd-developer', actions))
+      .toBe('/home/.gemini/agents/ddd-developer.md')
+    expect(resolveUnitTarget('agent:opencode:ddd-developer', actions))
+      .toBe('/home/.config/opencode/agents/ddd-developer.md')
+    expect(resolveUnitTarget('agent:codex:ddd-developer', actions))
+      .toBe('/home/.codex/agents/ddd-developer.toml')
+  })
+
+  it('should return null when no matching action found', () => {
+    const result = resolveUnitTarget('agent:claude:unknown', [])
+    expect(result).toBeNull()
+  })
+})
+
+describe('checkTargetExistsForUnit', () => {
+  let tmp_dir
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'target-exists-'))
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('should return true when config:xreview target exists', () => {
+    const config_path = join(tmp_dir, '.config', 'ddd-workflow', 'xreview.json')
+    writeFile(config_path, '{}')
+
+    expect(checkTargetExistsForUnit('config:xreview', tmp_dir)).toBe(true)
+  })
+
+  it('should return false when config:xreview target does not exist', () => {
+    expect(checkTargetExistsForUnit('config:xreview', tmp_dir)).toBe(false)
+  })
+
+  it('should return false for unknown unit keys', () => {
+    expect(checkTargetExistsForUnit('skill:ddd.work', tmp_dir)).toBe(false)
+  })
+})
+
+describe('manifest-aware deploy integration', () => {
+  let tmp_dir
+  let publish_root
+  let home_dir
+  let source_root
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'manifest-deploy-'))
+    publish_root = join(tmp_dir, 'publish')
+    home_dir = join(tmp_dir, 'home')
+    source_root = join(tmp_dir, 'src', 'ddd-workflow')
+
+    writePublishFixture(publish_root)
+
+    // Build a minimal source tree for stale-build check
+    mkdirSync(join(source_root, 'skills', 'ddd.work'), { recursive: true })
+    writeFileSync(join(source_root, 'skills', 'ddd.work', 'SKILL.md'), '# skill content')
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('should reject stale build when source hash differs', async () => {
+    // Write a build manifest with a stale hash
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: 'stale-hash-not-matching',
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: { 'skill:ddd.work': { hash: 'abc' } },
+    }
+    writeFile(
+      join(publish_root, '.build-manifest.json'),
+      JSON.stringify(build_manifest),
+    )
+
+    await expect(
+      runManifestAwareDeploy({
+        publish_root,
+        home_dir,
+        source_root,
+        include_skills: false,
+        targets: ['claude'],
+        dry_run: false,
+        logger: { log() {} },
+      })
+    ).rejects.toThrow(/pnpm run build/)
+  })
+
+  it('should not write deploy manifest during dry-run', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: { 'reference:AGENTS.md': { hash: 'abc' } },
+    }
+    writeFile(
+      join(publish_root, '.build-manifest.json'),
+      JSON.stringify(build_manifest),
+    )
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: true,
+      logger: { log() {} },
+    })
+
+    const deploy_manifest_path = resolveDeployManifestPath(home_dir)
+    expect(existsSync(deploy_manifest_path)).toBe(false)
+  })
+
+  it('should write deploy manifest after successful deploy', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+        'agent:claude:ddd-developer': { hash: 'agent-hash' },
+      },
+    }
+    writeFile(
+      join(publish_root, '.build-manifest.json'),
+      JSON.stringify(build_manifest),
+    )
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    const deploy_manifest_path = resolveDeployManifestPath(home_dir)
+    expect(existsSync(deploy_manifest_path)).toBe(true)
+
+    const deploy_manifest = JSON.parse(readFileSync(deploy_manifest_path, 'utf8'))
+    expect(deploy_manifest.version).toBe(1)
+    expect(deploy_manifest.deployedFrom).toBe(publish_root)
+    expect(deploy_manifest.deployedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(deploy_manifest.units['reference:AGENTS.md']).toBeDefined()
+    expect(deploy_manifest.units['reference:AGENTS.md'].hash).toBe('ref-hash')
+    expect(deploy_manifest.units['agent:claude:ddd-developer']).toBeDefined()
+    expect(deploy_manifest.units['agent:claude:ddd-developer'].hash).toBe('agent-hash')
+  })
+
+  it('should skip deploy when second run finds no changes', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+      },
+    }
+    writeFile(
+      join(publish_root, '.build-manifest.json'),
+      JSON.stringify(build_manifest),
+    )
+
+    // First deploy
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    // Second deploy — should detect no changes
+    const log_messages = []
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log: (msg) => log_messages.push(msg) },
+    })
+
+    expect(result.has_changes).toBe(false)
+    expect(log_messages.some((msg) => msg.includes('skip'))).toBe(true)
+  })
+})
+
+describe('manifest-aware deploy full lifecycle', () => {
+  let tmp_dir
+  let publish_root
+  let home_dir
+  let source_root
+  const silent_logger = { log() {} }
+
+  function writeSourceFixture(root) {
+    writeFile(join(root, 'skills', 'ddd.test', 'SKILL.md'), '---\nname: ddd.test\n---\n# Test Skill\n')
+    writeFile(join(root, 'agents', 'ddd-test.md'), '# Test Agent\n')
+    writeFile(join(root, 'config', 'xreview.json'), '{"reviewers":[]}\n')
+    writeFile(join(root, 'references', 'AGENTS.md'), '# Shared Instructions\n')
+  }
+
+  function writeMatchingPublishFixture(root) {
+    writeFile(join(root, 'agents', 'ddd-test.md'), '# Test Agent\n')
+    writeFile(join(root, 'config', 'xreview.json'), '{"reviewers":[]}\n')
+    writeFile(join(root, 'references', 'AGENTS.md'), '# Shared Instructions\n')
+    writeFile(join(root, 'scripts', 'claude', 'statusline.sh'), '#!/bin/sh\n')
+    writeFile(join(root, 'scripts', 'shared', 'session-trigger.mjs'), 'console.log("tick")\n')
+  }
+
+  async function buildAndWriteManifest() {
+    const manifest = await generateBuildManifest({ source_root, publish_root })
+    writeFile(
+      join(publish_root, '.build-manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    )
+    return manifest
+  }
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'lifecycle-deploy-'))
+    publish_root = join(tmp_dir, 'publish')
+    home_dir = join(tmp_dir, 'home')
+    source_root = join(tmp_dir, 'source')
+
+    writeSourceFixture(source_root)
+    writeMatchingPublishFixture(publish_root)
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('scenario 1: first deploy installs all units and writes deploy manifest', async () => {
+    await buildAndWriteManifest()
+
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    // has_changes should be true on first deploy
+    expect(result.has_changes).toBe(true)
+
+    // deploy manifest should exist
+    const deploy_manifest_path = resolveDeployManifestPath(home_dir)
+    expect(existsSync(deploy_manifest_path)).toBe(true)
+
+    // deploy manifest should contain the installed unit keys
+    const deploy_manifest = JSON.parse(readFileSync(deploy_manifest_path, 'utf8'))
+    const deployed_unit_keys = Object.keys(deploy_manifest.units)
+    expect(deployed_unit_keys).toContain('agent:claude:ddd-test')
+    expect(deployed_unit_keys).toContain('reference:AGENTS.md')
+    expect(deployed_unit_keys).toContain('config:xreview')
+
+    // all diff entries should be install (new unit) on first deploy
+    for (const entry of result.diff) {
+      expect(entry.action).toBe('install')
+      expect(entry.reason).toBe('new unit')
+    }
+
+    // target files should have been copied to home_dir
+    expect(readFileSync(join(home_dir, '.claude', 'CLAUDE.md'), 'utf8')).toBe('# Shared Instructions\n')
+    expect(readFileSync(join(home_dir, '.claude', 'agents', 'ddd-test.md'), 'utf8')).toBe('# Test Agent\n')
+  })
+
+  it('scenario 2: second deploy with no changes reports has_changes false', async () => {
+    await buildAndWriteManifest()
+
+    // First deploy
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    const deploy_manifest_path = resolveDeployManifestPath(home_dir)
+    const manifest_before = readFileSync(deploy_manifest_path, 'utf8')
+
+    // Second deploy with identical state
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    expect(result.has_changes).toBe(false)
+
+    // deploy manifest content should not have changed
+    const manifest_after = readFileSync(deploy_manifest_path, 'utf8')
+    expect(JSON.parse(manifest_after).units).toEqual(JSON.parse(manifest_before).units)
+
+    // all diff entries should be skip
+    for (const entry of result.diff) {
+      expect(entry.action).toBe('skip')
+    }
+  })
+
+  it('scenario 3: modifying source and rebuilding deploys only changed unit', async () => {
+    await buildAndWriteManifest()
+
+    // First deploy to establish baseline
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    // Modify one source file and the corresponding publish file
+    writeFileSync(join(source_root, 'agents', 'ddd-test.md'), '# Test Agent v2\n')
+    writeFileSync(join(publish_root, 'agents', 'ddd-test.md'), '# Test Agent v2\n')
+    writeFileSync(join(home_dir, '.claude', 'CLAUDE.md'), 'user-managed sentinel\n')
+
+    // Rebuild manifest to pick up the change
+    await buildAndWriteManifest()
+
+    // Deploy again
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    expect(result.has_changes).toBe(true)
+
+    // Only the changed unit should be install; others should be skip
+    const install_entries = result.diff.filter((e) => e.action === 'install')
+    const skip_entries = result.diff.filter((e) => e.action === 'skip')
+
+    expect(install_entries.length).toBeGreaterThanOrEqual(1)
+    expect(install_entries.some((e) => e.unit === 'agent:claude:ddd-test')).toBe(true)
+    expect(skip_entries.length).toBeGreaterThanOrEqual(1)
+
+    // The target file should be updated
+    expect(readFileSync(join(home_dir, '.claude', 'agents', 'ddd-test.md'), 'utf8')).toBe('# Test Agent v2\n')
+    expect(readFileSync(join(home_dir, '.claude', 'CLAUDE.md'), 'utf8')).toBe('user-managed sentinel\n')
+  })
+
+  it('should remove orphaned managed file targets and clean deploy manifest entries', async () => {
+    await buildAndWriteManifest()
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    const agent_target = join(home_dir, '.claude', 'agents', 'ddd-test.md')
+    expect(existsSync(agent_target)).toBe(true)
+
+    rmSync(join(source_root, 'agents', 'ddd-test.md'), { force: true })
+    rmSync(join(publish_root, 'agents', 'ddd-test.md'), { force: true })
+    await buildAndWriteManifest()
+
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    expect(result.diff).toContainEqual({
+      unit: 'agent:claude:ddd-test',
+      action: 'remove',
+      reason: 'orphaned',
+    })
+    expect(existsSync(agent_target)).toBe(false)
+
+    const deploy_manifest = JSON.parse(readFileSync(resolveDeployManifestPath(home_dir), 'utf8'))
+    expect(deploy_manifest.units['agent:claude:ddd-test']).toBeUndefined()
+  })
+
+  it('should record and remove all managed targets for multi-platform reference units', async () => {
+    await buildAndWriteManifest()
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude', 'gemini', 'codex'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    const reference_targets = [
+      join(home_dir, '.claude', 'CLAUDE.md'),
+      join(home_dir, '.gemini', 'GEMINI.md'),
+      join(home_dir, '.codex', 'AGENTS.md'),
+    ]
+    for (const target of reference_targets) {
+      expect(existsSync(target)).toBe(true)
+    }
+
+    const manifest_after_install = JSON.parse(readFileSync(resolveDeployManifestPath(home_dir), 'utf8'))
+    expect(manifest_after_install.units['reference:AGENTS.md'].target).toBe(reference_targets[0])
+    expect(manifest_after_install.units['reference:AGENTS.md'].targets).toEqual(reference_targets)
+
+    rmSync(join(source_root, 'references', 'AGENTS.md'), { force: true })
+    rmSync(join(publish_root, 'references', 'AGENTS.md'), { force: true })
+    await buildAndWriteManifest()
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude', 'gemini', 'codex'],
+      dry_run: false,
+      logger: silent_logger,
+    })
+
+    for (const target of reference_targets) {
+      expect(existsSync(target)).toBe(false)
+    }
+
+    const manifest_after_remove = JSON.parse(readFileSync(resolveDeployManifestPath(home_dir), 'utf8'))
+    expect(manifest_after_remove.units['reference:AGENTS.md']).toBeUndefined()
+  })
+
+  it('scenario 4: stale build throws error mentioning pnpm run build', async () => {
+    await buildAndWriteManifest()
+
+    // Modify source without rebuilding manifest
+    writeFileSync(join(source_root, 'agents', 'ddd-test.md'), '# Modified after build\n')
+
+    await expect(
+      runManifestAwareDeploy({
+        publish_root,
+        home_dir,
+        source_root,
+        include_skills: false,
+        targets: ['claude'],
+        dry_run: false,
+        logger: silent_logger,
+      })
+    ).rejects.toThrow(/pnpm run build/)
   })
 })
