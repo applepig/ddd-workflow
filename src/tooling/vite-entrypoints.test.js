@@ -4,14 +4,14 @@ import { join } from 'node:path'
 import { PROJECT_ROOT } from './shared/paths.js'
 
 describe('Vite tooling entrypoints', () => {
-  const vite_config = readFileSync(join(PROJECT_ROOT, 'vite.config.js'), 'utf8')
+  const build_script = readFileSync(join(PROJECT_ROOT, 'scripts', 'build-tooling.js'), 'utf8')
 
   it('builds publish init status and diff entrypoints', () => {
-    expect(vite_config).toContain("'publish/init-publish'")
-    expect(vite_config).toContain("src/tooling/publish/init-publish.js")
-    expect(vite_config).toContain("'publish/status'")
-    expect(vite_config).toContain("src/tooling/publish/status.js")
-    expect(vite_config).toContain("'publish/diff'")
-    expect(vite_config).toContain("src/tooling/publish/diff.js")
+    expect(build_script).toContain("'publish/init-publish'")
+    expect(build_script).toContain("src/tooling/publish/init-publish.js")
+    expect(build_script).toContain("'publish/status'")
+    expect(build_script).toContain("src/tooling/publish/status.js")
+    expect(build_script).toContain("'publish/diff'")
+    expect(build_script).toContain("src/tooling/publish/diff.js")
   })
 })

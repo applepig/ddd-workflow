@@ -169,7 +169,7 @@ describe('buildPublish', () => {
     mkdirSync(publish_root, { recursive: true })
     spawnSync('git', ['init'], { cwd: publish_root })
     const tooling_dist_root = join(tmp_dir, 'dist', 'tooling')
-    const build_result = spawnSync('pnpm', ['exec', 'vite', 'build', '--outDir', tooling_dist_root], {
+    const build_result = spawnSync('node', ['scripts/build-tooling.js', '--outDir', tooling_dist_root], {
       cwd: process.cwd(),
       encoding: 'utf8',
     })

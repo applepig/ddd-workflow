@@ -12,7 +12,7 @@ describe('package scripts', () => {
   })
 
   it('routes build and deploy through Vite tooling dist entrypoints', () => {
-    expect(package_json.scripts['build:tooling']).toBe('vite build')
+    expect(package_json.scripts['build:tooling']).toBe('node scripts/build-tooling.js')
     expect(package_json.scripts['publish:init']).toBe('pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs')
     expect(package_json.scripts.build).toContain('dist/tooling/publish/build-publish.mjs')
     expect(package_json.scripts['publish:status']).toBe('node dist/tooling/publish/status.mjs')

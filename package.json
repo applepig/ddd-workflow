@@ -7,7 +7,7 @@
   "packageManager": "pnpm@10.25.0",
   "scripts": {
     "test": "vitest run",
-    "build:tooling": "vite build",
+    "build:tooling": "node scripts/build-tooling.js",
     "publish:init": "pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs",
     "build": "pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs",
     "test:pack": "npx skills add ./.publish/ddd-workflow --list",
