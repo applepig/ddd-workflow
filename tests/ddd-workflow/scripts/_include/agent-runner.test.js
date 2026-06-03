@@ -13,7 +13,7 @@ import {
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { applyDeployActions, planDeploy } from '../../../tooling/deploy/deploy-local.js'
+import { applyDeployActions, planDeploy } from '../../../../src/tooling/deploy/deploy-local.js'
 
 const ROOT = resolve(import.meta.dirname, '..', '..', '..', '..')
 const SOURCE_ROOT = join(ROOT, 'src', 'ddd-workflow')

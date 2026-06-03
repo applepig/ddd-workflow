@@ -13,6 +13,11 @@
 - 第一波必須包含 `scripts/build.js` 與 `scripts/cli.js` 的核心能力遷移到 Vite tooling pipeline。
 - 暫緩的「其他 scripts refactor」僅指 `./scripts` 下與第一波 pipeline 無關的工具，例如 `claude-r`、subtree status、hook setup。
 
+## Scope Update: 2026-06-03
+
+- 使用者決策：runtime / shell / skill 測試檔集中搬到 authoring-only `tests/ddd-workflow/...`；`src/ddd-workflow/` 不放測試檔，`.publish/ddd-workflow/` 也不得包含 `*.test.*` / `*.spec.*`。
+- Deploy module 目前以合併式 `src/tooling/deploy/deploy-local.js` 實作 agent/config/runtime/skills planner 與 applier，而不是依原 tasks 拆成多檔；本 sprint 接受此形態，後續若要重構再另開任務。
+
 ## Milestone 1: Tooling 基礎與測試骨架（序列）
 
 > 預期結果：Vite/Vitest 成為新 tooling pipeline 的入口，後續 module 可用一致方式測試與 build。
@@ -88,8 +93,8 @@
 > 介面契約：輸入 `.publish/ddd-workflow` 與 target platform，輸出 deploy action list；實際套用時 copy generated agent 檔案，不建立 symlink
 > 驗證方式：fake HOME 測試 Claude/Gemini/Codex/OpenCode agent target；確認內容來自 `.publish/ddd-workflow` 或其 generated `dist/`，不指向 `src/ddd-workflow`
 
-- [ ] Task 5.A1: 撰寫 agents fake HOME deploy 測試（Red）
-- [ ] Task 5.A2: 實作 agents deploy planner / applier（Green）
+- [x] Task 5.A1: 撰寫 agents fake HOME deploy 測試（Red）
+- [x] Task 5.A2: 實作 agents deploy planner / applier（Green；合併於 `deploy-local.js`）
 
 **[B] Config 與 Runtime Scripts Deploy** — `isolation: worktree`
 
@@ -98,8 +103,8 @@
 > 介面契約：user-editable config 用 copy-if-missing；generated runtime scripts / plugins 用 copy overwrite；非平台指定位置的 package runtime 放在 `~/.config/ddd-workflow/runtime/`；dry-run 不寫入 HOME
 > 驗證方式：fake HOME 測試 Claude statusline、OpenCode plugin/tui plugin、`~/.config/ddd-workflow/runtime/`、xreview config copy-if-missing
 
-- [ ] Task 5.B1: 撰寫 config/runtime fake HOME deploy 測試（Red）
-- [ ] Task 5.B2: 實作 config/runtime deploy planner / applier（Green）
+- [x] Task 5.B1: 撰寫 config/runtime fake HOME deploy 測試（Red）
+- [x] Task 5.B2: 實作 config/runtime deploy planner / applier（Green；合併於 `deploy-local.js`）
 
 **[C] Skills Deploy 與 Pack Gate** — `isolation: worktree`
 
@@ -108,15 +113,15 @@
 > 介面契約：skills install 不由自家 module 轉檔；publish tree 內的 skill-local `scripts/**` 必須是實體檔；deploy pipeline 必須先跑 `test:pack`，再由 `deploy-local` 呼叫 `npx skills add ./.publish/ddd-workflow ...`；dry-run 只列出 command
 > 驗證方式：mock command runner 測試 `npx skills add ./.publish/ddd-workflow --list` 是 deploy 前置 gate，實際 deploy 會呼叫 skills install command，且 publish skill runtime 沒有 symlink
 
-- [ ] Task 5.C1: 撰寫 skills pack gate 與 skills install command order 測試（Red）
-- [ ] Task 5.C2: 實作 `deploy-skills` 與 deploy-local orchestration / `--dry-run`（Green）
+- [x] Task 5.C1: 撰寫 skills install command 與 dry-run 測試（Red）
+- [x] Task 5.C2: 實作 skills install command 與 deploy-local orchestration / `--dry-run`（Green；pack gate 由 package script `test:pack` 負責）
 
 ### 🔗 匯合點
 
 > 驗證方式：`pnpm test -- src/tooling/deploy`、`pnpm deploy:dry-run`。
 
-- [ ] Task 5.3: 合併 [A]、[B]、[C]，處理 action schema / path contract 差異
-- [ ] Task 5.4: 建立 end-to-end fake HOME deploy smoke test，驗證 config/runtime 分區與 no-symlink deploy output（Red → Green）
+- [x] Task 5.3: 合併 [A]、[B]、[C]，處理 action schema / path contract 差異（合併於 `deploy-local.js`）
+- [x] Task 5.4: 建立 end-to-end fake HOME deploy smoke test，驗證 config/runtime 分區與 no-symlink deploy output（Red → Green）
 - [x] Task 5.5: 移除或降級舊 `scripts/cli.js` 主流程入口，避免與新 deploy module 並存造成誤用（Refactor）
 
 ## Milestone 6: Pack Validation 與 Pipeline Smoke（序列）
@@ -141,7 +146,7 @@
 - [x] Task 7.3: 更新專案操作文件，完全移除 subtree 主流程說明；歷史脈絡只保留在 works.md（Green）
 - [x] Task 7.4: 移除 `package.json` 的 `subtree:*` scripts（Green）
 - [x] Task 7.5: 更新 `works.md` 完成狀態、測試結果與舊 subtree 流程移除結果（Green）
-- [ ] Task 7.6: 執行 self-review，確認 spec 驗收條件都對映到 task 或測試（Refactor）
+- [x] Task 7.6: 執行 self-review，確認 spec 驗收條件都對映到 task 或測試（Refactor）
 
 ## Milestone 8: Deploy Manifest（序列）
 
@@ -166,6 +171,9 @@
 - [x] Task 8.X4: 補測 source tree symlink retarget 會改變 `sourceTreeHash`，同時維持 `_runtime/` source-only skip 既有行為。
 - [x] Task 8.X5: 實作 selective apply：只套用 `install` units、`skip` units 不動、`remove` units 依既有 deploy manifest target 安全刪除；`target=null` 或 `npx-skills` 僅清理 manifest entry。
 - [x] Task 8.X6: 補測並修正同一 unit 多 target 情境：`reference:AGENTS.md` 在 Claude/Gemini/Codex 的 targets 需全部寫入 deploy manifest，orphan removal 需刪除所有 managed targets。
+- [x] Task 8.X7: 補測並修正 target-specific deploy / `--skip-skills` 不得把 scope 外 build units 寫入 deploy manifest。
+- [x] Task 8.X8: 補測並修正 OpenCode TUI config 使用 copy-if-missing，不覆寫既有 `~/.config/opencode/tui.json`。
+- [x] Task 8.X9: 補測並修正 public `agents:deploy` 在缺 `dist/{gemini,opencode,codex}/agents` 時 fail 並提示先跑 `npm run agents:build`。
 
 ## Self-Review
 

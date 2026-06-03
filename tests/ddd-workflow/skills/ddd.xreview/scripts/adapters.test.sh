@@ -44,7 +44,8 @@ echo "--- Test: cli-adapters.md documents stdout/stderr contract (Finding 3) ---
 # spell out the contract so future adapter authors don't accidentally print
 # final to stdout (which would be appended into log via orchestrator's
 # `>> $log 2>&1`).
-DOC_FILE="$SCRIPT_DIR/../references/cli-adapters.md"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+DOC_FILE="$REPO_ROOT/src/ddd-workflow/skills/ddd.xreview/references/cli-adapters.md"
 if grep -qF 'Adapter stdout/stderr contract' "$DOC_FILE"; then
   ((PASS++)); echo "  PASS: cli-adapters.md has 'Adapter stdout/stderr contract' section"
 else

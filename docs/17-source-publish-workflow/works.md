@@ -327,3 +327,137 @@
 - `pnpm run publish:refresh`：通過，以 `--force` 重建 `.publish/ddd-workflow`，產生最新 `.build-manifest.json` 與 public bin。
 - `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
 - `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，只列出 manifest diff 與 copy / command 動作，未寫入 deploy manifest 或 HOME。
+
+## 2026-06-03
+
+### Hotfix：agent-runner.sh 路徑解析 bug
+
+#### 問題確認
+
+- **症狀**：xreview orchestrator 對所有 reviewer 回報 `XREVIEW_ERROR: unknown cli`，三個 reviewer 全部 FAIL。
+- **預期行為**：orchestrator 應正確找到 adapter scripts（claude.sh、codex.sh、gemini.sh、opencode.sh）。
+- **影響範圍**：xreview 完全無法運作；work orchestrator 的 worker script fallback 路徑也同樣壞掉（但測試透過 `DDD_AGENT_RUNNER_WORKER_SCRIPT` env var 繞過）。
+
+#### 根因分析
+
+- **根因**：`get_runner_file()` 使用 `readlink -f` 解析 symlink，得到 `scripts/_include/agent-runner.sh` 的絕對路徑。`get_xreview_script_dir()` 再從該路徑用 `../skills/ddd.xreview/scripts` 導航——但實際需要兩層 `../../`（因為 migration 把 runner 從 `scripts/` 搬到 `scripts/_include/`）。部署後 materialize 成 copy 則更糟：resolved path 就是 `skills/ddd.xreview/scripts/` 本身，`../skills/...` 嵌套成不存在路徑。
+- **舊版 AGENTS 能跑**：runner 在 `ddd-workflow/scripts/agent-runner.sh`（一層），`../skills/...` 正確。migration 加了 `_include/` 一層但沒更新相對路徑。
+- **受影響位置**：3 處（`get_runner_file:64`、`get_xreview_script_dir:69`、work mode worker path:228`）。
+
+#### 修復內容
+
+- `get_runner_file()`：移除 `readlink -f`，改用 `cd dirname + pwd` 返回 invocation path 的絕對路徑。不解析 symlink，dirname 直接對應 skill-local scripts 目錄。
+- `get_xreview_script_dir()`：移除相對路徑導航 `../skills/ddd.xreview/scripts`，改為 `dirname "$runner_file"`（invocation 目錄本身就是 xreview scripts dir）。
+- Work mode worker path：從 `dirname/$runner_file/../skills/ddd.work/scripts/` 改為 `dirname/$runner_file/opencode-worker.sh`（worker 跟 orchestrator 在同目錄）。
+
+#### 未修項目
+
+- **gemini.sh:45 policy path**：`$script_dir/../../../../policies/ddd.xreview.toml` 在 publish repo 正確（4 層到 package root），但部署後 policies 位於 `~/.gemini/policies/` 而非 `.agents/policies/`。這是部署結構問題，與 symlink 解析無關，列為獨立 issue。
+
+#### 測試結果
+
+- **Shell tests**：148 passed, 0 failed（修復前 94 pass / 48 fail）。
+- **Vitest**：14 test files, 222 tests passed。
+- **Build + deploy**：`pnpm run build -- --force` 通過，部署後 xreview orchestrator 成功 START 三個 reviewer。
+
+### XReview 修正：publish hygiene、manifest scope、OpenCode config、statusline 安全性
+
+#### 使用者決策
+
+- Runtime / shell / skill 測試檔為 authoring-only，集中搬到外層 `tests/ddd-workflow/...`。
+- `src/ddd-workflow/` 不放 `*.test.*` / `*.spec.*`，`.publish/ddd-workflow/` 也不得包含測試檔。
+
+#### 修復內容
+
+- 將 `src/ddd-workflow/**/{*.test.js,*.test.sh}` 搬到 `tests/ddd-workflow/...`，保留原路徑結構並調整 import / shell source path。
+- `vitest.config.js` 納入 `tests/**/*.test.{js,ts}`，新增 Vitest shell wrapper，讓 `pnpm test` 正式執行 shell tests。
+- `syncPublishTree()` 新增 publish hygiene，保留 `scripts/_include/agent-runner.sh`，但排除 `*.test.*` / `*.spec.*` artifacts。
+- `runManifestAwareDeploy()` 寫 deploy manifest 時只記錄本次 deploy scope 內的 units；target-specific deploy 不再把其他平台 agents 記成 deployed，`--skip-skills` 不再寫入 skill units。
+- OpenCode TUI config 改為 `copy-if-missing-config`，`config:opencode-tui` 加入 target exists check 與 build manifest copy-if-missing strategy。
+- `statusline.sh` 移除 raw input log 預設值，僅在 `STATUSLINE_INPUT_LOG=/path` opt-in 時寫入；`parseUsageResponse()` 對進入 `eval` 的 `resets_at` 使用 jq `@sh` quote；raw input log jq 加上 `-n` 修正 opt-in 寫入。
+- `deploy-agents.js` / `planDeploy()` 對 Gemini/OpenCode/Codex generated agent dist 加 preflight，缺 `dist/{target}/agents` 時 fail 並提示 `npm run agents:build`；Claude 不需要 generated dist。
+- 更新 `skills/ddd.xreview/references/cli-adapters.md`，改為 authoring `pnpm deploy` / `pnpm deploy:dry-run`、public `npm run agents:build` + `npm run agents:deploy -- opencode`、copy-based deploy、OpenCode `mode: all`。
+
+#### 驗證結果
+
+- Red phase：targeted tests 預期失敗 10 個案例，涵蓋 OpenCode config 覆寫、manifest false deployed、缺 dist preflight、publish test artifact、statusline raw log 預設與 shell tests。
+- Green phase targeted：`pnpm vitest run src/tooling/deploy/deploy-local.test.js src/tooling/publish/build-publish.test.js tests/ddd-workflow/scripts/claude/statusline.test.js tests/ddd-workflow/shell-tests.test.js` 通過，4 test files / 44 tests。
+- Full validation：`pnpm test` 通過，15 test files / 236 tests。
+- `pnpm run publish:refresh`：通過，重建 `.publish/ddd-workflow/`。
+- Publish hygiene：`src/ddd-workflow/**/*.test.*`、`src/ddd-workflow/**/*.spec.*`、`.publish/ddd-workflow/**/*.test.*`、`.publish/ddd-workflow/**/*.spec.*` 均無檔案。
+- `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
+- `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，列出 manifest diff 與 copy / command 動作，未寫入 deploy manifest 或 HOME。
+
+### Coordinator 驗收缺口修正：scoped diff 與 publish manifest ignore
+
+#### 問題確認
+
+- `runManifestAwareDeploy()` 寫 deploy manifest 時已過濾 scope 外 units，但 `diff` / `has_changes` 仍基於 build manifest 全部 units，造成 target-specific deploy 第二次仍被 Gemini/OpenCode/Codex units 判定有 changes。
+- `include_skills: false` 時，skill units 仍會讓 scoped deploy 永遠顯示 `has_changes: true`。
+- `.publish/ddd-workflow/.build-manifest.json` 是 generated local state，但 publish `.gitignore` 未忽略，`publish:refresh` 後會污染 publish PR status。
+
+#### 修復內容
+
+- `runManifestAwareDeploy()` 先建立 deploy actions / scope，再將 `diffManifests()` 結果過濾為 scoped diff；log、`has_changes`、apply、回傳 diff 與 manifest 寫入皆使用 scoped diff。
+- scope 判斷保留 orphan removal 所需 fallback：即使 build unit 已移除、plan action 不存在，仍可依 unit key 與本次 `targets` / `include_skills` 判斷是否屬於本次 deploy scope。
+- `writePublishGitignore()` 保留既有 `dist/`、`node_modules/`，並新增 `.build-manifest.json`。
+
+#### 驗證結果
+
+- Red phase：targeted tests 預期失敗 3 個案例：target-specific second deploy、`--skip-skills` second deploy、publish `.gitignore` 缺 `.build-manifest.json`。
+- Green phase：`pnpm vitest run src/tooling/deploy/deploy-local.test.js src/tooling/publish/build-publish.test.js` 通過，2 test files / 38 tests。
+- Full validation：`pnpm test` 通過，15 test files / 239 tests。
+- `pnpm run publish:refresh`：通過。
+- `.publish/ddd-workflow` 內 `git status --short`：沒有 `?? .build-manifest.json`。
+
+### Coordinator 驗收修正：預設 shell test 過重
+
+#### 問題確認
+
+- 使用者回報 `pnpm test` 停在 `tests/ddd-workflow/shell-tests.test.js 6/7`，看起來像 deadloop 或 shell 測試過重。
+- `shell-tests.test.js` 重複執行 `adapters.test.sh` 與四個 per-CLI adapter tests；其中 `adapters.test.sh` 已經 source 並執行四個 per-CLI suite。
+- 預設 `pnpm test` 還把完整 `xreview-orchestrator.test.sh` 納入第 7 個 shell test，該 suite 是長跑整合測試，不適合每次主測試入口都跑。
+
+#### 修復內容
+
+- 預設 `pnpm test` 只跑 statusline shell test 與 adapter runner，保留 shell 行為測試 gate 但移除重複與長跑項目。
+- 新增 `pnpm run test:shell:full`，透過 `DDD_WORKFLOW_FULL_SHELL_TESTS=1` 額外執行完整 `xreview-orchestrator.test.sh` suite。
+
+#### 二次修正
+
+- 再次量測後確認 `adapters.test.sh` 單獨耗時約 14.6 秒，仍不適合作為 preflight unit test。
+- `pnpm test` 改為 exclude `tests/ddd-workflow/shell-tests.test.js`，只跑 JS/TS unit tests。
+- 新增 `pnpm run test:shell` 跑預設 shell 行為測試；`pnpm run test:shell:full` 跑含完整 xreview orchestrator 的長跑 shell suite。
+
+#### 三次修正
+
+- 使用者確認 preflight 應該只跑真正 unit test；runtime / shell-adjacent tests 不應混在 `pnpm test`。
+- `pnpm test` 透過 `DDD_WORKFLOW_TEST_SCOPE=preflight` 將 Vitest include 收斂為 `src/**/*.test.{js,ts}`，只掃 tooling unit / contract tests。
+- 新增 `pnpm run test:runtime` 跑 `tests/ddd-workflow/**/*.test.js`（不含 shell wrapper），保留 runtime JS 測試但不拖慢 preflight。
+- `test:runtime` / `test:shell` 同樣改用 `DDD_WORKFLOW_TEST_SCOPE` 由 Vitest config 控制 include，避免 CLI glob filter 行為造成找不到測試。
+
+#### 驗證結果
+
+- `pnpm test`：通過，10 test files / 206 tests，5.19 秒。
+- `pnpm run test:runtime`：通過，4 test files / 26 tests，4.54 秒。
+- `pnpm run test:shell`：通過，1 test file / 2 tests，17.27 秒；確認為非 preflight 長跑 shell suite。
+
+### Coordinator 驗收修正：測試命名重新分組
+
+#### 問題確認
+
+- 使用者指出 `test` 周邊命名越切越亂，應回到語意清楚的三層：typical、preflight、full。
+
+#### 修復內容
+
+- `pnpm run test:preflight`：只跑關鍵路徑測試，涵蓋 package scripts、shared paths、Vite entrypoints、manifest、deploy、publish builder。
+- `pnpm test`：跑 typical case，也就是一般 JS/TS unit / contract / runtime tests，但不跑 shell wrapper。
+- `pnpm run test:full`：跑所有 Vitest tests，並透過 `DDD_WORKFLOW_FULL_SHELL_TESTS=1` 納入完整 xreview orchestrator shell suite。
+- 移除 `test:runtime`、`test:shell`、`test:shell:full` 三個臨時命名，避免分組語意繼續發散。
+- `deploy` / `deploy:dry-run` / `deploy:check` 的前置測試改用 `pnpm run test:preflight`，避免部署前 gate 跑 typical suite。
+
+#### 驗證結果
+
+- `pnpm run test:preflight`：通過，7 test files / 104 tests，3.57 秒。
+- `pnpm test`：通過，14 test files / 232 tests，5.91 秒。
+- `pnpm run test:full`：通過，15 test files / 235 tests，90.64 秒；確認完整 shell suite 只存在於 full gate。

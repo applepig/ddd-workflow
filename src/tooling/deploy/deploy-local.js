@@ -21,6 +21,7 @@ import {
 } from '../manifest/deploy-manifest.js'
 
 export const ALL_TARGETS = ['claude', 'gemini', 'codex', 'opencode']
+const GENERATED_AGENT_TARGETS = ['gemini', 'codex', 'opencode']
 
 function listFiles(dir, predicate = () => true) {
   if (!existsSync(dir)) {
@@ -154,7 +155,7 @@ export function planOpencodeDeploy({ publish_root = PUBLISH_ROOT, home_dir = hom
       unit: 'config:opencode-tui',
       source: join(publish_root, 'config', 'opencode-tui.json'),
       target: join(home_dir, '.config', 'opencode', 'tui.json'),
-      mode: 'overwrite-generated',
+      mode: 'copy-if-missing-config',
     },
     {
       type: 'copy',
@@ -204,6 +205,8 @@ export function planDeploy({
   targets = ALL_TARGETS,
   include_skills = true,
 } = {}) {
+  assertGeneratedAgentDist({ publish_root, targets })
+
   const actions = [
     ...planConfigDeploy({ publish_root, home_dir }),
     ...planRuntimeDeploy({ publish_root, home_dir }),
@@ -221,6 +224,23 @@ export function planDeploy({
   }
 
   return actions
+}
+
+export function assertGeneratedAgentDist({ publish_root = PUBLISH_ROOT, targets = ALL_TARGETS } = {}) {
+  if (!existsSync(publish_root)) {
+    return
+  }
+
+  for (const target of targets) {
+    if (!GENERATED_AGENT_TARGETS.includes(target)) {
+      continue
+    }
+
+    const agents_dir = join(publish_root, 'dist', target, 'agents')
+    if (!existsSync(agents_dir)) {
+      throw new Error(`Missing generated ${target} agents dist: ${agents_dir}. Run npm run agents:build first.`)
+    }
+  }
 }
 
 export function applyDeployActions(actions, { dry_run = false, logger = console } = {}) {
@@ -280,6 +300,7 @@ export function resolveDeployManifestPath(home_dir) {
  */
 const CONFIG_TARGET_MAP = {
   'config:xreview': (home_dir) => join(home_dir, '.config', 'ddd-workflow', 'xreview.json'),
+  'config:opencode-tui': (home_dir) => join(home_dir, '.config', 'opencode', 'tui.json'),
 }
 
 /**
@@ -302,6 +323,73 @@ export function checkTargetExistsForUnit(unit_key, home_dir) {
 export function resolveUnitTarget(unit_key, actions) {
   const targets = resolveUnitTargets(unit_key, actions)
   return targets[0] || null
+}
+
+function getDeployScopeUnits(actions) {
+  const units = new Set()
+
+  for (const action of actions) {
+    if (action.type === 'command') {
+      units.add('skill:*')
+      continue
+    }
+
+    if (action.unit) {
+      units.add(action.unit)
+    }
+  }
+
+  return units
+}
+
+function isUnitInDeployScope(unit_key, scope_units, { targets = ALL_TARGETS, include_skills = true } = {}) {
+  if (unit_key.startsWith('skill:')) {
+    return include_skills && scope_units.has('skill:*')
+  }
+
+  if (scope_units.has(unit_key)) {
+    return true
+  }
+
+  return isKnownUnitInRequestedScope(unit_key, targets)
+}
+
+function isKnownUnitInRequestedScope(unit_key, targets) {
+  const parts = unit_key.split(':')
+
+  if (parts[0] === 'agent') {
+    return targets.includes(parts[1])
+  }
+
+  if (unit_key === 'reference:AGENTS.md') {
+    return targets.some((target) => ['claude', 'gemini', 'codex'].includes(target))
+  }
+
+  if (unit_key === 'config:xreview') {
+    return true
+  }
+
+  if (unit_key === 'config:opencode-tui') {
+    return targets.includes('opencode')
+  }
+
+  if (unit_key === 'script:shared:session-trigger.mjs') {
+    return true
+  }
+
+  if (unit_key === 'script:claude:statusline.sh') {
+    return targets.includes('claude')
+  }
+
+  if (unit_key.startsWith('script:opencode:')) {
+    return targets.includes('opencode')
+  }
+
+  if (unit_key.startsWith('policy:')) {
+    return targets.includes('gemini')
+  }
+
+  return false
 }
 
 function resolveUnitTargets(unit_key, actions) {
@@ -422,10 +510,17 @@ export async function runManifestAwareDeploy({
   // Stale build check
   await checkStaleBuild({ source_root, build_manifest })
 
+  const actions = planDeploy({ publish_root, home_dir, include_skills, targets })
+  const scope_units = getDeployScopeUnits(actions)
+
   // Diff
-  const diff = diffManifests(build_manifest, deploy_manifest, {
+  const full_diff = diffManifests(build_manifest, deploy_manifest, {
     checkTargetExists: (unit_key) => checkTargetExistsForUnit(unit_key, home_dir),
   })
+  const diff = full_diff.filter((entry) => isUnitInDeployScope(entry.unit, scope_units, {
+    targets,
+    include_skills,
+  }))
 
   // Log diff summary
   for (const entry of diff) {
@@ -438,7 +533,6 @@ export async function runManifestAwareDeploy({
     return { has_changes: false, diff }
   }
 
-  const actions = planDeploy({ publish_root, home_dir, include_skills, targets })
   const install_units = new Set(diff.filter((entry) => entry.action === 'install').map((entry) => entry.unit))
   const install_actions = actions.filter((action) => {
     if (action.type === 'command') {
@@ -456,6 +550,10 @@ export async function runManifestAwareDeploy({
   if (!dry_run) {
     const deployed_units = {}
     for (const entry of diff) {
+      if (!isUnitInDeployScope(entry.unit, scope_units, { targets, include_skills })) {
+        continue
+      }
+
       if (entry.action === 'install' || entry.action === 'skip') {
         const targets = resolveUnitTargets(entry.unit, actions)
         const target = targets[0]

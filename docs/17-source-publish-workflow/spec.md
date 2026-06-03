@@ -23,6 +23,7 @@ src/ddd-workflow/                  # ddd-authoring 內唯一手改 publishable s
 - Agents 仍作為公開 source 發布；第一波直接遷移既有 `scripts/build.js` 的 agent transpiler 規則到 Vite tooling 管線的 `src/tooling/agent-transpiler/`，再由 build 產生公開 repo 內的 `bin/` entrypoint。
 - Skill-owned runtime scripts 是 skill package contract 的一部分。source 層可在 `src/ddd-workflow/_runtime/` 共用 shell lib/template；publish build 必須產生 skill-local 實體檔到 `skills/<skill>/scripts/**`，不可依賴 symlink 或跨 skill/runtime 目錄。
 - Package-level runtime scripts（例如 Claude statusline、OpenCode Codex usage、session trigger）屬於公開 package 的一部分，保留在公開 repo 的 `scripts/` 下並改成清楚 namespace；部署時放到 `~/.config/ddd-workflow/runtime/` 或平台要求的位置。
+- Runtime / shell / skill 測試檔屬於 authoring-only 資產，集中在外層 `tests/ddd-workflow/...`，不得放在 `src/ddd-workflow/`，也不得 publish 到 `.publish/ddd-workflow/`。
 
 ## 非目標
 
@@ -82,6 +83,7 @@ src/ddd-workflow/                  # ddd-authoring 內唯一手改 publishable s
 - [ ] Milestone 1 起 `pnpm test` 即為 Vitest 主入口，`package.json` 明確宣告 `packageManager` 使用 pnpm；舊 `scripts/cli.js test` 不再佔據主流程。
 - [ ] 每個新 module 都有明確 contract 測試：輸入、輸出、副作用、錯誤情境與 dry-run 行為可被測試驗證。
 - [ ] build 不複製外層 `docs/`、`reference/`、`.opencode/`、`dist/` 或 local-only 檔案到 publish repo。
+- [ ] publish build 不複製任何 `*.test.*` / `*.spec.*` 測試檔；runtime / shell / skill tests 僅存在於 authoring-only `tests/ddd-workflow/...`，並由 `pnpm test` 執行。
 - [ ] publish repo 內的 generated platform outputs（如 `dist/`）被 publish repo 自己的 `.gitignore` 忽略。
 - [ ] publish repo 不包含任何 symlink；所有 installable output 都是實體檔。
 - [ ] `npx skills add ./.publish/ddd-workflow --list` 可找到所有 `ddd.*` skills，作為 dotted skill name 與 Agent Skills CLI 相容性 gate。
@@ -231,13 +233,15 @@ src/ddd-workflow/
 ```json
 {
   "scripts": {
-    "test": "vitest run",
-    "build:tooling": "vite build",
+    "test": "DDD_WORKFLOW_TEST_SCOPE=typical vitest run",
+    "test:preflight": "DDD_WORKFLOW_TEST_SCOPE=preflight vitest run",
+    "test:full": "DDD_WORKFLOW_TEST_SCOPE=full DDD_WORKFLOW_FULL_SHELL_TESTS=1 vitest run",
+    "build:tooling": "node scripts/build-tooling.js",
     "publish:init": "pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs",
     "build": "pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs",
     "test:pack": "npx skills add ./.publish/ddd-workflow --list",
-    "deploy": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
-    "deploy:dry-run": "pnpm test && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
+    "deploy": "pnpm run test:preflight && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
+    "deploy:dry-run": "pnpm run test:preflight && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
     "publish:status": "node dist/tooling/publish/status.mjs",
     "publish:diff": "node dist/tooling/publish/diff.mjs"
   }
@@ -471,6 +475,7 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
     "agent:claude:ddd-developer":  { "hash": "sha256" },
     "agent:gemini:ddd-developer":  { "hash": "sha256" },
     "config:xreview":              { "hash": "sha256", "strategy": "copy-if-missing" },
+    "config:opencode-tui":         { "hash": "sha256", "strategy": "copy-if-missing" },
     "script:claude:statusline.sh": { "hash": "sha256" }
   }
 }
@@ -510,7 +515,7 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
 
 **Hash 算法：** SHA-256 of sorted file contents within each unit（與 `skills-lock.json` 的 `computedHash` 同算法，但自行計算不依賴外部 lock）。`sourceTreeHash` 必須納入 source tree symlink metadata：symlink path 與 link target 變更都會改變 hash；source-only `_runtime/` 仍維持既有 skip 行為。
 
-**XReview 修正後的 deploy 約束：** manifest-aware deploy 不得在只要有任一 changed unit 時全量覆寫。`install` units 才套用 copy/command；`skip` units 不動；`remove` units 只依 deploy manifest 中明確記錄的 managed file target 刪除。copy action 必須帶 precise unit key，避免用檔名片段猜測 target 導致 Claude/Gemini/OpenCode/Codex 同名 agent 寫錯 manifest target。
+**XReview 修正後的 deploy 約束：** manifest-aware deploy 不得在只要有任一 changed unit 時全量覆寫。`install` units 才套用 copy/command；`skip` units 不動；`remove` units 只依 deploy manifest 中明確記錄的 managed file target 刪除。copy action 必須帶 precise unit key，避免用檔名片段猜測 target 導致 Claude/Gemini/OpenCode/Codex 同名 agent 寫錯 manifest target。deploy manifest 只能記錄本次實際 install 的 units，以及本次 deploy scope 內且可由既有 deploy manifest 或 target 存在證明的 skip units；不得把本次 target scope 外或 `--skip-skills` 排除的 build units 記成 deployed。
 
 - [x] Build 階段產生 `.build-manifest.json`，記錄 `sourceTreeHash` 與每個 deployable unit 的 content hash。
 - [x] Deploy 階段讀取 build manifest + deploy manifest，依 hash 比對決定 skip/install/remove。

@@ -32,7 +32,6 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
 const TOOLING_ROOT = existsSync(join(resolve(MODULE_DIR, '..'), 'bin', 'transpile-agents.js'))
   ? resolve(MODULE_DIR, '..')
   : resolve(MODULE_DIR, '../../../src/tooling')
-const force = process.argv.includes('--force')
 
 function fail(message) {
   console.error(`[build-publish] ${message}`)
@@ -55,14 +54,14 @@ export function getPublishStatus({ publish_root = PUBLISH_ROOT } = {}) {
   return result.stdout.trim()
 }
 
-export function guardCleanPublish({ publish_root = PUBLISH_ROOT, allow_dirty = false } = {}) {
-  if (allow_dirty || !existsSync(join(publish_root, '.git'))) {
+export function guardCleanPublish({ publish_root = PUBLISH_ROOT } = {}) {
+  if (!existsSync(join(publish_root, '.git'))) {
     return
   }
 
   const status = getPublishStatus({ publish_root })
   if (status) {
-    throw new Error(`.publish/ddd-workflow 有未提交變更，請先處理或使用 --force：\n${status}`)
+    console.warn(`[build-publish] .publish/ddd-workflow 有未提交變更，將被覆蓋：\n${status}`)
   }
 }
 
@@ -75,6 +74,30 @@ export function clearPublishRoot({ publish_root = PUBLISH_ROOT } = {}) {
     }
 
     rmSync(join(publish_root, entry.name), { recursive: true, force: true })
+  }
+}
+
+function isPublishTestArtifact(path) {
+  return /(^|\/)[^/]+\.(test|spec)\.[^/]+$/.test(path)
+}
+
+function removePublishTestArtifacts(dir, root = dir) {
+  if (!existsSync(dir)) {
+    return
+  }
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full_path = join(dir, entry.name)
+    const rel_path = full_path.slice(root.length + 1)
+
+    if (isPublishTestArtifact(rel_path)) {
+      rmSync(full_path, { recursive: true, force: true })
+      continue
+    }
+
+    if (entry.isDirectory()) {
+      removePublishTestArtifacts(full_path, root)
+    }
   }
 }
 
@@ -99,6 +122,8 @@ export function syncPublishTree({
       preserveTimestamps: true,
     })
   }
+
+  removePublishTestArtifacts(publish_root)
 }
 
 export function writePublishGitignore({ publish_root = PUBLISH_ROOT } = {}) {
@@ -106,7 +131,7 @@ export function writePublishGitignore({ publish_root = PUBLISH_ROOT } = {}) {
   const existing = existsSync(gitignore_path) ? readFileSync(gitignore_path, 'utf8') : ''
   const lines = existing.split('\n').filter(Boolean)
 
-  for (const entry of ['dist/', 'node_modules/']) {
+  for (const entry of ['dist/', 'node_modules/', '.build-manifest.json']) {
     if (!lines.includes(entry)) {
       lines.push(entry)
     }
@@ -206,12 +231,11 @@ export function assertNoSymlinks(target_dir) {
 export async function buildPublish({
   source_root = SOURCE_ROOT,
   publish_root = PUBLISH_ROOT,
-  allow_dirty = force,
   tooling_dist_root = TOOLING_DIST_ROOT,
   logger = console,
 } = {}) {
   assertPublishCheckout({ publish_root })
-  guardCleanPublish({ publish_root, allow_dirty })
+  guardCleanPublish({ publish_root })
   syncPublishTree({ source_root, publish_root })
   materializeSymlinks(publish_root)
   writePublishGitignore({ publish_root })

@@ -25,7 +25,8 @@ if [[ -z "${ADAPTER_TEST_SCRIPT_DIR:-}" ]]; then
   # This file lives at scripts/adapters.test.common.sh.
   ADAPTER_TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-ADAPTER_DIR="$ADAPTER_TEST_SCRIPT_DIR/adapters"
+ADAPTER_TEST_REPO_ROOT="$(cd "${ADAPTER_TEST_SCRIPT_DIR}/../../../../.." && pwd)"
+ADAPTER_DIR="$ADAPTER_TEST_REPO_ROOT/src/ddd-workflow/skills/ddd.xreview/scripts/adapters"
 
 # Global counters. Guarded so the runner can accumulate across per-CLI sources.
 : "${PASS:=0}"

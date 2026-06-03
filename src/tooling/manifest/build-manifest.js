@@ -28,6 +28,7 @@ const EXCLUDED_TOP_LEVEL = new Set([
 
 const COPY_IF_MISSING_UNITS = new Set([
   'config:xreview',
+  'config:opencode-tui',
 ])
 
 const DIST_AGENT_PLATFORMS = [

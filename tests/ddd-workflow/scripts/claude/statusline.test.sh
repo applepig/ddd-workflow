@@ -122,7 +122,8 @@ print_summary() {
 # ─── Setup ───────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATUSLINE_SH="${SCRIPT_DIR}/statusline.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+STATUSLINE_SH="${REPO_ROOT}/src/ddd-workflow/scripts/claude/statusline.sh"
 
 # 測試用的暫存目錄
 TEST_TMP_DIR=$(mktemp -d)
@@ -450,6 +451,22 @@ eval "$(parseUsageResponse "$local_response")"
 assert_equals "extra_usage is_enabled" "false" "$api_extra_enabled"
 assert_equals "extra_usage utilization defaults to 0" "0" "$api_extra_util"
 
+# Test: resets_at payload must be shell-safe before eval
+echo ""
+echo "--- Parse malicious resets_at safely ---"
+
+pwn_file="${TEST_TMP_DIR}/pwned-by-eval"
+malicious_payload="\$(touch $pwn_file)"
+malicious_response=$(jq -n --arg resets_at "$malicious_payload" '{five_hour:{utilization:10,resets_at:$resets_at},seven_day:{utilization:5,resets_at:"safe"},extra_usage:{is_enabled:false}}')
+eval "$(parseUsageResponse "$malicious_response")"
+assert_equals "malicious resets_at remains literal" "$malicious_payload" "$api_five_hour_resets_at"
+if [[ -f "$pwn_file" ]]; then
+  ((FAIL_COUNT++)); echo "  ${_RED}FAIL${_RST}: malicious resets_at should not execute command substitution"
+else
+  ((PASS_COUNT++)); echo "  ${_GREEN}PASS${_RST}: malicious resets_at does not execute command substitution"
+fi
+TOTAL_COUNT=$(( TOTAL_COUNT + 1 ))
+
 # ─── Test: M2 — API 資料覆蓋 StatusJSON ─────────────────────────────────────
 
 echo ""
@@ -488,6 +505,7 @@ result=$(echo "$MOCK_STATUS_JSON" | \
   STATUSLINE_CACHE_FILE="$test_m2_cache_file" \
   STATUSLINE_CREDENTIALS_FILE="$test_m2_cred_file" \
   STATUSLINE_INVOCATION_LOG="${TEST_TMP_DIR}/statusline-invocations.log" \
+  STATUSLINE_INPUT_LOG="${TEST_TMP_DIR}/statusline-input.jsonl" \
   STATUSLINE_TERM_COLS=80 \
   bash "$STATUSLINE_SH" 2>/dev/null)
 
@@ -499,6 +517,26 @@ invocation_log=$(cat "${TEST_TMP_DIR}/statusline-invocations.log" 2>/dev/null ||
 assert_contains "should log statusline invocation" "$invocation_log" "mode="
 assert_contains "should log invocation terminal cols" "$invocation_log" "cols="
 assert_contains "should log invocation usage" "$invocation_log" "usage=42"
+
+raw_input_log=$(cat "${TEST_TMP_DIR}/statusline-input.jsonl" 2>/dev/null || true)
+assert_contains "should write raw input log when STATUSLINE_INPUT_LOG is set" "$raw_input_log" '"payload"'
+
+default_input_log="/tmp/claude/statusline-input.jsonl"
+rm -f "$default_input_log" 2>/dev/null || true
+default_log_result=$(echo "$MOCK_STATUS_JSON" | \
+  STATUSLINE_TEST_MODE="" \
+  STATUSLINE_CACHE_FILE="$test_m2_cache_file" \
+  STATUSLINE_CREDENTIALS_FILE="$test_m2_cred_file" \
+  STATUSLINE_INVOCATION_LOG="${TEST_TMP_DIR}/statusline-default-invocations.log" \
+  STATUSLINE_TERM_COLS=80 \
+  bash "$STATUSLINE_SH" 2>/dev/null)
+assert_not_contains "should keep statusline output when raw input log is unset" "$default_log_result" "statusline ERR"
+if [[ -f "$default_input_log" ]]; then
+  ((FAIL_COUNT++)); echo "  ${_RED}FAIL${_RST}: default raw input log should not be created"
+else
+  ((PASS_COUNT++)); echo "  ${_GREEN}PASS${_RST}: default raw input log is not created"
+fi
+TOTAL_COUNT=$(( TOTAL_COUNT + 1 ))
 
 # Test: API 有資料時，resets_at 被轉為 epoch（顯示為倒數計時器）
 echo ""

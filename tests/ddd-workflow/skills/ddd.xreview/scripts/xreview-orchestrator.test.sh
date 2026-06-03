@@ -15,7 +15,8 @@ set -uo pipefail
 
 PASS=0; FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ORCH="$SCRIPT_DIR/xreview-orchestrator.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+ORCH="$REPO_ROOT/src/ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.sh"
 
 # Default existing tests to streaming mode so they're deterministic regardless
 # of the host CLI env (CLAUDECODE / OPENCODE etc.). Blocking-mode tests below

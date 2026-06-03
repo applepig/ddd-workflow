@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { limitColumns, usedPercent } from "./opencode-codex-usage-format.js"
+import { limitColumns, usedPercent } from "../../../../src/ddd-workflow/scripts/opencode/opencode-codex-usage-format.js"
 
 describe("opencode codex usage format", () => {
   it("treats elapsed reset time as unknown usage", () => {

@@ -92,6 +92,22 @@ describe('deploy-local fake HOME integration', () => {
     expect(readFileSync(config_path, 'utf8')).toBe('{"reviewers":["custom"]}\n')
   })
 
+  it('preserves existing user OpenCode TUI config', () => {
+    const config_path = join(home_dir, '.config', 'opencode', 'tui.json')
+    writeFile(config_path, '{"theme":"custom"}\n')
+
+    const actions = planDeploy({
+      publish_root,
+      home_dir,
+      include_skills: false,
+      targets: ['opencode'],
+    })
+
+    applyDeployActions(actions, { logger: { log() {} } })
+
+    expect(readFileSync(config_path, 'utf8')).toBe('{"theme":"custom"}\n')
+  })
+
   it('does not write to fake HOME during dry-run', () => {
     const actions = planDeploy({
       publish_root,
@@ -184,6 +200,13 @@ describe('checkTargetExistsForUnit', () => {
     writeFile(config_path, '{}')
 
     expect(checkTargetExistsForUnit('config:xreview', tmp_dir)).toBe(true)
+  })
+
+  it('should return true when config:opencode-tui target exists', () => {
+    const config_path = join(tmp_dir, '.config', 'opencode', 'tui.json')
+    writeFile(config_path, '{}')
+
+    expect(checkTargetExistsForUnit('config:opencode-tui', tmp_dir)).toBe(true)
   })
 
   it('should return false when config:xreview target does not exist', () => {
@@ -314,6 +337,184 @@ describe('manifest-aware deploy integration', () => {
     expect(deploy_manifest.units['agent:claude:ddd-developer'].hash).toBe('agent-hash')
   })
 
+  it('should only record units installed for the selected target', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+        'agent:claude:ddd-developer': { hash: 'claude-hash' },
+        'agent:gemini:ddd-developer': { hash: 'gemini-hash' },
+        'agent:opencode:ddd-developer': { hash: 'opencode-hash' },
+        'agent:codex:ddd-developer': { hash: 'codex-hash' },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    const deploy_manifest = JSON.parse(readFileSync(resolveDeployManifestPath(home_dir), 'utf8'))
+    expect(Object.keys(deploy_manifest.units)).toEqual(expect.arrayContaining([
+      'reference:AGENTS.md',
+      'agent:claude:ddd-developer',
+    ]))
+    expect(deploy_manifest.units['agent:gemini:ddd-developer']).toBeUndefined()
+    expect(deploy_manifest.units['agent:opencode:ddd-developer']).toBeUndefined()
+    expect(deploy_manifest.units['agent:codex:ddd-developer']).toBeUndefined()
+  })
+
+  it('should ignore out-of-scope platform units when detecting second scoped deploy changes', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+        'agent:claude:ddd-developer': { hash: 'claude-hash' },
+        'agent:gemini:ddd-developer': { hash: 'gemini-hash' },
+        'agent:opencode:ddd-developer': { hash: 'opencode-hash' },
+        'agent:codex:ddd-developer': { hash: 'codex-hash' },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    expect(result.has_changes).toBe(false)
+    expect(result.diff.some((entry) => entry.unit === 'agent:gemini:ddd-developer')).toBe(false)
+    expect(result.diff.some((entry) => entry.unit === 'agent:opencode:ddd-developer')).toBe(false)
+    expect(result.diff.some((entry) => entry.unit === 'agent:codex:ddd-developer')).toBe(false)
+  })
+
+  it('should not record skill units when skills are skipped', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'skill:ddd.work': { hash: 'skill-hash' },
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    const deploy_manifest = JSON.parse(readFileSync(resolveDeployManifestPath(home_dir), 'utf8'))
+    expect(deploy_manifest.units['reference:AGENTS.md']).toBeDefined()
+    expect(deploy_manifest.units['skill:ddd.work']).toBeUndefined()
+  })
+
+  it('should ignore skill units when detecting second deploy changes with skills skipped', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'skill:ddd.work': { hash: 'skill-hash' },
+        'reference:AGENTS.md': { hash: 'ref-hash' },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    const result = await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    expect(result.has_changes).toBe(false)
+    expect(result.diff.some((entry) => entry.unit === 'skill:ddd.work')).toBe(false)
+  })
+
+  it('should fail before deploying generated agent targets when dist is missing', async () => {
+    rmSync(join(publish_root, 'dist', 'opencode'), { recursive: true, force: true })
+
+    expect(() => planDeploy({
+      publish_root,
+      home_dir,
+      include_skills: false,
+      targets: ['opencode'],
+    })).toThrow(/npm run agents:build/)
+  })
+
+  it('should make the public deploy bin fail when generated dist is missing', () => {
+    rmSync(join(publish_root, 'dist', 'opencode'), { recursive: true, force: true })
+
+    const result = spawnSync('node', [
+      join(process.cwd(), 'src', 'tooling', 'bin', 'deploy-agents.js'),
+      'opencode',
+      '--dry-run',
+    ], {
+      cwd: publish_root,
+      encoding: 'utf8',
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('npm run agents:build')
+  })
+
   it('should skip deploy when second run finds no changes', async () => {
     const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
     const source_hash = await computeSourceTreeHash(source_root)
@@ -375,6 +576,9 @@ describe('manifest-aware deploy full lifecycle', () => {
 
   function writeMatchingPublishFixture(root) {
     writeFile(join(root, 'agents', 'ddd-test.md'), '# Test Agent\n')
+    mkdirSync(join(root, 'dist', 'gemini', 'agents'), { recursive: true })
+    mkdirSync(join(root, 'dist', 'codex', 'agents'), { recursive: true })
+    mkdirSync(join(root, 'dist', 'opencode', 'agents'), { recursive: true })
     writeFile(join(root, 'config', 'xreview.json'), '{"reviewers":[]}\n')
     writeFile(join(root, 'references', 'AGENTS.md'), '# Shared Instructions\n')
     writeFile(join(root, 'scripts', 'claude', 'statusline.sh'), '#!/bin/sh\n')

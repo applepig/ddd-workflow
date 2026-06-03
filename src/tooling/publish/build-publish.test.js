@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import {
   existsSync,
   mkdirSync,
@@ -11,7 +11,7 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { buildPublish, guardCleanPublish, syncPublishTree } from './build-publish.js'
+import { buildPublish, guardCleanPublish, syncPublishTree, writePublishGitignore } from './build-publish.js'
 
 function mkdtempLike(prefix) {
   const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf-8' })
@@ -62,6 +62,47 @@ describe('syncPublishTree', () => {
 
     expect(existsSync(join(publish_root, '_runtime'))).toBe(false)
     expect(readFileSync(join(publish_root, 'skills', 'ddd.work', 'scripts', 'work-orchestrator.sh'), 'utf8')).toBe('#!/bin/sh\n')
+  })
+
+  it('excludes authoring-only test files from the publish tree', () => {
+    mkdirSync(join(source_root, 'scripts', '_include'), { recursive: true })
+    mkdirSync(join(source_root, 'skills', 'ddd.work', 'scripts'), { recursive: true })
+    writeFileSync(join(source_root, 'scripts', '_include', 'agent-runner.test.js'), 'test\n')
+    writeFileSync(join(source_root, 'scripts', '_include', 'agent-runner.sh'), '#!/bin/sh\n')
+    writeFileSync(join(source_root, 'skills', 'ddd.work', 'scripts', 'work.test.sh'), 'test\n')
+
+    syncPublishTree({ source_root, publish_root })
+
+    expect(existsSync(join(publish_root, 'scripts', '_include', 'agent-runner.sh'))).toBe(true)
+    expect(existsSync(join(publish_root, 'scripts', '_include', 'agent-runner.test.js'))).toBe(false)
+    expect(existsSync(join(publish_root, 'skills', 'ddd.work', 'scripts', 'work.test.sh'))).toBe(false)
+  })
+})
+
+describe('writePublishGitignore', () => {
+  let tmp_dir
+  let publish_root
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'publish-gitignore-'))
+    publish_root = join(tmp_dir, '.publish', 'ddd-workflow')
+    mkdirSync(publish_root, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('ignores generated build manifest while preserving generated dist ignores', () => {
+    writePublishGitignore({ publish_root })
+
+    const lines = readFileSync(join(publish_root, '.gitignore'), 'utf8').split('\n')
+
+    expect(lines).toEqual(expect.arrayContaining([
+      'dist/',
+      'node_modules/',
+      '.build-manifest.json',
+    ]))
   })
 })
 
@@ -156,13 +197,15 @@ describe('buildPublish', () => {
     })).rejects.toThrow(/請先執行 pnpm run publish:init/)
   })
 
-  it('fails dirty managed publish checkout unless forced', () => {
+  it('warns but does not throw on dirty managed publish checkout', () => {
     mkdirSync(publish_root, { recursive: true })
     spawnSync('git', ['init'], { cwd: publish_root })
     writeFileSync(join(publish_root, 'dirty.txt'), 'dirty')
 
-    expect(() => guardCleanPublish({ publish_root })).toThrow(/未提交變更/)
-    expect(() => guardCleanPublish({ publish_root, allow_dirty: true })).not.toThrow()
+    const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(() => guardCleanPublish({ publish_root })).not.toThrow()
+    expect(warn_spy).toHaveBeenCalledWith(expect.stringContaining('未提交變更'))
+    warn_spy.mockRestore()
   })
 
   it('runs public bin entrypoints from the publish root', async () => {

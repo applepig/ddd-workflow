@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
-const SOURCE = readFileSync(new URL("./session-trigger.mjs", import.meta.url), "utf8")
+const SOURCE = readFileSync(new URL("../../../../src/ddd-workflow/scripts/shared/session-trigger.mjs", import.meta.url), "utf8")
 
 describe("session-trigger", () => {
   it("keeps the Codex command on the model bucket used by interactive Codex and opencode", () => {
