@@ -71,7 +71,6 @@ CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
 : "${STATUSLINE_INVOCATION_LOG:=/tmp/claude/statusline-invocations.log}"
-: "${STATUSLINE_INPUT_LOG:=/tmp/claude/statusline-input.jsonl}"
 
 # ─── OAuth + API Functions ───────────────────────────────────────────────────
 
@@ -208,9 +207,9 @@ DEFAULTS
     def safe_bool: if . == true then "true" else "false" end;
     [
       "api_five_hour_util=\(.five_hour.utilization | safe_num)",
-      "api_five_hour_resets_at=\(.five_hour.resets_at | safe_str)",
+      "api_five_hour_resets_at=\(.five_hour.resets_at | safe_str | @sh)",
       "api_seven_day_util=\(.seven_day.utilization | safe_num)",
-      "api_seven_day_resets_at=\(.seven_day.resets_at | safe_str)",
+      "api_seven_day_resets_at=\(.seven_day.resets_at | safe_str | @sh)",
       "api_extra_enabled=\(.extra_usage.is_enabled | safe_bool)",
       "api_extra_util=\(.extra_usage.utilization | safe_num)",
       "api_extra_used_credits=\(.extra_usage.used_credits | safe_num)",
@@ -304,7 +303,7 @@ logStatuslineInput() {
   log_dir="$(dirname "$STATUSLINE_INPUT_LOG")"
   mkdir -p "$log_dir" 2>/dev/null || return 0
 
-  jq -c --arg ts "$(date -Is 2>/dev/null || date)" --argjson payload "$input" \
+  jq -nc --arg ts "$(date -Is 2>/dev/null || date)" --argjson payload "$input" \
     '{ts: $ts, payload: $payload}' >> "$STATUSLINE_INPUT_LOG" 2>/dev/null || true
 }
 
