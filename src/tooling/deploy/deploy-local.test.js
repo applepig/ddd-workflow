@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -7,7 +7,9 @@ import {
   applyDeployActions,
   checkTargetExistsForUnit,
   parseArgs,
+  planClaudeDeploy,
   planDeploy,
+  planRuntimeDeploy,
   resolveDeployManifestPath,
   resolveUnitTarget,
   runManifestAwareDeploy,
@@ -42,19 +44,55 @@ function writePublishFixture(publish_root) {
   writeFile(join(publish_root, 'scripts', 'opencode', 'opencode-codex-usage-format.js'), 'format\n')
 }
 
+function installFakeCrontab(tmp_dir, initial_crontab = '') {
+  const bin_dir = join(tmp_dir, 'bin')
+  const crontab_path = join(tmp_dir, 'crontab.txt')
+  mkdirSync(bin_dir, { recursive: true })
+  writeFileSync(crontab_path, initial_crontab)
+  writeFileSync(join(bin_dir, 'crontab'), `#!/bin/sh
+set -eu
+if [ "\${1:-}" = "-l" ]; then
+  cat "${crontab_path}"
+  exit 0
+fi
+cat > "${crontab_path}"
+`)
+  chmodSync(join(bin_dir, 'crontab'), 0o755)
+  return { bin_dir, crontab_path }
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+function withPath(path_value, callback) {
+  const original_path = process.env.PATH
+  process.env.PATH = path_value
+  try {
+    return callback()
+  } finally {
+    process.env.PATH = original_path
+  }
+}
+
 describe('deploy-local fake HOME integration', () => {
   let tmp_dir
   let publish_root
   let home_dir
+  let original_path
 
   beforeEach(() => {
     tmp_dir = mkdtempLike(join(tmpdir(), 'deploy-local-integration-'))
     publish_root = join(tmp_dir, 'publish')
     home_dir = join(tmp_dir, 'home')
     writePublishFixture(publish_root)
+    const { bin_dir } = installFakeCrontab(tmp_dir)
+    original_path = process.env.PATH
+    process.env.PATH = `${bin_dir}:${original_path}`
   })
 
   afterEach(() => {
+    process.env.PATH = original_path
     rmSync(tmp_dir, { recursive: true, force: true })
   })
 
@@ -118,6 +156,184 @@ describe('deploy-local fake HOME integration', () => {
     applyDeployActions(actions, { dry_run: true, logger: { log() {} } })
 
     expect(existsSync(home_dir)).toBe(false)
+  })
+})
+
+describe('session-trigger crontab deploy', () => {
+  let tmp_dir
+  let home_dir
+  let publish_root
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'session-trigger-cron-'))
+    home_dir = join(tmp_dir, 'home')
+    publish_root = join(tmp_dir, 'publish')
+    writePublishFixture(publish_root)
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('should plan a managed crontab action for the deployed runtime script', () => {
+    const actions = planRuntimeDeploy({ publish_root, home_dir })
+
+    expect(actions).toContainEqual({
+      type: 'crontab',
+      label: 'install session-trigger crontab',
+      script: join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs'),
+    })
+  })
+
+  it('should install managed session-trigger block through crontab', () => {
+    const { bin_dir, crontab_path } = installFakeCrontab(tmp_dir, 'MAILTO=""\n')
+    const actions = planRuntimeDeploy({ publish_root, home_dir })
+
+    withPath(`${bin_dir}:${process.env.PATH}`, () => {
+      applyDeployActions(actions, { logger: { log() {} } })
+    })
+
+    const crontab = readFileSync(crontab_path, 'utf8')
+    expect(crontab).toContain('MAILTO=""\n')
+    expect(crontab).toContain('# BEGIN AGENTS session-trigger')
+    expect(crontab).toContain(`0 7,12,17 * * 1-5 PATH=${home_dir}/.opencode/bin:${home_dir}/.local/bin:/usr/local/bin:/usr/bin:/bin ${join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs')} >/dev/null 2>&1`)
+    expect(crontab).toContain('# END AGENTS session-trigger')
+  })
+
+  it('should not modify crontab during dry-run', () => {
+    const { bin_dir, crontab_path } = installFakeCrontab(tmp_dir, 'MAILTO=""\n')
+    const actions = planRuntimeDeploy({ publish_root, home_dir })
+
+    withPath(`${bin_dir}:${process.env.PATH}`, () => {
+      applyDeployActions(actions, { dry_run: true, logger: { log() {} } })
+    })
+
+    expect(readFileSync(crontab_path, 'utf8')).toBe('MAILTO=""\n')
+  })
+
+  it('should replace unmanaged session-trigger lines with one managed block', () => {
+    const old_line = '0 8 * * * /old/path/session-trigger.mjs >/dev/null 2>&1\n'
+    const { bin_dir, crontab_path } = installFakeCrontab(tmp_dir, `MAILTO=""\n${old_line}`)
+    const actions = planRuntimeDeploy({ publish_root, home_dir })
+
+    withPath(`${bin_dir}:${process.env.PATH}`, () => {
+      applyDeployActions(actions, { logger: { log() {} } })
+    })
+
+    const crontab = readFileSync(crontab_path, 'utf8')
+    expect(crontab).not.toContain(old_line)
+    expect(crontab.match(/BEGIN AGENTS session-trigger/g)).toHaveLength(1)
+  })
+
+  it('should skip writing when the managed crontab block is already correct', () => {
+    const script = join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs')
+    const managed_block = [
+      '# BEGIN AGENTS session-trigger',
+      `0 7,12,17 * * 1-5 PATH=${home_dir}/.opencode/bin:${home_dir}/.local/bin:/usr/local/bin:/usr/bin:/bin ${script} >/dev/null 2>&1`,
+      '# END AGENTS session-trigger',
+      '',
+    ].join('\n')
+    const { bin_dir, crontab_path } = installFakeCrontab(tmp_dir, managed_block)
+    const actions = planRuntimeDeploy({ publish_root, home_dir })
+    const log_messages = []
+
+    withPath(`${bin_dir}:${process.env.PATH}`, () => {
+      applyDeployActions(actions, { logger: { log: (msg) => log_messages.push(msg) } })
+    })
+
+    expect(readFileSync(crontab_path, 'utf8')).toBe(managed_block)
+    expect(log_messages.some((msg) => msg.includes('already installed'))).toBe(true)
+  })
+})
+
+describe('Claude statusLine settings deploy', () => {
+  let tmp_dir
+  let publish_root
+  let home_dir
+  const expected_status_line = {
+    type: 'command',
+    command: 'bash "$HOME/.claude/scripts/statusline.sh"',
+  }
+
+  beforeEach(() => {
+    tmp_dir = mkdtempLike(join(tmpdir(), 'claude-settings-'))
+    publish_root = join(tmp_dir, 'publish')
+    home_dir = join(tmp_dir, 'home')
+    writePublishFixture(publish_root)
+  })
+
+  afterEach(() => {
+    rmSync(tmp_dir, { recursive: true, force: true })
+  })
+
+  it('should plan Claude settings with the statusLine command in the Claude target scope', () => {
+    const actions = planClaudeDeploy({ publish_root, home_dir })
+
+    expect(actions).toContainEqual({
+      type: 'claude-settings',
+      unit: 'setting:claude:statusLine',
+      target: join(home_dir, '.claude', 'settings.json'),
+      statusLine: expected_status_line,
+    })
+  })
+
+  it('should write statusLine and preserve other settings fields by default', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+    writeFile(settings_path, JSON.stringify({ theme: 'dark', permissions: { allow: ['Bash'] } }, null, 2))
+
+    applyDeployActions(planClaudeDeploy({ publish_root, home_dir }), { logger: { log() {} } })
+
+    expect(readJson(settings_path)).toEqual({
+      theme: 'dark',
+      permissions: { allow: ['Bash'] },
+      statusLine: expected_status_line,
+    })
+  })
+
+  it('should not write Claude settings during dry-run', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+
+    applyDeployActions(planClaudeDeploy({ publish_root, home_dir }), { dry_run: true, logger: { log() {} } })
+
+    expect(existsSync(settings_path)).toBe(false)
+  })
+
+  it('should log skip when Claude statusLine is already correct', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+    const log_messages = []
+    writeFile(settings_path, JSON.stringify({ statusLine: expected_status_line }, null, 2))
+
+    applyDeployActions(planClaudeDeploy({ publish_root, home_dir }), {
+      logger: { log: (msg) => log_messages.push(msg) },
+    })
+
+    expect(readJson(settings_path).statusLine).toEqual(expected_status_line)
+    expect(log_messages.some((msg) => msg.includes('already correct'))).toBe(true)
+  })
+
+  it('should skip conflicting statusLine when interactive settings does not confirm overwrite', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+    const existing_status_line = { type: 'command', command: 'custom-statusline' }
+    writeFile(settings_path, JSON.stringify({ statusLine: existing_status_line, theme: 'dark' }, null, 2))
+
+    applyDeployActions(planClaudeDeploy({ publish_root, home_dir }), {
+      logger: { log() {} },
+      interactive_settings: { confirm: () => false },
+    })
+
+    expect(readJson(settings_path)).toEqual({ statusLine: existing_status_line, theme: 'dark' })
+  })
+
+  it('should overwrite conflicting statusLine when interactive settings confirms overwrite', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+    writeFile(settings_path, JSON.stringify({ statusLine: { type: 'command', command: 'custom' }, theme: 'dark' }, null, 2))
+
+    applyDeployActions(planClaudeDeploy({ publish_root, home_dir }), {
+      logger: { log() {} },
+      interactive_settings: { confirm: () => true },
+    })
+
+    expect(readJson(settings_path)).toEqual({ theme: 'dark', statusLine: expected_status_line })
   })
 })
 
@@ -223,6 +439,8 @@ describe('manifest-aware deploy integration', () => {
   let publish_root
   let home_dir
   let source_root
+  let crontab_path
+  let original_path
 
   beforeEach(() => {
     tmp_dir = mkdtempLike(join(tmpdir(), 'manifest-deploy-'))
@@ -231,6 +449,10 @@ describe('manifest-aware deploy integration', () => {
     source_root = join(tmp_dir, 'src', 'ddd-workflow')
 
     writePublishFixture(publish_root)
+    const fake_crontab = installFakeCrontab(tmp_dir)
+    crontab_path = fake_crontab.crontab_path
+    original_path = process.env.PATH
+    process.env.PATH = `${fake_crontab.bin_dir}:${original_path}`
 
     // Build a minimal source tree for stale-build check
     mkdirSync(join(source_root, 'skills', 'ddd.work'), { recursive: true })
@@ -238,6 +460,7 @@ describe('manifest-aware deploy integration', () => {
   })
 
   afterEach(() => {
+    process.env.PATH = original_path
     rmSync(tmp_dir, { recursive: true, force: true })
   })
 
@@ -335,6 +558,114 @@ describe('manifest-aware deploy integration', () => {
     expect(deploy_manifest.units['reference:AGENTS.md'].hash).toBe('ref-hash')
     expect(deploy_manifest.units['agent:claude:ddd-developer']).toBeDefined()
     expect(deploy_manifest.units['agent:claude:ddd-developer'].hash).toBe('agent-hash')
+  })
+
+  it('should install session-trigger crontab during manifest-aware deploy', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'script:shared:session-trigger.mjs': { hash: 'script-hash' },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    expect(readFileSync(crontab_path, 'utf8')).toContain('# BEGIN AGENTS session-trigger')
+  })
+
+  it('should ensure session-trigger crontab even when runtime script is unchanged', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+    const script_hash = 'script-hash'
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'script:shared:session-trigger.mjs': { hash: script_hash },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+    writeFile(join(home_dir, '.config', 'ddd-workflow', 'deploy.json'), JSON.stringify({
+      version: 1,
+      deployedFrom: publish_root,
+      deployedAt: '2025-01-01T00:00:00.000Z',
+      units: {
+        'script:shared:session-trigger.mjs': {
+          hash: script_hash,
+          target: join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs'),
+        },
+      },
+    }))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    expect(readFileSync(crontab_path, 'utf8')).toContain('# BEGIN AGENTS session-trigger')
+  })
+
+  it('should ensure Claude settings even when statusline script is unchanged', async () => {
+    const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
+    const source_hash = await computeSourceTreeHash(source_root)
+    const script_hash = 'script-hash'
+
+    const build_manifest = {
+      version: 1,
+      sourceTreeHash: source_hash,
+      buildTime: '2025-01-01T00:00:00.000Z',
+      units: {
+        'script:claude:statusline.sh': { hash: script_hash },
+      },
+    }
+    writeFile(join(publish_root, '.build-manifest.json'), JSON.stringify(build_manifest))
+    writeFile(join(home_dir, '.config', 'ddd-workflow', 'deploy.json'), JSON.stringify({
+      version: 1,
+      deployedFrom: publish_root,
+      deployedAt: '2025-01-01T00:00:00.000Z',
+      units: {
+        'script:claude:statusline.sh': {
+          hash: script_hash,
+          target: join(home_dir, '.claude', 'scripts', 'statusline.sh'),
+        },
+      },
+    }))
+
+    await runManifestAwareDeploy({
+      publish_root,
+      home_dir,
+      source_root,
+      include_skills: false,
+      targets: ['claude'],
+      dry_run: false,
+      logger: { log() {} },
+    })
+
+    expect(readJson(join(home_dir, '.claude', 'settings.json')).statusLine).toEqual({
+      type: 'command',
+      command: 'bash "$HOME/.claude/scripts/statusline.sh"',
+    })
   })
 
   it('should only record units installed for the selected target', async () => {
@@ -515,6 +846,27 @@ describe('manifest-aware deploy integration', () => {
     expect(result.stderr).toContain('npm run agents:build')
   })
 
+  it('should not overwrite conflicting Claude statusLine from public deploy bin in non-TTY mode', () => {
+    const settings_path = join(home_dir, '.claude', 'settings.json')
+    const existing_settings = {
+      statusLine: { type: 'command', command: 'custom-statusline' },
+      theme: 'dark',
+    }
+    writeFile(settings_path, JSON.stringify(existing_settings, null, 2))
+
+    const result = spawnSync('node', [
+      join(process.cwd(), 'src', 'tooling', 'bin', 'deploy-agents.js'),
+      'claude',
+    ], {
+      cwd: publish_root,
+      env: { ...process.env, HOME: home_dir },
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(0)
+    expect(readJson(settings_path)).toEqual(existing_settings)
+  })
+
   it('should skip deploy when second run finds no changes', async () => {
     const { computeSourceTreeHash } = await import('../manifest/build-manifest.js')
     const source_hash = await computeSourceTreeHash(source_root)
@@ -566,6 +918,7 @@ describe('manifest-aware deploy full lifecycle', () => {
   let home_dir
   let source_root
   const silent_logger = { log() {} }
+  let original_path
 
   function writeSourceFixture(root) {
     writeFile(join(root, 'skills', 'ddd.test', 'SKILL.md'), '---\nname: ddd.test\n---\n# Test Skill\n')
@@ -602,9 +955,13 @@ describe('manifest-aware deploy full lifecycle', () => {
 
     writeSourceFixture(source_root)
     writeMatchingPublishFixture(publish_root)
+    const { bin_dir } = installFakeCrontab(tmp_dir)
+    original_path = process.env.PATH
+    process.env.PATH = `${bin_dir}:${original_path}`
   })
 
   afterEach(() => {
+    process.env.PATH = original_path
     rmSync(tmp_dir, { recursive: true, force: true })
   })
 

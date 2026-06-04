@@ -5,8 +5,10 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -22,6 +24,12 @@ import {
 
 export const ALL_TARGETS = ['claude', 'gemini', 'codex', 'opencode']
 const GENERATED_AGENT_TARGETS = ['gemini', 'codex', 'opencode']
+const SESSION_TRIGGER_BEGIN_MARKER = '# BEGIN AGENTS session-trigger'
+const SESSION_TRIGGER_END_MARKER = '# END AGENTS session-trigger'
+const CLAUDE_STATUS_LINE = {
+  type: 'command',
+  command: 'bash "$HOME/.claude/scripts/statusline.sh"',
+}
 
 function listFiles(dir, predicate = () => true) {
   if (!existsSync(dir)) {
@@ -102,6 +110,12 @@ export function planClaudeDeploy({ publish_root = PUBLISH_ROOT, home_dir = homed
       source: join(publish_root, 'scripts', 'claude', 'statusline.sh'),
       target: join(home_dir, '.claude', 'scripts', 'statusline.sh'),
       mode: 'overwrite-generated',
+    },
+    {
+      type: 'claude-settings',
+      unit: 'setting:claude:statusLine',
+      target: join(home_dir, '.claude', 'settings.json'),
+      statusLine: CLAUDE_STATUS_LINE,
     },
   ]
 }
@@ -188,13 +202,20 @@ export function planOpencodeDeploy({ publish_root = PUBLISH_ROOT, home_dir = hom
 }
 
 export function planRuntimeDeploy({ publish_root = PUBLISH_ROOT, home_dir = homedir() } = {}) {
+  const script = join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs')
+
   return [
     {
       type: 'copy',
       unit: 'script:shared:session-trigger.mjs',
       source: join(publish_root, 'scripts', 'shared', 'session-trigger.mjs'),
-      target: join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs'),
+      target: script,
       mode: 'overwrite-generated',
+    },
+    {
+      type: 'crontab',
+      label: 'install session-trigger crontab',
+      script,
     },
   ]
 }
@@ -243,7 +264,7 @@ export function assertGeneratedAgentDist({ publish_root = PUBLISH_ROOT, targets 
   }
 }
 
-export function applyDeployActions(actions, { dry_run = false, logger = console } = {}) {
+export function applyDeployActions(actions, { dry_run = false, logger = console, interactive_settings = false } = {}) {
   for (const action of actions) {
     if (action.type === 'command') {
       logger.log(`[deploy-local] command: ${action.command} ${action.args.join(' ')}`)
@@ -253,6 +274,16 @@ export function applyDeployActions(actions, { dry_run = false, logger = console 
           throw new Error(`${action.label} failed`)
         }
       }
+      continue
+    }
+
+    if (action.type === 'crontab') {
+      applySessionTriggerCrontab(action, { dry_run, logger })
+      continue
+    }
+
+    if (action.type === 'claude-settings') {
+      applyClaudeSettings(action, { dry_run, logger, interactive_settings })
       continue
     }
 
@@ -267,6 +298,143 @@ export function applyDeployActions(actions, { dry_run = false, logger = console 
       copyFileSync(action.source, action.target)
     }
   }
+}
+
+function applyClaudeSettings(action, { dry_run, logger, interactive_settings }) {
+  const current_settings = readJsonIfExists(action.target)
+  const current_status_line = current_settings.statusLine
+
+  if (isSameJson(current_status_line, action.statusLine)) {
+    logger.log(`[deploy-local] Claude settings already correct: ${action.target}`)
+    return
+  }
+
+  if (current_status_line && interactive_settings && !confirmClaudeSettingsOverwrite({
+    action,
+    current_status_line,
+    interactive_settings,
+    logger,
+  })) {
+    logger.log(`[deploy-local] skip Claude settings statusLine: ${action.target}`)
+    return
+  }
+
+  logger.log(`[deploy-local] Claude settings statusLine: ${action.target}`)
+  if (dry_run) {
+    return
+  }
+
+  mkdirSync(dirname(action.target), { recursive: true })
+  writeFileSync(action.target, `${JSON.stringify({
+    ...current_settings,
+    statusLine: action.statusLine,
+  }, null, 2)}\n`)
+}
+
+function readJsonIfExists(path) {
+  if (!existsSync(path)) {
+    return {}
+  }
+
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+function isSameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function confirmClaudeSettingsOverwrite({ action, current_status_line, interactive_settings, logger }) {
+  if (typeof interactive_settings.confirm === 'function') {
+    return interactive_settings.confirm({
+      target: action.target,
+      current_status_line,
+      expected_status_line: action.statusLine,
+    })
+  }
+
+  logger.log(`[deploy-local] existing Claude statusLine differs: ${action.target}`)
+  return false
+}
+
+function applySessionTriggerCrontab(action, { dry_run, logger }) {
+  const desired_block = buildSessionTriggerCrontabBlock(action.script)
+  const current_crontab = readCurrentCrontab()
+  const next_crontab = buildManagedSessionTriggerCrontab(current_crontab, desired_block)
+
+  if (current_crontab === next_crontab) {
+    logger.log('[deploy-local] crontab already installed: session-trigger')
+    return
+  }
+
+  logger.log(`[deploy-local] crontab: ${action.label}`)
+  if (dry_run) {
+    return
+  }
+
+  const result = spawnSync('crontab', [], {
+    input: next_crontab,
+    encoding: 'utf-8',
+  })
+  if (result.status !== 0) {
+    throw new Error(`${action.label} failed`)
+  }
+}
+
+function readCurrentCrontab() {
+  const result = spawnSync('crontab', ['-l'], { encoding: 'utf-8' })
+  if (result.status !== 0) {
+    return ''
+  }
+
+  return result.stdout
+}
+
+function buildSessionTriggerCrontabBlock(script) {
+  const home_dir = script.slice(0, script.indexOf('/.config/'))
+  const cron_path = `${home_dir}/.opencode/bin:${home_dir}/.local/bin:/usr/local/bin:/usr/bin:/bin`
+  return [
+    SESSION_TRIGGER_BEGIN_MARKER,
+    `0 7,12,17 * * 1-5 PATH=${cron_path} ${script} >/dev/null 2>&1`,
+    SESSION_TRIGGER_END_MARKER,
+  ].join('\n')
+}
+
+function buildManagedSessionTriggerCrontab(current_crontab, desired_block) {
+  const normalized_crontab = current_crontab.endsWith('\n') || current_crontab === ''
+    ? current_crontab
+    : `${current_crontab}\n`
+  const lines = normalized_crontab.split('\n')
+  const kept_lines = []
+  let is_inside_managed_block = false
+
+  for (const line of lines) {
+    if (line === SESSION_TRIGGER_BEGIN_MARKER) {
+      is_inside_managed_block = true
+      continue
+    }
+
+    if (line === SESSION_TRIGGER_END_MARKER) {
+      is_inside_managed_block = false
+      continue
+    }
+
+    if (is_inside_managed_block) {
+      continue
+    }
+
+    if (line.includes('session-trigger.mjs')) {
+      continue
+    }
+
+    kept_lines.push(line)
+  }
+
+  const prefix = kept_lines.join('\n').replace(/\n*$/, '')
+  if (!prefix) {
+    return `${desired_block}\n`
+  }
+
+  return `${prefix}\n${desired_block}\n`
 }
 
 export function parseArgs(argv) {
@@ -381,6 +549,10 @@ function isKnownUnitInRequestedScope(unit_key, targets) {
     return targets.includes('claude')
   }
 
+  if (unit_key === 'setting:claude:statusLine') {
+    return targets.includes('claude')
+  }
+
   if (unit_key.startsWith('script:opencode:')) {
     return targets.includes('opencode')
   }
@@ -392,6 +564,28 @@ function isKnownUnitInRequestedScope(unit_key, targets) {
   return false
 }
 
+function getSessionTriggerCrontabActions(actions) {
+  return actions.filter((action) => action.type === 'crontab')
+}
+
+function getClaudeSettingsActions(actions) {
+  return actions.filter((action) => action.type === 'claude-settings')
+}
+
+function shouldApplySessionTriggerCrontab(diff, scope_units, deploy_options) {
+  if (!scope_units.has('script:shared:session-trigger.mjs')) {
+    return false
+  }
+
+  return diff.some((entry) => entry.unit === 'script:shared:session-trigger.mjs'
+    && entry.action !== 'remove'
+    && isUnitInDeployScope(entry.unit, scope_units, deploy_options))
+}
+
+function shouldApplyClaudeSettings(scope_units) {
+  return scope_units.has('setting:claude:statusLine')
+}
+
 function resolveUnitTargets(unit_key, actions) {
   if (unit_key.startsWith('skill:')) {
     return ['npx-skills']
@@ -399,7 +593,7 @@ function resolveUnitTargets(unit_key, actions) {
 
   const targets = []
   for (const action of actions) {
-    if (action.type !== 'copy') {
+    if (action.type !== 'copy' && action.type !== 'claude-settings') {
       continue
     }
 
@@ -423,7 +617,7 @@ function resolveUnitTargets(unit_key, actions) {
 
 function inferHomeDirFromActions(actions) {
   for (const action of actions) {
-    if (action.type !== 'copy') continue
+    if (action.type !== 'copy' && action.type !== 'claude-settings') continue
 
     const markers = ['/.config/', '/.claude/', '/.gemini/', '/.codex/']
     for (const marker of markers) {
@@ -453,6 +647,7 @@ function resolveKnownUnitTarget(unit_key, home_dir) {
   if (unit_key === 'config:xreview') return join(home_dir, '.config', 'ddd-workflow', 'xreview.json')
   if (unit_key === 'config:opencode-tui') return join(home_dir, '.config', 'opencode', 'tui.json')
   if (unit_key === 'script:claude:statusline.sh') return join(home_dir, '.claude', 'scripts', 'statusline.sh')
+  if (unit_key === 'setting:claude:statusLine') return join(home_dir, '.claude', 'settings.json')
   if (unit_key === 'script:shared:session-trigger.mjs') return join(home_dir, '.config', 'ddd-workflow', 'runtime', 'shared', 'session-trigger.mjs')
   if (unit_key.startsWith('script:opencode:')) {
     const name = parts[2]
@@ -525,6 +720,14 @@ export async function runManifestAwareDeploy({
   // Log diff summary
   for (const entry of diff) {
     logger.log(`[deploy] ${entry.action}: ${entry.unit} (${entry.reason})`)
+  }
+
+  if (shouldApplySessionTriggerCrontab(diff, scope_units, { targets, include_skills })) {
+    applyDeployActions(getSessionTriggerCrontabActions(actions), { dry_run, logger })
+  }
+
+  if (shouldApplyClaudeSettings(scope_units)) {
+    applyDeployActions(getClaudeSettingsActions(actions), { dry_run, logger })
   }
 
   const has_changes = diff.some((e) => e.action !== 'skip')

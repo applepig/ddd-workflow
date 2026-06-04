@@ -51,7 +51,7 @@
 ### Module correctness 策略
 
 - `agent-transpiler`：使用 fixture input + golden output exact compare，覆蓋 Gemini tool mapping、OpenCode permission/override、Codex TOML escaping。
-- `publish`：使用 temp dir integration test 驗證 allowlist/denylist、dirty guard、force 覆蓋行為。
+- `publish`：使用 temp dir integration test 驗證 allowlist/denylist、dirty warning guard 行為。
 - `deploy`：使用 fake HOME 驗證 symlink/copy target，並要求 target 指向 `.publish/ddd-workflow/`，不可指向 `src/ddd-workflow/`。
 - `skills pack validation`：用 `npx skills add ./.publish/ddd-workflow --list` 作為 dotted skill name 與 package layout gate。
 - `runtime scripts`：保留 bash smoke tests 與 symlink resolution tests，確保 skill-local entrypoint、shared runner、adapter 路徑不斷。
@@ -181,17 +181,17 @@
 
 ### Publish flow 驗證結果
 
-- `pnpm run build`：在 publish checkout 有未提交 diff 時會被 dirty guard 擋住，符合保護機制，但不適合初次產生 publish branch diff。
-- `pnpm run build -- --force && pnpm run publish:status && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，可作為目前手動試串流程。
+- `pnpm run build`：在 publish checkout 有未提交 diff 時會列出 dirty warning 並繼續同步，符合後續降級決策；日常 publish branch diff 不再阻塞 build。
+- `pnpm run build && pnpm run publish:status && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，可作為目前手動試串流程。
 - `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
 - `deploy-local --dry-run`：通過，只列出 `npx skills` command 與 copy actions，不寫入 HOME。
 
 ### 待補缺口
 
 - 需要正式 `publish:init` tooling，避免手動 Git init / fetch / reset 流程散落在 shell 指令。
-- 需要區分「safe build」（publish checkout 必須 clean）與「refresh publish diff」（允許覆蓋目前 publish branch working tree）的 script，例如保留 `build` 作 dirty-protected，再新增明確的 `publish:refresh` 或 `build:publish --force`。
+- `publish:refresh` 保留為明確重建 publish diff 的便利 script，但 dirty checkout 不再分兩種 build 模式；`build` 預設 warning 後繼續。
 - `publish:status` / `publish:diff` 仍是 package script 直接呼叫 Git，尚未重建為 tested tooling module。
-- `pnpm deploy:dry-run` 目前仍會先跑不帶 `--force` 的 `pnpm run build`；若 publish checkout 保持未提交 diff，完整 deploy dry-run 會被 dirty guard 擋住，需要調整 pipeline gate。
+- `pnpm deploy:dry-run` 目前仍會先跑 `pnpm run build`；dirty checkout 只會 warning，不再阻塞完整 deploy dry-run。
 
 ### Milestone 3.5 / 3.6 實作結果
 
@@ -208,7 +208,7 @@
 - `pnpm run build:tooling`：通過，產生 `dist/tooling/publish/init-publish.mjs`、`status.mjs`、`diff.mjs` 與既有 tooling entrypoints。
 - `pnpm run publish:status`：通過，顯示 nested publish checkout branch `publish/17-source-publish-workflow` 與目前 publish diff。
 - `pnpm run publish:diff`：通過，顯示 publish diff stat。
-- `pnpm run publish:refresh`：通過，以 force 模式重建 `.publish/ddd-workflow/`，保留 nested Git checkout。
+- `pnpm run publish:refresh`：通過，重建 `.publish/ddd-workflow/`，保留 nested Git checkout。
 - `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
 - `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，只列出技能安裝 command 與 copy actions，未寫入 HOME。
 
@@ -323,8 +323,8 @@
 ### Coordinator 補驗證
 
 - `pnpm test`：通過，14 個 test files、222 個 tests。
-- `pnpm run build`：`build:tooling` 通過，但 publish checkout dirty guard 擋住 `.publish/ddd-workflow` 覆寫；原因是目前 publish branch 已有本 sprint 未提交 diff，保護機制要求先處理 diff 或使用 `--force`。
-- `pnpm run publish:refresh`：通過，以 `--force` 重建 `.publish/ddd-workflow`，產生最新 `.build-manifest.json` 與 public bin。
+- `pnpm run build`：`build:tooling` 通過；publish checkout 有本 sprint 未提交 diff 時列出 dirty warning 後仍同步 `.publish/ddd-workflow`。
+- `pnpm run publish:refresh`：通過，重建 `.publish/ddd-workflow`，產生最新 `.build-manifest.json` 與 public bin。
 - `pnpm run test:pack`：通過，`npx skills add ./.publish/ddd-workflow --list` 找到 9 個 skills。
 - `node dist/tooling/deploy/deploy-local.mjs --dry-run`：通過，只列出 manifest diff 與 copy / command 動作，未寫入 deploy manifest 或 HOME。
 
@@ -358,7 +358,7 @@
 
 - **Shell tests**：148 passed, 0 failed（修復前 94 pass / 48 fail）。
 - **Vitest**：14 test files, 222 tests passed。
-- **Build + deploy**：`pnpm run build -- --force` 通過，部署後 xreview orchestrator 成功 START 三個 reviewer。
+- **Build + deploy**：`pnpm run build -- --force` 通過（dirty guard 已降級為 warning，`--force` 不再是必要條件），部署後 xreview orchestrator 成功 START 三個 reviewer。
 
 ### XReview 修正：publish hygiene、manifest scope、OpenCode config、statusline 安全性
 
@@ -461,3 +461,42 @@
 - `pnpm run test:preflight`：通過，7 test files / 104 tests，3.57 秒。
 - `pnpm test`：通過，14 test files / 232 tests，5.91 秒。
 - `pnpm run test:full`：通過，15 test files / 235 tests，90.64 秒；確認完整 shell suite 只存在於 full gate。
+
+## 2026-06-04
+
+### 文件修正：publish dirty guard 降級
+
+#### 決策確認
+
+- 使用者確認阻塞式 dirty guard 太干擾日常 authoring / deploy dry-run，因此行為已降級為 warning 後繼續同步。
+- `.publish/ddd-workflow` 是 generated publish checkout；未提交 publish diff 是常態工作狀態，不應讓 `pnpm run build` 每次都停在同一個 gate。
+- 安全檢查改放在 publish PR 前：使用 `pnpm run publish:status` / `pnpm run publish:diff` 檢查最終 diff，再於 `.publish/ddd-workflow/` 內 commit / push。
+
+#### 文件同步
+
+- 更新 `spec.md` 驗收條件、module contract、邊界案例與 Milestone 3，將舊的阻塞式 guard 描述改為「dirty warning 後繼續同步」。
+- 更新 `tasks.md` Milestone 3 驗證方式與 Task 3.3，對齊目前 `guardCleanPublish()` 測試行為。
+- 更新本檔早期 publish flow 紀錄，避免 review 繼續引用已淘汰的雙模式 build 契約。
+
+## 2026-06-05
+
+### Deploy 補齊：session-trigger crontab 與 Claude statusLine
+
+#### 決策確認
+
+- `reference/` 屬於 local checkout / ignored reference 資料，不納入本次遷移與 commit 範圍。
+- 舊 `scripts/cli.js` 的 `session-trigger` crontab 管理是 deploy 行為，應搬到新 `deploy-local` pipeline，而不是只複製 `session-trigger.mjs`。
+- Claude Code `~/.claude/settings.json` 的 `statusLine.command` 也是 deploy 產物的一部分；外層 authoring deploy 可直接覆蓋，public package 的內層 deploy 則在既有不同 `statusLine` 時以互動確認決定是否覆蓋，非 TTY 模式保守 skip。
+
+#### 實作結果
+
+- `planRuntimeDeploy()` 新增 `crontab` action，安裝 managed block：`# BEGIN AGENTS session-trigger` / cron line / `# END AGENTS session-trigger`。
+- crontab 指向 deployed runtime：`~/.config/ddd-workflow/runtime/shared/session-trigger.mjs`；dry-run 不寫，已正確時 skip，舊 unmanaged `session-trigger.mjs` line 會被替換。
+- `planClaudeDeploy()` 新增 `claude-settings` action，確保 `~/.claude/settings.json` 的 `statusLine` 指向 `bash "$HOME/.claude/scripts/statusline.sh"`，並保留其他 settings 欄位。
+- `runManifestAwareDeploy()` 即使 `session-trigger.mjs` 或 `statusline.sh` manifest 判定 unchanged，也會 idempotent ensure crontab / settings，避免環境狀態漏修。
+- `bin/deploy-agents` 對 public package deploy 啟用互動覆蓋保護；非 TTY 不阻塞且不覆蓋既有不同 statusLine。
+
+#### 驗證結果
+
+- `pnpm test -- src/tooling/deploy/deploy-local.test.js`：通過，14 test files / 247 tests。
+- `pnpm run build:tooling`：通過；僅有既有 `gray-matter` direct eval warning。

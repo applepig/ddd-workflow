@@ -50,11 +50,11 @@
 ## Milestone 3: Publish Builder Rebuild（序列）
 
 > 預期結果：`src/ddd-workflow/` 可安全同步到 `.publish/ddd-workflow/`，且 dirty guard 與 allowlist/denylist 被測試保護。
-> 驗證方式：`pnpm test -- src/tooling/publish` 通過；fixture/temp dir build 在 clean publish tree 可成功，在 dirty publish tree 預設 fail。
+> 驗證方式：`pnpm test -- src/tooling/publish` 通過；fixture/temp dir build 在 clean publish tree 可成功，在 dirty publish tree 會 warning 但不 fail。
 
 - [x] Task 3.1: 撰寫 publish tree allowlist/denylist contract 測試，確認 `_runtime/` 不會原樣 publish（Red）
 - [x] Task 3.2: 實作 `sync-publish-tree`，只同步 publishable content，並保留 managed checkout 的 `.git`（Green）
-- [x] Task 3.3: 撰寫 `.publish/ddd-workflow` dirty guard 測試：clean / dirty / force（Red）
+- [x] Task 3.3: 撰寫 `.publish/ddd-workflow` dirty guard 測試：clean / dirty warning（Red）
 - [x] Task 3.4: 實作 `check-publish-dirty` 與 `build-publish` destructive sync（Green）
 - [x] Task 3.5: 撰寫 `publish:status`、`publish:diff` temp git repo 測試（Red）
 - [x] Task 3.6: 實作 `publish:init`、`publish:status`、`publish:diff` tooling entrypoint；`publish:init` 明確 clone/設定 remote，build 缺 checkout 時 fail（Green）

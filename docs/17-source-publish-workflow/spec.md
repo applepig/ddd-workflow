@@ -78,7 +78,7 @@ src/ddd-workflow/                  # ddd-authoring 內唯一手改 publishable s
 - [ ] 新增 `src/ddd-workflow/` 作為 publishable source，包含 `skills/`、`agents/`、`scripts/`、`config/`、`policies/`、`references/`、`.claude-plugin/`、`gemini-extension.json`、`README.md`、`LICENSE`；同時包含 source-only 的 `_runtime/`，但 `_runtime/` 不得原樣進入 publish repo。
 - [ ] `.publish/ddd-workflow/` 作為 generated publish repo working tree，外層 `.gitignore` 忽略 `.publish/`，但 `.publish/ddd-workflow/.git` 可保留公開 repo remote。
 - [ ] `.publish/ddd-workflow/` 是外層 Git ignore 的 managed checkout；`publish:init` 明確 clone/設定 publish remote，`pnpm run build` 若 checkout 不存在則 fail 並提示先 init。
-- [ ] `pnpm run build` dirty-check 後權威重建 `.publish/ddd-workflow/` 內容，保留 `.git`，但在 `.publish/ddd-workflow` 有未提交變更時預設 fail，需明確 force 才可覆蓋。
+- [ ] `pnpm run build` dirty-check 後權威重建 `.publish/ddd-workflow/` 內容，保留 `.git`；若 `.publish/ddd-workflow` 有未提交變更，預設列出 warning 與 `git status --short` 後仍同步，避免日常 build / deploy pipeline 被 publish branch diff 反覆阻塞。
 - [ ] 導入 Vite / Vitest 作為 local tooling pipeline，`pnpm test`、`pnpm build`、`pnpm test:pack`、`pnpm deploy` 的順序與責任清楚。
 - [ ] Milestone 1 起 `pnpm test` 即為 Vitest 主入口，`package.json` 明確宣告 `packageManager` 使用 pnpm；舊 `scripts/cli.js test` 不再佔據主流程。
 - [ ] 每個新 module 都有明確 contract 測試：輸入、輸出、副作用、錯誤情境與 dry-run 行為可被測試驗證。
@@ -167,7 +167,7 @@ src/tooling/
 | Module | Contract | 主要驗證 |
 | --- | --- | --- |
 | `agent-transpiler` | 讀取 Claude-compatible `agents/*.md`，輸出 Gemini/OpenCode/Codex agent 產物；不得修改 source tree。 | fixture input + golden output exact compare。 |
-| `publish` | 只從 `src/ddd-workflow/` 同步 allowlist 內容到 `.publish/ddd-workflow/`；dirty publish repo 預設 fail。 | temp dir integration test、allowlist/denylist、dirty/force 測試。 |
+| `publish` | 只從 `src/ddd-workflow/` 同步 allowlist 內容到 `.publish/ddd-workflow/`；dirty publish repo 預設 warning 後繼續同步。 | temp dir integration test、allowlist/denylist、dirty warning 測試。 |
 | `deploy` | 只從 `.publish/ddd-workflow/` 讀取內容；支援 dry-run；不可偷吃 `src/ddd-workflow/`；generated files 同名覆蓋，user-editable config copy-if-missing。 | fake HOME copy assertion、no-symlink assertion、dry-run 無副作用測試。 |
 | `publish status/diff` | 只讀取 `.publish/ddd-workflow/` Git 狀態與差異；若 dist 尚未存在，仍可輸出清楚錯誤。 | temp git repo status/diff 測試。 |
 | `publish bin` | 由 Vite build 從 `src/tooling/bin/*` 產生 `.publish/ddd-workflow/bin/*.mjs`；不得存在於 `src/ddd-workflow/`。 | generated files smoke test。 |
@@ -290,7 +290,7 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
 
 ### Case 2：`.publish/ddd-workflow` 有未提交變更
 
-處理：build 預設 fail，列出 `git -C .publish/ddd-workflow status --short`，避免覆蓋 publish repo 中尚未處理的手動變更或 build 產物差異。
+處理：build 列出 warning 與 `git -C .publish/ddd-workflow status --short` 後繼續同步。原因是 `.publish/ddd-workflow` 是 generated publish checkout，publish branch diff 是日常工作狀態；若每次 dirty 都 fail，`pnpm run build`、`pnpm deploy:dry-run` 與 deploy pipeline 會在尚未 commit 的 publish diff 上反覆卡住。使用者需在 commit / push publish PR 前用 `pnpm run publish:status` 或 `pnpm run publish:diff` 檢查差異。
 
 ### Case 3：`npx skills` 未來嚴格禁止 dotted skill name
 
@@ -403,10 +403,10 @@ npx skills add applepig/ddd-workflow --skill '*' -g -a claude-code -a opencode -
 
 ### Milestone 3: Publish Builder Rebuild
 > 預期結果：`src/ddd-workflow/` 可安全同步到 `.publish/ddd-workflow/`，且 dirty guard 與 allowlist/denylist 被測試保護。
-> 驗證方式：`pnpm test -- src/tooling/publish` 通過；fixture/temp dir build 在 clean publish tree 可成功，在 dirty publish tree 預設 fail。
+> 驗證方式：`pnpm test -- src/tooling/publish` 通過；fixture/temp dir build 在 clean publish tree 可成功，在 dirty publish tree 會 warning 但不 fail。
 
 - [ ] 實作 publish tree allowlist/denylist contract，排除 source-only `_runtime/`。
-- [ ] 實作 managed checkout `publish:init`、dirty guard、force 覆蓋與 `.publish/` ignore；build 缺 checkout 時 fail。
+- [ ] 實作 managed checkout `publish:init`、dirty warning guard 與 `.publish/` ignore；build 缺 checkout 時 fail。
 - [ ] 實作 `publish:init`、`publish:status`、`publish:diff`。
 - [ ] build-publish 在同步 source 後注入 `bin/*.mjs`、self-contained skill runtime 實體檔，並產生 `.publish/ddd-workflow/dist/{gemini,opencode,codex}/agents`。
 - [ ] 驗證 publish tree 沒有 symlink。
