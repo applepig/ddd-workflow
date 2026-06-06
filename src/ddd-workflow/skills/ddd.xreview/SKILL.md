@@ -80,15 +80,23 @@ XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_
 
 模型覆蓋、短名等用法見 `references/cli-reference.md`。
 
-### 4. 收集結果
+### 4. 收集並讀取結果
 
-orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。讀取各 RETURN 的 `<final-path>`，空檔標失敗。
+orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。Coordinator 必須先讀取各 RETURN 的 `<final-path>`，確認 reviewer report 內容後才進入整合；空檔標失敗。
 
 事件格式與邊界案例見 `references/orchestrator-internals.md`。
 
-### 5. 整合、驗證、呈現
+### 5. 整合、驗證、回報
 
-**5.1 組對照表**
+**5.1 閱讀 reviewer reports**
+
+收到 `RETURN` 後，逐一讀取每份 `<final-path>`：
+
+1. 確認 report 是否完整、可讀、且有明確 findings / 無 findings 結論
+2. 標記失敗、空報告、格式不完整的 reviewer
+3. 保留每位 reviewer 的原始觀點，後續整合時不得省略
+
+**5.2 組對照表**
 
 ```markdown
 # Cross Review 報告
@@ -118,9 +126,9 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 <多方都認可的設計>
 ```
 
-**5.2 Coordinator 驗證 Critical / Important findings**
+**5.3 Coordinator 驗證 Critical / Important findings**
 
-彙整完成後、呈給使用者前，coordinator 先自行驗證中～高嚴重度的 findings：
+彙整完成後、回報給使用者前，coordinator 先自行驗證中～高嚴重度的 findings：
 
 1. 從報告篩 Critical / Important findings
 2. 逐一讀 finding 引用的程式碼確認問題是否真實存在
@@ -131,9 +139,20 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 
 **原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
+**5.4 先回報驗證後的 review 結果**
+
+發問前必須先在對話中回報完整 cross review 結果，讓使用者先看到 coordinator 已讀取、確認與驗證後的結論。回報內容包含：
+
+1. Reviewer 組成與成功 / 失敗狀態
+2. 各 reviewer 的主要 findings 與觀點摘要
+3. Critical / Important findings 的驗證結果（✅ 確認、⚠️ 存疑、❌ False Positive）
+4. 建議優先處理順序與不建議處理的理由
+
+回報完成後，才進入下一步使用 Question Tool 詢問修正決策。
+
 ### 6. 逐條決策
 
-對步驟 5.2 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，用 Question Tool 逐條詢問使用者修正方向。
+對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在步驟 5.4 已回報後，用 Question Tool 逐條詢問使用者修正方向。
 
 **批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
 
