@@ -3,12 +3,14 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import { PROJECT_ROOT } from '../shared/paths.js'
 import {
   applyDeployActions,
   checkTargetExistsForUnit,
   parseArgs,
   planClaudeDeploy,
   planDeploy,
+  planSkillsInstall,
   planRuntimeDeploy,
   resolveDeployManifestPath,
   resolveUnitTarget,
@@ -348,6 +350,33 @@ describe('deploy-local CLI args', () => {
   })
 })
 
+describe('planSkillsInstall', () => {
+  it('should install skills through the repo-local skills dependency', () => {
+    const action = planSkillsInstall({ publish_root: '/publish' })
+
+    expect(action.command).toBe('pnpm')
+    expect(action.cwd).toBe(PROJECT_ROOT)
+    expect(action.args).toEqual([
+      'exec',
+      'skills',
+      'add',
+      '/publish',
+      '--skill',
+      '*',
+      '-g',
+      '-y',
+      '-a',
+      'claude-code',
+      '-a',
+      'opencode',
+      '-a',
+      'codex',
+      '-a',
+      'gemini-cli',
+    ])
+  })
+})
+
 describe('resolveDeployManifestPath', () => {
   it('should return path under .config/ddd-workflow/deploy.json', () => {
     const result = resolveDeployManifestPath('/home/testuser')
@@ -356,9 +385,9 @@ describe('resolveDeployManifestPath', () => {
 })
 
 describe('resolveUnitTarget', () => {
-  it('should return npx-skills for skill units', () => {
+  it('should return skills-cli for skill units', () => {
     const result = resolveUnitTarget('skill:ddd.work', [])
-    expect(result).toBe('npx-skills')
+    expect(result).toBe('skills-cli')
   })
 
   it('should return the target path from matching action for non-skill units', () => {

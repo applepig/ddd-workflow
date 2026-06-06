@@ -8,6 +8,7 @@ describe('package scripts', () => {
 
   it('uses pnpm and Vitest as the main test entrypoint', () => {
     expect(package_json.packageManager).toMatch(/^pnpm@/)
+    expect(package_json.devDependencies.skills).toBeDefined()
     expect(package_json.scripts.test).toBe('DDD_WORKFLOW_TEST_SCOPE=typical vitest run')
     expect(package_json.scripts['test:preflight']).toBe('DDD_WORKFLOW_TEST_SCOPE=preflight vitest run')
     expect(package_json.scripts['test:full']).toContain('DDD_WORKFLOW_TEST_SCOPE=full')
@@ -22,6 +23,8 @@ describe('package scripts', () => {
     expect(package_json.scripts['publish:diff']).toBe('node dist/tooling/publish/diff.mjs')
     expect(package_json.scripts['publish:refresh']).toBe('pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs --force')
     expect(package_json.scripts['test:pack']).toContain('./.publish/ddd-workflow')
+    expect(package_json.scripts['test:pack']).toMatch(/^skills add /)
+    expect(package_json.scripts['test:pack']).not.toContain('npx')
     expect(package_json.scripts.deploy).toContain('pnpm run test:preflight')
     expect(package_json.scripts.deploy).toContain('dist/tooling/deploy/deploy-local.mjs')
     expect(package_json.scripts['deploy:dry-run']).toContain('--dry-run')

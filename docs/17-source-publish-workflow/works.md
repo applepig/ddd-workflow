@@ -500,3 +500,62 @@
 
 - `pnpm test -- src/tooling/deploy/deploy-local.test.js`：通過，14 test files / 247 tests。
 - `pnpm run build:tooling`：通過；僅有既有 `gray-matter` direct eval warning。
+
+### Hotfix：deploy 前置 test:pack 未套用 npx -y
+
+#### 問題描述
+
+- 症狀：`pnpm run deploy` 在 skills package 尚未被 `npx` 安裝或 cache 時，會先於 `test:pack` 階段出現互動安裝提示，導致 deploy-local 內的 `npx -y skills add ...` 還沒執行就被卡住。
+- 預期行為：deploy pipeline 的每個 `npx skills` 入口都應能在非互動情境自動同意 npx package 安裝。
+- 影響範圍：外層 authoring repo 的 `pnpm run deploy` 與 `pnpm run test:pack`；deploy-local 的正式 skills install command 原本已有 `-y`，不受影響。
+
+#### 根因分析
+
+- 根因：`package.json` 的 `test:pack` 使用 `npx skills add ./.publish/ddd-workflow --list`，缺少給 `npx` 的 `-y`；`pnpm run deploy -y` 的額外參數也不會補進內層 `pnpm run test:pack`。
+- 定位過程：比對 `package.json` deploy pipeline 與 `planSkillsInstall()`，確認卡點發生在 deploy-local 前置 gate，而不是 deploy-local 的 skills install action。
+- 受影響檔案：`package.json`、`src/tooling/package-scripts.test.js`。
+
+#### 修復內容
+
+- 修了什麼：將 `test:pack` 改為 `npx -y skills add ./.publish/ddd-workflow --list`，並新增 package script contract test 防止回歸。
+- 測試：先新增 Red test 確認現況缺 `npx -y` 會失敗，再套用最小修復。
+- 驗證結果：`pnpm vitest run src/tooling/package-scripts.test.js` 通過，3 tests；`pnpm run test:pack` 通過，成功列出 9 個 skills；`pnpm run test:preflight` 通過，7 test files / 119 tests；`pnpm run deploy:dry-run` 通過，確認完整 deploy pipeline 會先以 `npx -y` 跑 `test:pack`，deploy-local dry-run 也列出 `npx -y skills add ...`。
+
+### Hotfix 後續：skills 改為 authoring devDependency
+
+#### 決策確認
+
+- 使用者確認 `skills` 已是 authoring pipeline 的正式工具，不應每次透過 `npx` 即時解析版本與安裝提示。
+- `skills` 改列 `devDependencies`，由 `pnpm-lock.yaml` 固定版本；公開 repo 使用者仍可用 `npx skills add applepig/ddd-workflow` 安裝。
+- 本機 `test:pack` 改用 repo-local `skills` binary；`deploy-local` 改用 `pnpm exec skills`，避免再依賴 `npx -y`。
+
+#### 修復內容
+
+- `pnpm add -D skills` 安裝 `skills@1.5.10`，更新 `package.json` 與 `pnpm-lock.yaml`。
+- `test:pack` 改為 `skills add ./.publish/ddd-workflow --list`。
+- `planSkillsInstall()` 改為 `pnpm exec skills add ...`，dry-run 顯示 repo-local CLI command。
+- deploy manifest skill target sentinel 從 `npx-skills` 改為 `skills-cli`；remove 邏輯保留舊 `npx-skills` 過濾，避免既有 manifest 被誤當檔案路徑刪除。
+- 同步更新 `spec.md`、`tasks.md`、root `README.md` 與 `CLAUDE.md` 的本機 pipeline 描述。
+
+#### 驗證結果
+
+- `pnpm vitest run src/tooling/package-scripts.test.js src/tooling/deploy/deploy-local.test.js src/tooling/manifest/deploy-manifest.test.js`：通過，3 test files / 68 tests。
+- `pnpm run test:pack`：通過，使用 repo-local `skills add ./.publish/ddd-workflow --list` 成功列出 9 個 skills。
+- `pnpm run deploy:dry-run`：通過，preflight 7 test files / 120 tests，dry-run 顯示 `pnpm exec skills add ...`，未執行實際 HOME 寫入。
+
+## 2026-06-07
+
+### Sprint 17 收尾
+
+#### Task 4.4/4.5 取消
+
+- Task 4.4（建立 `_runtime/` shared shell lib）與 Task 4.5（重建 skill-owned runtime output）標記取消。
+- 原因：build 已在 M3 實現 source → publish 實體檔同步，M5 的 deploy 也已切為 copy 模式。目前 skill runtime scripts（`ddd.work/scripts/`、`ddd.xreview/scripts/`）由 build 直接從 source 同步到 publish tree，不需要額外的 source-only shared shell lib 抽象層。
+- 若未來 skill runtime scripts 之間出現重複邏輯需要共用，再另開 sprint 處理。
+
+#### 同步更新
+
+- `references/AGENTS.md`：開發原則精煉——把四條改為五條更精確的描述（加 Root Cause First、拆分 YAGNI）。
+- `ddd.agent-browser/SKILL.md`：歸檔為速查格式，移除過時的教學式內容。
+- `ddd.xreview/SKILL.md`：加強 step 5——coordinator 必須先讀取 reviewer reports、回報驗證後結果，才用 Question Tool 發問。
+- `agent-runner.test.js`：同步 `npx` → `pnpm exec` 斷言。

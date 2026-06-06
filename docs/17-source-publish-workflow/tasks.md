@@ -70,19 +70,19 @@
 - [x] Task 4.1: 搬移 `ddd-workflow/skills` 至 `src/ddd-workflow/skills`（Green）
 - [x] Task 4.2: 搬移 `ddd-workflow/agents`、`references`、`config`、`policies`、`.claude-plugin`、`gemini-extension.json`（Green）
 - [x] Task 4.3: 將 package-level runtime scripts 搬入 `src/ddd-workflow/scripts/{claude,opencode,shared}` namespace（Green）
-- [ ] Task 4.4: 建立 `src/ddd-workflow/_runtime/`，把 source-level shared shell lib/template 放入 source-only runtime input（Green）
-- [ ] Task 4.5: 重建 skill-owned runtime output：build 產生 `skills/ddd.xreview/scripts/**`、`skills/ddd.work/scripts/**` 實體檔，不再使用 symlink 或 invocation-basename hack（Green）
+- [~] Task 4.4: ~~建立 `src/ddd-workflow/_runtime/`~~ — 取消，目前 skill runtime scripts 已由 build 直接同步實體檔，不需要 source-only shared shell lib 層
+- [~] Task 4.5: ~~重建 skill-owned runtime output~~ — 取消，build 已產生 skill-local 實體檔，symlink 問題在 M3/M5 已解決
 - [x] Task 4.6: 加入 `.publish/` ignore 與 publish repo 自身 `dist/` ignore（Green）
 - [x] Task 4.7: 移除舊 `ddd-workflow/` source root，避免與 `src/ddd-workflow/` 並存（Green）
 - [x] Task 4.8: 更新測試中所有舊 `ddd-workflow/` source path 為新 source / publish contract（Refactor）
 
 ## Milestone 5: Deploy CLI Rebuild（介面先行後可平行）
 
-> 預期結果：local deploy dogfood `.publish/ddd-workflow/`，skills 交給 `npx skills`，非 skill 項目由自家 deploy module 處理。
+> 預期結果：local deploy dogfood `.publish/ddd-workflow/`，skills 交給 repo-local `skills` CLI，非 skill 項目由自家 deploy module 處理。
 > 驗證方式：fake HOME integration test 通過；`deploy --dry-run` 不產生副作用且列出預期動作；實際 deploy copy generated 檔案，不依賴 symlink。
 
 - [x] Task 5.1: 從舊 `scripts/cli.js` 抽出第一波 non-skill deploy contract：copy / overwrite-generated / copy-if-missing-config / skip / dry-run event schema；不建立 symlink（Red）
-- [x] Task 5.2: 實作 deploy action planner，不直接寫入檔案系統；skills 安裝僅產生 `npx skills` command，不重作 installer（Green）
+- [x] Task 5.2: 實作 deploy action planner，不直接寫入檔案系統；skills 安裝僅產生 `skills` CLI command，不重作 installer（Green）
 
 ### 🔀 可平行工作線
 
@@ -109,9 +109,9 @@
 **[C] Skills Deploy 與 Pack Gate** — `isolation: worktree`
 
 > 範圍：`src/tooling/deploy/deploy-local.ts`、`package.json` scripts、`src/tooling/deploy/*.test.ts`
-> 依賴：Milestone 3 publish builder 完成；`npx skills` 可在本機執行
-> 介面契約：skills install 不由自家 module 轉檔；publish tree 內的 skill-local `scripts/**` 必須是實體檔；deploy pipeline 必須先跑 `test:pack`，再由 `deploy-local` 呼叫 `npx skills add ./.publish/ddd-workflow ...`；dry-run 只列出 command
-> 驗證方式：mock command runner 測試 `npx skills add ./.publish/ddd-workflow --list` 是 deploy 前置 gate，實際 deploy 會呼叫 skills install command，且 publish skill runtime 沒有 symlink
+> 依賴：Milestone 3 publish builder 完成；`skills` CLI 以 devDependency 安裝於 authoring repo
+> 介面契約：skills install 不由自家 module 轉檔；publish tree 內的 skill-local `scripts/**` 必須是實體檔；deploy pipeline 必須先跑 `test:pack`，再由 `deploy-local` 呼叫 `pnpm exec skills add ./.publish/ddd-workflow ...`；dry-run 只列出 command
+> 驗證方式：mock command runner 測試 `skills add ./.publish/ddd-workflow --list` 是 deploy 前置 gate，實際 deploy 會呼叫 skills install command，且 publish skill runtime 沒有 symlink
 
 - [x] Task 5.C1: 撰寫 skills install command 與 dry-run 測試（Red）
 - [x] Task 5.C2: 實作 skills install command 與 deploy-local orchestration / `--dry-run`（Green；pack gate 由 package script `test:pack` 負責）
@@ -169,7 +169,7 @@
 - [x] Task 8.X2: 補測 changed unit deploy 時，unchanged / skipped target 不會被全量 deploy 覆寫。
 - [x] Task 8.X3: 補測同名 agent 在 Claude/Gemini/OpenCode/Codex 平台的 deploy manifest target 使用 precise unit mapping，不用 source filename substring 猜測。
 - [x] Task 8.X4: 補測 source tree symlink retarget 會改變 `sourceTreeHash`，同時維持 `_runtime/` source-only skip 既有行為。
-- [x] Task 8.X5: 實作 selective apply：只套用 `install` units、`skip` units 不動、`remove` units 依既有 deploy manifest target 安全刪除；`target=null` 或 `npx-skills` 僅清理 manifest entry。
+- [x] Task 8.X5: 實作 selective apply：只套用 `install` units、`skip` units 不動、`remove` units 依既有 deploy manifest target 安全刪除；`target=null`、`skills-cli` 或舊 `npx-skills` 僅清理 manifest entry。
 - [x] Task 8.X6: 補測並修正同一 unit 多 target 情境：`reference:AGENTS.md` 在 Claude/Gemini/Codex 的 targets 需全部寫入 deploy manifest，orphan removal 需刪除所有 managed targets。
 - [x] Task 8.X7: 補測並修正 target-specific deploy / `--skip-skills` 不得把 scope 外 build units 寫入 deploy manifest。
 - [x] Task 8.X8: 補測並修正 OpenCode TUI config 使用 copy-if-missing，不覆寫既有 `~/.config/opencode/tui.json`。

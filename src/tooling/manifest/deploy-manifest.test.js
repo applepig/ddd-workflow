@@ -77,7 +77,7 @@ describe('readDeployManifest', () => {
       version: 1,
       deployedFrom: '/some/path',
       deployedAt: '2025-01-01T00:00:00.000Z',
-      units: { 'skill:ddd.work': { hash: 'abc123', target: 'npx-skills' } },
+      units: { 'skill:ddd.work': { hash: 'abc123', target: 'skills-cli' } },
     }
     writeFileSync(manifest_path, JSON.stringify(manifest))
 
@@ -348,7 +348,7 @@ describe('writeDeployManifest', () => {
 describe('buildDeployManifest', () => {
   it('should produce a deploy manifest with version, deployedFrom, deployedAt, and units', () => {
     const units = {
-      'skill:ddd.work': { hash: 'abc123', target: 'npx-skills' },
+      'skill:ddd.work': { hash: 'abc123', target: 'skills-cli' },
       'config:xreview': { hash: 'def456', target: '~/.config/ddd-workflow/xreview.json', skipped: true },
     }
 

@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { PUBLISH_ROOT, SOURCE_ROOT } from '../shared/paths.js'
+import { PROJECT_ROOT, PUBLISH_ROOT, SOURCE_ROOT } from '../shared/paths.js'
 import {
   readBuildManifest,
   readDeployManifest,
@@ -54,9 +54,10 @@ function copyActionsFromDir(source_dir, target_dir, predicate = () => true, get_
 export function planSkillsInstall({ publish_root = PUBLISH_ROOT } = {}) {
   return {
     type: 'command',
-    command: 'npx',
+    command: 'pnpm',
+    cwd: PROJECT_ROOT,
     args: [
-      '-y',
+      'exec',
       'skills',
       'add',
       publish_root,
@@ -73,7 +74,7 @@ export function planSkillsInstall({ publish_root = PUBLISH_ROOT } = {}) {
       '-a',
       'gemini-cli',
     ],
-    label: 'install skills with npx skills',
+    label: 'install skills with repo-local skills CLI',
   }
 }
 
@@ -269,7 +270,10 @@ export function applyDeployActions(actions, { dry_run = false, logger = console,
     if (action.type === 'command') {
       logger.log(`[deploy-local] command: ${action.command} ${action.args.join(' ')}`)
       if (!dry_run) {
-        const result = spawnSync(action.command, action.args, { stdio: 'inherit' })
+        const result = spawnSync(action.command, action.args, {
+          stdio: 'inherit',
+          cwd: action.cwd,
+        })
         if (result.status !== 0) {
           throw new Error(`${action.label} failed`)
         }
@@ -486,7 +490,7 @@ export function checkTargetExistsForUnit(unit_key, home_dir) {
 
 /**
  * 從 planDeploy 的 action list 中，根據 unit key 找出對應的 deploy target path。
- * skill units 統一回傳 "npx-skills"（由 npx skills 管理，無對應單一路徑）。
+ * skill units 統一回傳 "skills-cli"（由 skills CLI 管理，無對應單一路徑）。
  */
 export function resolveUnitTarget(unit_key, actions) {
   const targets = resolveUnitTargets(unit_key, actions)
@@ -588,7 +592,7 @@ function shouldApplyClaudeSettings(scope_units) {
 
 function resolveUnitTargets(unit_key, actions) {
   if (unit_key.startsWith('skill:')) {
-    return ['npx-skills']
+    return ['skills-cli']
   }
 
   const targets = []
@@ -682,7 +686,9 @@ function getManagedTargets(unit_entry) {
     unit_entry?.target,
   ]
 
-  return [...new Set(raw_targets.filter((target) => target && target !== 'npx-skills'))]
+  return [...new Set(raw_targets.filter((target) => target
+    && target !== 'skills-cli'
+    && target !== 'npx-skills'))]
 }
 
 /**

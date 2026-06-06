@@ -16,7 +16,7 @@ dist/tooling/                      # generated tooling entrypoints
 - 編輯 skills、agents、runtime scripts 時，只改 `src/ddd-workflow/`。
 - 編輯 build、publish、deploy 行為時，只改 `src/tooling/`。
 - `pnpm run build` 先跑 Vite tooling build，再用 `dist/tooling/publish/build-publish.mjs` 重建 `.publish/ddd-workflow/`。
-- `pnpm run test:pack` 執行 `npx skills add ./.publish/ddd-workflow --list`，作為 dotted skill name 與 package layout gate。
+- `pnpm run test:pack` 執行 repo-local `skills add ./.publish/ddd-workflow --list`，作為 dotted skill name 與 package layout gate。
 - `pnpm deploy:dry-run` 會串起 `test -> build -> test:pack -> deploy-local --dry-run`，不寫入 HOME。
 
 ## Git 策略

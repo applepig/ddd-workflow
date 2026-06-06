@@ -164,12 +164,12 @@ describe('deploy-local planner', () => {
     rmSync(home_dir, { recursive: true, force: true })
   })
 
-  it('should plan skills installation through npx skills instead of symlink actions', () => {
+  it('should plan skills installation through repo-local skills CLI instead of symlink actions', () => {
     const actions = planDeploy({ publish_root: SOURCE_ROOT, home_dir, targets: ['claude'] })
     const command = actions.find((action) => action.type === 'command')
 
-    expect(command.command).toBe('npx')
-    expect(command.args).toEqual(expect.arrayContaining(['skills', 'add', SOURCE_ROOT]))
+    expect(command.command).toBe('pnpm')
+    expect(command.args).toEqual(expect.arrayContaining(['exec', 'skills', 'add', SOURCE_ROOT]))
     expect(actions.some((action) => action.type === 'copy' && action.target.includes('/skills/'))).toBe(false)
   })
 

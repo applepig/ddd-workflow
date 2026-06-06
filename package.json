@@ -12,7 +12,7 @@
     "build:tooling": "node scripts/build-tooling.js",
     "publish:init": "pnpm run build:tooling && node dist/tooling/publish/init-publish.mjs",
     "build": "pnpm run build:tooling && node dist/tooling/publish/build-publish.mjs",
-    "test:pack": "npx skills add ./.publish/ddd-workflow --list",
+    "test:pack": "skills add ./.publish/ddd-workflow --list",
     "deploy": "pnpm run test:preflight && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs",
     "deploy:dry-run": "pnpm run test:preflight && pnpm run build && pnpm run test:pack && node dist/tooling/deploy/deploy-local.mjs --dry-run",
     "deploy:check": "pnpm run test:preflight && pnpm run build && node dist/tooling/deploy/deploy-local.mjs --home-dir /tmp/ddd-workflow-deploy-check --skip-skills",
@@ -25,6 +25,7 @@
     "gray-matter": "^4.0.3"
   },
   "devDependencies": {
+    "skills": "^1.5.10",
     "vite": "^8.0.5",
     "vitest": "^4.1.2"
   }
