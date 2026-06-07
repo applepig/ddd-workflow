@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as os from 'node:os'
+import { execFileSync } from 'node:child_process'
 
 vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
@@ -9,9 +10,20 @@ vi.mock('node:os', () => ({
   homedir: vi.fn(() => '/home/user'),
 }))
 
-import { renderMenu, handleInput, shortenDir, parseKey } from './main.ts'
+import {
+  renderMenu,
+  handleInput,
+  shortenDir,
+  parseKey,
+  listMenuSessions,
+  getCursorRowOffset,
+  parseCliOptions,
+  createStartupTracer,
+} from './main.ts'
 import type { SessionInfo } from './tmux.ts'
 import type { MenuState, MenuAction } from './main.ts'
+
+const mocked_exec = vi.mocked(execFileSync)
 
 describe('parseKey', () => {
   it('should return CTRL_C for byte 3', () => {
@@ -42,6 +54,50 @@ describe('parseKey', () => {
   })
 })
 
+describe('parseCliOptions', () => {
+  it('should disable verbose output by default', () => {
+    expect(parseCliOptions([])).toEqual({ verbose: false })
+  })
+
+  it('should enable verbose output with --verbose', () => {
+    expect(parseCliOptions(['--verbose'])).toEqual({ verbose: true })
+  })
+
+  it('should enable verbose output with -v', () => {
+    expect(parseCliOptions(['-v'])).toEqual({ verbose: true })
+  })
+})
+
+describe('createStartupTracer', () => {
+  it('should print step duration and total duration when verbose is enabled', () => {
+    const messages: string[] = []
+    const now = vi.fn()
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(125)
+      .mockReturnValueOnce(170)
+    const tracer = createStartupTracer(true, (message) => messages.push(message), now)
+
+    const result = tracer.step('list tmux sessions', () => 'ok')
+
+    expect(result).toBe('ok')
+    expect(messages).toEqual([
+      '[ccr:verbose] list tmux sessions: 45.0ms (total 70.0ms)\n',
+    ])
+  })
+
+  it('should not call clock or write output when verbose is disabled', () => {
+    const messages: string[] = []
+    const now = vi.fn(() => 100)
+    const tracer = createStartupTracer(false, (message) => messages.push(message), now)
+
+    const result = tracer.step('list tmux sessions', () => 'ok')
+
+    expect(result).toBe('ok')
+    expect(now).not.toHaveBeenCalled()
+    expect(messages).toEqual([])
+  })
+})
+
 describe('shortenDir', () => {
   it('should replace home directory with ~', () => {
     expect(shortenDir('/home/user/projects/AGENTS')).toBe('~/projects/AGENTS')
@@ -53,6 +109,45 @@ describe('shortenDir', () => {
 
   it('should handle exact home directory', () => {
     expect(shortenDir('/home/user')).toBe('~')
+  })
+})
+
+describe('listMenuSessions', () => {
+  beforeEach(() => {
+    mocked_exec.mockReset()
+  })
+
+  it('should only list tmux sessions without syncing session IDs during menu startup', () => {
+    mocked_exec.mockReturnValue(
+      Buffer.from('cr-AGENTS:/home/user/projects/AGENTS\ncr-aistudio:/home/user/projects/aistudio\n'),
+    )
+
+    const result = listMenuSessions()
+
+    expect(result).toEqual([
+      { name: 'cr-AGENTS', dir: '/home/user/projects/AGENTS' },
+      { name: 'cr-aistudio', dir: '/home/user/projects/aistudio' },
+    ])
+    expect(mocked_exec).toHaveBeenCalledTimes(1)
+    expect(mocked_exec).toHaveBeenCalledWith(
+      'tmux',
+      ['list-sessions', '-F', '#{session_name}:#{pane_current_path}'],
+      { stdio: 'pipe' },
+    )
+    expect(
+      mocked_exec.mock.calls.some((call) => {
+        const args = call[1] as string[]
+        return call[0] === 'pgrep' || args[0] === 'display-message'
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('getCursorRowOffset', () => {
+  it('should count cursor row movement by newlines instead of split line count', () => {
+    expect(getCursorRowOffset('one\ntwo\n')).toBe(2)
+    expect(getCursorRowOffset('one\ntwo')).toBe(1)
+    expect(getCursorRowOffset('')).toBe(0)
   })
 })
 

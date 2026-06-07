@@ -107,7 +107,7 @@ description: >
 **切分標準**：兩條工作線不會修改同一個檔案，且透過明確介面（API contract / shared types）銜接，即可平行。反之若共用全域狀態、需要同時改同一檔案、或介面尚未確定，則不可平行。
 
 **執行原則**：
-- **Worktree 隔離**：每條平行工作線在獨立 git worktree 執行，完成後以分支保留，主行程負責合併
+- **Worktree 隔離**：平行前必須在 `$PROJECT_ROOT/.worktree/<branch-name>/` 建立每條工作線的獨立 git worktree；worker 只在自己的 worktree 內工作，完成後以分支保留，主行程負責合併
 - **介面先行**：銜接介面必須在分線前確定；未定義則先用序列 task 確立
 - **匯合點必測**：合併後必須有整合測試驗證銜接正確
 

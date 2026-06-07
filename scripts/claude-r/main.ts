@@ -20,6 +20,57 @@ export type MenuAction =
   | { type: 'quit' }
   | { type: 'none' }
 
+export interface CliOptions {
+  verbose: boolean
+}
+
+export interface StartupTracer {
+  mark(label: string): void
+  step<T>(label: string, fn: () => T): T
+}
+
+type WriteOutput = (message: string) => void
+type GetTime = () => number
+
+export function parseCliOptions(argv: string[]): CliOptions {
+  return {
+    verbose: argv.includes('--verbose') || argv.includes('-v'),
+  }
+}
+
+export function createStartupTracer(
+  verbose: boolean,
+  write: WriteOutput = (message) => { process.stderr.write(message) },
+  now: GetTime = Date.now,
+): StartupTracer {
+  if (!verbose) {
+    return {
+      mark: () => {},
+      step: (_label, fn) => fn(),
+    }
+  }
+
+  const started_at = now()
+
+  const writeTiming = (label: string, duration_ms: number, total_ms: number): void => {
+    write(`[ccr:verbose] ${label}: ${duration_ms.toFixed(1)}ms (total ${total_ms.toFixed(1)}ms)\n`)
+  }
+
+  return {
+    mark(label) {
+      const finished_at = now()
+      writeTiming(label, 0, finished_at - started_at)
+    },
+    step(label, fn) {
+      const step_started_at = now()
+      const result = fn()
+      const finished_at = now()
+      writeTiming(label, finished_at - step_started_at, finished_at - started_at)
+      return result
+    },
+  }
+}
+
 /**
  * 將絕對路徑中的 home 目錄替換為 ~。
  */
@@ -169,29 +220,36 @@ export function parseKey(data: Buffer): string {
 function draw(content: string, prev_lines: number): number {
   // 移到最上面清除之前的輸出
   if (prev_lines > 0) {
-    process.stdout.write(`\x1b[${prev_lines}A\x1b[J`)
+    process.stdout.write(`\x1b[${prev_lines}A\r\x1b[J`)
   }
   process.stdout.write(content)
-  return content.split('\n').length
+  return getCursorRowOffset(content)
 }
 
 /**
- * 列出所有 session 並同步每個 session 的 Claude session ID。
+ * 回傳輸出內容讓 cursor 往下移動的 row 數。
  */
-function listAndSync(): SessionInfo[] {
-  const sessions = listSessions()
-  for (const session of sessions) {
-    syncSessionId(session.name)
-  }
-  return sessions
+export function getCursorRowOffset(content: string): number {
+  return content.split('\n').length - 1
+}
+
+/**
+ * 列出選單需要顯示的 session；啟動時不同步 session ID，避免每個 session 多跑 tmux/pgrep。
+ */
+export function listMenuSessions(): SessionInfo[] {
+  return listSessions()
 }
 
 /**
  * CLI 進入點。
  */
 async function main(): Promise<void> {
-  const cwd = process.cwd()
-  let sessions = listAndSync()
+  const options = parseCliOptions(process.argv.slice(2))
+  const tracer = createStartupTracer(options.verbose)
+  tracer.mark('script entered')
+
+  const cwd = tracer.step('read cwd', () => process.cwd())
+  let sessions = tracer.step('list tmux sessions', () => listMenuSessions())
 
   // 沒有任何 session 時，也顯示選單讓使用者選 cc 或 oc
 
@@ -201,8 +259,8 @@ async function main(): Promise<void> {
   let prev_lines = 0
 
   // 初次渲染
-  const initial_content = renderMenu(sessions, cwd, selected)
-  prev_lines = draw(initial_content, 0)
+  const initial_content = tracer.step('render initial menu', () => renderMenu(sessions, cwd, selected))
+  prev_lines = tracer.step('draw initial menu', () => draw(initial_content, 0))
 
   // 設定 raw mode
   if (!process.stdin.isTTY) {
@@ -210,8 +268,11 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  process.stdin.setRawMode(true)
-  process.stdin.resume()
+  tracer.step('enable raw stdin', () => {
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+  })
+  tracer.mark('ready for input')
 
   return new Promise<void>((resolve) => {
     const cleanup = () => {
@@ -253,7 +314,7 @@ async function main(): Promise<void> {
         }
         case 'terminate': {
           killSession(action.session_name)
-          sessions = listAndSync()
+          sessions = listMenuSessions()
           const new_total = sessions.length + 2
           total = new_total
           if (selected >= new_total) selected = new_total - 1
@@ -269,7 +330,7 @@ async function main(): Promise<void> {
           } else {
             createSession(action.session_name, action.dir)
           }
-          sessions = listAndSync()
+          sessions = listMenuSessions()
           total = sessions.length + 2
           prev_lines = draw(renderMenu(sessions, cwd, selected), prev_lines)
           break
