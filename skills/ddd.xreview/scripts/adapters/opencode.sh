@@ -188,7 +188,7 @@ if [[ "$ISOLATION" == "worktree" ]]; then
     BRANCH="opencode/$slug"
   fi
 
-  work_dir="$project_root/.worktrees/$BRANCH"
+  work_dir="$project_root/.worktree/$BRANCH"
 
   if existing="$(git -C "$project_root" worktree list --porcelain \
                   | awk -v p="$work_dir" '$1=="worktree" && $2==p {print $2; exit}')" \

@@ -61,12 +61,17 @@ case "$RUNNER_MODE" in
 }
 
 get_runner_file() {
-  readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s\n' "${BASH_SOURCE[0]}"
+  # Return the invocation path without resolving symlinks.
+  # Sibling navigation (adapters/, workers) relies on dirname
+  # matching the skill-local scripts/ directory.
+  local dir
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  printf '%s/%s\n' "$dir" "$(basename "${BASH_SOURCE[0]}")"
 }
 
 get_xreview_script_dir() {
   local runner_file="$1"
-  cd "$(dirname "$runner_file")/../skills/ddd.xreview/scripts" && pwd
+  dirname "$runner_file"
 }
 
 get_xreview_adapter_dir() {
@@ -225,7 +230,7 @@ local runner_file worker_script runid timeout_val
 runner_file="$(get_runner_file)"
 worker_script="${DDD_AGENT_RUNNER_WORKER_SCRIPT:-}"
 if [[ -z "$worker_script" ]]; then
-  worker_script="$(dirname "$runner_file")/../skills/ddd.work/scripts/opencode-worker.sh"
+  worker_script="$(dirname "$runner_file")/opencode-worker.sh"
 fi
 if [[ ! -f "$worker_script" ]]; then
   echo "FAIL orchestrator worker_script_not_found:$worker_script"

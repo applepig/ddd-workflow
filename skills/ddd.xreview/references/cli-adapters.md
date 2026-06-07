@@ -41,7 +41,7 @@ ADR-11 雙輸出設計對 adapter 的 stdout / stderr 行為有隱性契約，�
 
 ## OpenCode
 
-Agent 定義來自 `ddd-workflow/agents/ddd-reviewer.md`（共用 SSOT），`npm run deploy` 透過 build.js 的 `AGENT_OVERRIDES` 把 opencode 變體（含 `mode: primary` 與專屬 permission）寫入 `dist/opencode/agents/ddd-reviewer.md`，再 symlink 到 `~/.config/opencode/agents/ddd-reviewer.md`。Agent 命名規則：skills 用 dot 分隔（`ddd.xreview`），agents 用 dash 分隔（`ddd-reviewer`）。
+Agent 定義來自 `agents/ddd-reviewer.md`（共用 SSOT）。authoring repo 端用 `pnpm deploy:dry-run` 或 `pnpm deploy` 先建置 publish checkout，再以 copy-based deploy 安裝；public package 端先執行 `npm run agents:build` 產生 `dist/opencode/agents/ddd-reviewer.md`，再執行 `npm run agents:deploy -- opencode` 複製到 `~/.config/opencode/agents/ddd-reviewer.md`。OpenCode agent 使用 `mode: all`，並由專屬 permission 設定維持 read-only review 行為。Agent 命名規則：skills 用 dot 分隔（`ddd.xreview`），agents 用 dash 分隔（`ddd-reviewer`）。
 
 ### 使用方式
 
@@ -53,7 +53,7 @@ bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md op
 echo "$prompt" | opencode run --agent ddd-reviewer --model openai/gpt-5.5
 ```
 
-在 orchestrator 的使用者介面中，GPT 5 系列預設 reviewer 以 `5.x` alias 表示；adapter 與 OpenCode CLI 實際呼叫仍需使用具體 model id（例如 `openai/gpt-5.5`）。
+OpenCode adapter 仍可用完整 spec（例如 `opencode:openai/gpt-5.5`）明確指定；預設 GPT 5 系列 reviewer alias 則由 `xreview.json` 決定，可能指向 Codex 或其他 CLI。
 
 `adapters/opencode.sh` 是刻意保持精簡的 proxy shell：
 
@@ -76,7 +76,7 @@ OpenCode `run` 模式下，未列入的 permission 預設為 `"ask"`。但 headl
 
 #### 其他設計
 
-- `mode: primary`：可透過 `--agent ddd-reviewer` 在 `opencode run` 載入為 primary system prompt（xreview adapter 用法）
+- `mode: all`：可透過 `--agent ddd-reviewer` 在 `opencode run` 載入 reviewer agent（xreview adapter 用法）
 - `steps: 50`：限制 agentic 迭代次數，防止 reviewer 因工具失敗而無限重試
 - `edit: deny`：技術層面禁止修改任何檔案
 - `bash: deny` + 白名單：只允許 git 唯讀指令和檔案檢視指令
@@ -85,8 +85,8 @@ OpenCode `run` 模式下，未列入的 permission 預設為 `"ask"`。但 headl
 
 ### 注意事項
 
-- 修改 agent 定義後，執行 `npm run deploy opencode` 重新建立 symlink（或直接生效，因為是 symlink）
-- **升級時若 agent 重新命名或 `mode` 變更**（例如本批次 `ddd-reviewer` 統一 dash 命名 + `mode: primary`、`ddd-developer` 改 `mode: all`），必須重跑 `npm run deploy`，否則 symlink 仍指向舊檔，OpenCode 會回 `agent not found`
+- 修改 agent 定義後，authoring 端執行 `pnpm deploy:dry-run` 檢查、`pnpm deploy` 安裝；public package 端執行 `npm run agents:build` 後再執行 `npm run agents:deploy -- opencode`
+- **升級時若 agent 重新命名或 `mode` 變更**（例如 `ddd-reviewer` 統一 dash 命名且 OpenCode 使用 `mode: all`），必須重跑 copy-based deploy，否則 OpenCode 可能仍讀到舊檔或回 `agent not found`
 - 若 reviewer 仍然卡住，嘗試降低 `steps` 值（如 30）
 - 若特定模型有額外的工具需求，在 bash 白名單中加入對應的指令 pattern
 

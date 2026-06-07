@@ -8,27 +8,48 @@ Document Driven Development 工作流——讓 AI agent 用結構化的文件驅
 
 每個功能都從文件開始：先釐清需求、寫 spec、拆 tasks，確認後才動手寫程式碼。Main agent 擔任 Coordinator（規劃、派工、驗收），實作和 review 交給專屬 subagent，保護 main agent 的 context window 不被消耗。
 
-## 安裝
+## 安裝 Skills
 
-### Claude Code
+使用 Agent Skills CLI 安裝全部 DDD skills：
 
 ```bash
-claude plugin add github:applepig/ddd-workflow
+npx skills add applepig/ddd-workflow --skill "*" -g -a claude-code -a opencode -a codex -a gemini-cli
 ```
 
-### Gemini CLI
+先檢查可用 skills：
 
 ```bash
-gemini extensions install https://github.com/applepig/ddd-workflow.git
+npx skills add applepig/ddd-workflow --list
 ```
 
-### 其他 Agent CLI
-
-本專案遵循標準的 skills/agents 目錄結構。如果你的 agent CLI 支援從目錄載入 skills，可以手動 clone 後 symlink：
+如果你已 clone 本 repo，也可以從本機目錄安裝：
 
 ```bash
-git clone https://github.com/applepig/ddd-workflow.git
-# 將 skills/、agents/、references/AGENTS.md 連結到你的 agent 設定目錄
+npx skills add . --skill "*" -g -a claude-code -a opencode -a codex -a gemini-cli
+```
+
+## Agents 與 Runtime Scripts
+
+`npx skills` 只安裝 `skills/`。本 package 另外提供 `bin/` entrypoints，處理 agents、instruction files、config 與 runtime scripts。
+
+建立平台 agents 產物：
+
+```bash
+npm run agents:build
+```
+
+部署 non-skill 項目到本機 agent 設定目錄：
+
+```bash
+npm run agents:deploy -- --dry-run
+npm run agents:deploy
+```
+
+可指定單一平台：
+
+```bash
+npm run agents:deploy -- claude --dry-run
+npm run agents:deploy -- opencode
 ```
 
 ## 工作流總覽
@@ -133,14 +154,20 @@ docs/
 
 ```
 ddd-workflow/
-├── skills/                       # Skill 定義（slash commands）
+├── skills/                       # Agent Skills 定義（slash commands）
 │   └── ddd.<name>/
 │       ├── SKILL.md              # YAML frontmatter + 指令內容
 │       └── references/           # (optional) 參考資料
-├── agents/                       # Subagent 定義
-│   └── ddd-<role>.md             # YAML frontmatter + system prompt
-└── references/
-    └── AGENTS.md                 # 共用指令檔（coding style、工具偏好等）
+├── agents/                       # Claude-compatible canonical agents
+├── bin/                          # public CLI entrypoints
+├── chunks/                       # bin runtime chunks
+├── deploy/                       # bin deploy runtime
+├── scripts/                      # package-level runtime scripts
+├── config/                       # user-editable config templates
+├── policies/                     # CLI policy files
+├── references/
+│   └── AGENTS.md                 # 共用指令檔（coding style、工具偏好等）
+└── package.json
 ```
 
 ## License

@@ -21,12 +21,12 @@ ALL_DONE
 `xreview-orchestrator.sh` 的公開呼叫方式不變，但 source tree 中的 entrypoint 已改為 symlink：
 
 ```text
-ddd-workflow/scripts/agent-runner.sh                         # shared runner 實體檔
-ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.sh -> ../../../scripts/agent-runner.sh
-ddd-workflow/skills/ddd.work/scripts/work-orchestrator.sh       -> ../../../scripts/agent-runner.sh
+src/ddd-workflow/scripts/_include/agent-runner.sh                       # shared runner 實體檔
+src/ddd-workflow/skills/ddd.xreview/scripts/xreview-orchestrator.sh -> ../../../scripts/_include/agent-runner.sh
+src/ddd-workflow/skills/ddd.work/scripts/work-orchestrator.sh       -> ../../../scripts/_include/agent-runner.sh
 ```
 
-`xreview-orchestrator.sh` 與 `work-orchestrator.sh` 都 symlink 到同一個 `ddd-workflow/scripts/agent-runner.sh`。Runner mode 由 invocation basename 決定：
+`xreview-orchestrator.sh` 與 `work-orchestrator.sh` 都 symlink 到同一個 `src/ddd-workflow/scripts/_include/agent-runner.sh`。Runner mode 由 invocation basename 決定：
 
 | Invocation name | Mode | 用途 |
 | --- | --- | --- |

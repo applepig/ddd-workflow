@@ -1,0 +1,10 @@
+{
+  "name": "ddd-workflow",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "agents:build": "node bin/transpile-agents.mjs",
+    "agents:deploy": "node bin/deploy-agents.mjs"
+  }
+}
