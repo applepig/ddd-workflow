@@ -22,12 +22,12 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及 `tasks.md` 路徑（若存在）。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及已確認的 `tasks.md` 路徑（若有）。
 - **Review Lens**：依變更範圍判斷本次啟用哪些 lens。
   1. 只有文件變更 → `Docs Lens`
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
-  3. 只有實作變更且有 spec/tasks → `Spec Lens`、`Code Lens`、`Security Lens`
-  4. 只有實作變更但無 spec/tasks → `Code Lens`、`Security Lens`，並標記無法驗證規格一致性
+  3. 只有實作變更且有 spec 或已確認 task source → `Spec Lens`、`Code Lens`、`Security Lens`
+  4. 只有實作變更但無 spec 或已確認 task source → `Code Lens`、`Security Lens`，並標記無法驗證規格一致性
 - **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
   1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
   2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
@@ -45,12 +45,12 @@ review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_fil
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務來源：<spec.md Milestones 或 tasks.md 路徑>
+- 任務來源：<spec.md Milestones 或已確認 tasks.md 路徑>
 - 變更：請執行 `<git diff 指令>` 取得
 - 本次啟用 lens：<Docs Lens / Spec Lens / Code Lens / Security Lens>
 - Lens reference：<skill-dir>/references/review-lenses.md
 
-先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源，最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
+先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源。若提供 tasks.md，先確認它是本 sprint 已確認的 optional 任務來源；未確認的 legacy tasks.md 只能作歷史參考，不可作完成度判定。最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```

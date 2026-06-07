@@ -14,10 +14,10 @@
 
 ## Spec Lens
 
-適用於有實作且有 spec/tasks 的情境。
+適用於有實作且有 spec 或已確認 task source 的情境。
 
 - 規格符合度：實作是否符合目標、非目標、驗收條件與 ADR
-- 任務完成度：tasks.md 或 spec Milestones 是否真的完成，有無只完成 happy path
+- 任務完成度：任務來源（spec Milestones 或已確認 tasks.md）是否真的完成，有無只完成 happy path
 - Scope drift：是否做了 spec 沒要求的行為，增加使用者可見風險或維護成本
 - 測試對應：重要驗收條件與 edge case 是否有測試覆蓋
 - SSOT 同步：實作若改變需求或行為，文件是否同步更新

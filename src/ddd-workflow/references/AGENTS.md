@@ -17,7 +17,7 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 - **派工與協調**：將實作任務派給 `ddd-developer`
 - **驗收與品管**：檢查 subagent 回報的結果，確認符合 spec 驗收條件
 - **Review 管理**：派 `ddd-reviewer` 做 code review、派 cross review，驗收 review 結果
-- **文件維護**：更新 spec.md/tasks.md（若有）與 works.md，維持 SSOT
+- **文件維護**：更新 spec.md、tasks.md（若有）與 works.md，維持 SSOT
 - **使用者溝通**：在決策點暫停並用 Question Tool 詢問使用者，等待確認
 
 ### Coordinator 不做什麼
@@ -39,36 +39,35 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 
 ### 核心原則
 
-* **SSOT**：每個需求對應一個 `docs/<編號>-<名稱>/` 文件包，作為唯一真相來源。
-* **No Code Without Docs**：在 `spec.md` 獲得使用者確認前，嚴禁撰寫程式碼。若本 sprint 需要獨立 `tasks.md`，也必須先確認後才可實作。
+* **SSOT**：每個需求對應一個文件包；已確認的 `spec.md` 權重最高。`plan.md`、`research.md` 是前置或歷史參考，不作衝突來源。
+* **No Code Without Docs**：在 `spec.md` 獲得使用者確認前，嚴禁撰寫程式碼。若本 sprint 需要 optional `tasks.md`，也必須先經使用者確認後才可作任務來源。
 * **No Code Without Tests**：修改 production code 前，必須先建立或更新測試。
-* **Sync on Finish**：視為 pre-commit hook——commit 前必須先更新 `spec.md` Milestones（或 `tasks.md`）的完成狀態與 `works.md`，未更新不得 commit。
+* **Sync on Finish**：視為 pre-commit hook——commit 前必須先更新任務來源（`spec.md` Milestones 或已確認 `tasks.md`）的完成狀態與 `works.md`，未更新不得 commit。
 * **規格變更**：開發中若需變更規格，暫停開發，同步更新 spec、tasks（若有）與 works，經使用者確認後才恢復。
 
-### 文件結構
+### 文件結構與職責
 
 ```
 docs/
-├── PRD.md                    # 產品需求文件
+├── PRD.md                    # project-level product truth：產品目標、使用者角色、核心場景、domain language、長期 scope boundary 與非目標
 ├── README.md                 # 專案說明
-├── TECHSTACK.md              # 技術棧 + 參考文件連結
+├── TECHSTACK.md              # project-level technical truth：技術棧、版本限制、外部服務、runtime constraints、project-level ADR 連結
 └── <編號>-<名稱>/            # Sprint 文件包
-    ├── plan.md               # (optional) 前置規劃，需求不明確時先寫
-    ├── research.md           # (optional) 技術調研筆記
-    ├── spec.md               # 規格：目標/非目標、User Story、驗收條件、邊界案例、ADR、輕量 Milestones
-    ├── tasks.md              # (optional) 複雜執行計畫：平行工作線、匯合點、跨 agent 派工
-    └── works.md              # 日誌：以日期分組，記錄決策與問題解決
+    ├── plan.md               # (optional) 探索筆記、初步想法、靈感，或 long sprint 拆分草稿
+    ├── research.md           # (optional) 技術方案探討筆記：外部文件摘要、比較、實驗結果與未進入 ADR 的技術細節
+    ├── spec.md               # sprint-level SSOT：目標/非目標、User Story、驗收條件、邊界案例、ADR、Milestones
+    ├── tasks.md              # (optional) 複雜執行計畫；使用者確認後才作任務來源
+    └── works.md              # 工作紀錄：work / xreview / fixbug 後建立或更新
 ```
 
-* `plan.md` 和 `research.md` 是 spec 的前置作業，用於需求不明確、需要先調研的情境
-* `spec.md`、`works.md` 為每個 sprint 必備；`tasks.md` 僅在執行計畫複雜到不適合放在 `spec.md` 時建立
+`PRD.md` 和 `TECHSTACK.md` 只放跨 sprint 長期事實。`works.md` 是工作紀錄，開工前沒有是正常狀態。
 
 ### 執行流程概述
 
 1. **Plan/Research** (optional)：需求不明確時，先規劃方向、進行技術調研
 2. **Spec**：撰寫 spec.md（含輕量 Milestones）→ 使用者確認
-3. **Tasks** (optional)：只有在需要複雜執行協調時，拆出 tasks.md → 使用者確認；若 scope 過大，先拆 sprint 而不是加厚 tasks.md
-4. **Execute**：依 `spec.md` Milestones 或 `tasks.md` 派 `ddd-developer` 以 TDD 循環實作 → 驗收結果 → 更新文件 → 使用者確認後才 commit
+3. **Tasks** (optional)：需要細化 Milestones、建立複雜執行計畫或拆分 sprint 時，用 /ddd.tasks 更新 spec.md 或建立 tasks.md → 使用者確認
+4. **Execute**：依任務來源（`spec.md` Milestones 或已確認 `tasks.md`）派 `ddd-developer` 以 TDD 循環實作 → 驗收結果 → 更新文件 → 使用者確認後才 commit
 5. **Review**：派 cross review（多模型獨立審查）→ 驗收 review 結果 → 修正
 
 Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤、驗收。

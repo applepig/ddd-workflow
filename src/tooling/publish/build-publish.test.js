@@ -22,7 +22,7 @@ function mkdtempLike(prefix) {
 function writeMinimalSource(source_root) {
   mkdirSync(join(source_root, 'agents'), { recursive: true })
   mkdirSync(join(source_root, 'scripts', 'shared'), { recursive: true })
-  mkdirSync(join(source_root, 'skills', 'ddd.work', 'scripts'), { recursive: true })
+  mkdirSync(join(source_root, 'skills', 'ddd.xreview', 'scripts'), { recursive: true })
   mkdirSync(join(source_root, '_runtime'), { recursive: true })
   writeFileSync(join(source_root, 'agents', 'ddd-test.md'), [
     '---',
@@ -38,7 +38,7 @@ function writeMinimalSource(source_root) {
   ].join('\n'))
   writeFileSync(join(source_root, 'scripts', 'shared', 'agent-runner.sh'), '#!/bin/sh\n')
   writeFileSync(join(source_root, '_runtime', 'private.sh'), 'private\n')
-  symlinkSync('../../../scripts/shared/agent-runner.sh', join(source_root, 'skills', 'ddd.work', 'scripts', 'work-orchestrator.sh'))
+  symlinkSync('../../../scripts/shared/agent-runner.sh', join(source_root, 'skills', 'ddd.xreview', 'scripts', 'xreview-orchestrator.sh'))
 }
 
 describe('syncPublishTree', () => {
@@ -61,7 +61,7 @@ describe('syncPublishTree', () => {
     syncPublishTree({ source_root, publish_root })
 
     expect(existsSync(join(publish_root, '_runtime'))).toBe(false)
-    expect(readFileSync(join(publish_root, 'skills', 'ddd.work', 'scripts', 'work-orchestrator.sh'), 'utf8')).toBe('#!/bin/sh\n')
+    expect(readFileSync(join(publish_root, 'skills', 'ddd.xreview', 'scripts', 'xreview-orchestrator.sh'), 'utf8')).toBe('#!/bin/sh\n')
   })
 
   it('excludes authoring-only test files from the publish tree', () => {

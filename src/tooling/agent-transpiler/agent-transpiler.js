@@ -50,9 +50,7 @@ export const OPENCODE_DENY_LIST = [
 export const AGENT_OVERRIDES = {
   'ddd-developer': {
     opencode: {
-      // ddd.work 的 opencode-worker 用 `--agent ddd-developer` 直接載入這份
-      // 為 system prompt；同時保留 subagent 角色給 opencode 內部 task tool
-      // 派工。`mode: all` 讓同一份檔案兩用，不需要部署兩個變體。
+      // 保留 subagent 角色給 opencode 內部 task tool 派工。
       mode: 'all',
     },
   },
