@@ -1,64 +1,111 @@
 ---
 name: ddd.plan
 description: >
-  前置規劃：既有專案中延伸/修改功能時，釐清方向、探索可能性，產出 plan.md。
-  適用於 brownfield——有既有 code 當錨點、要在現行架構上增修。
-  如果是新專案或新模組（greenfield），改用 /ddd.brainstorming。
+  前置規劃：DDD 版 grill-with-docs。用 PRD、TECHSTACK、既有 sprint 文件與 codebase
+  stress-test 使用者的 idea / rough plan，沿 decision tree 逐一釐清阻塞決策，最後直接 chain 到 /ddd.spec。
+  適用於 brownfield extension、greenfield brainstorming、需求模糊、需要 domain language / 技術方向校準的情境。
   Trigger: "plan a feature", "plan an extension", "clarify requirements",
-  "figure out how to extend", "規劃擴充", "規劃改動", "既有系統加功能",
-  "規劃功能", "釐清需求", /ddd.plan。
-  在既有 codebase 上做延伸時，即使只是粗略描述概念，也應觸發此 skill 來定型方向。
+  "brainstorm", "explore ideas", "from scratch", "greenfield",
+  "規劃擴充", "規劃改動", "規劃功能", "釐清需求", "腦力激盪", "從頭開始", /ddd.plan。
 ---
 
-# ddd.plan — 前置規劃（brownfield）
+# ddd.plan — DDD Grill with Docs
 
-前置規劃階段。在既有專案中延伸或修改功能、需求還不明確、無法直接寫 spec 時，先用這個階段釐清方向。
+`/ddd.plan` 是 spec 前的探索與校準流程。它把使用者的 idea / rough plan 對照 `PRD.md`、`TECHSTACK.md`、既有 sprint 文件與 codebase，沿著 decision tree 逐一釐清阻塞決策，防止 domain drift、技術方向漂移與 scope 膨脹。
 
-**適用範圍**：brownfield——有既有 code 當錨點、要在現行架構上增修。如果是新專案或新模組，沒有既有 code 可以參考，改用 `/ddd.brainstorming`。
+完成後直接 chain 到 `/ddd.spec`。
 
 <HARD-GATE>
-嚴禁撰寫程式碼或修改專案設定檔，直到 plan.md 獲使用者確認。
+嚴禁撰寫程式碼或修改專案設定檔，直到 spec.md 獲使用者確認。
 嚴禁自行假設商業邏輯，需求模糊時必須提問。
+嚴禁跳過 docs/code 校準直接產 spec；能從 docs/code 查到的答案必須自己查。
 </HARD-GATE>
 
-## 反模式：「這個太簡單不需要 plan」
+## 工作強度
 
-每個需求都要走這個流程。一個小功能、一個設定調整、一個看似明確的修改——全部都要。「簡單」的需求正是未經檢驗的假設最容易造成浪費的地方。Plan 可以很短（真正簡單的需求寫幾句話就好），但你必須呈現給使用者確認。
+依需求模糊度與既有 anchor 自動選擇 grilling intensity：
+
+- **Light Planning**：需求大致明確，只缺少少數決策或 scope 邊界。快速查 docs/code、補 1-3 個阻塞決策後進 `/ddd.spec`。
+- **Standard Planning**：需求有多個可行方案，或必須理解既有 code / docs 才能決策。沿 decision tree 逐題收斂，提出 2-3 個方案與推薦。
+- **Deep Planning / Brainstorming**：沒有可靠 codebase anchor，或使用者只有模糊 idea。先建立問題定義、domain language、boundary、成功條件與高階設計，再收斂到 `/ddd.spec`。
+
+差異不在產出文件，而在探索深度：Light / Standard 是「在既有脈絡中收斂」，Deep 是「從不完整 idea 建立脈絡再收斂」。
+
+## DDD 文件對應
+
+`grill-with-docs` 的 I/O 對應到 DDD 文件：
+
+| grill-with-docs | DDD 對應 |
+|---|---|
+| 使用者 plan | 使用者 idea / feature request / rough plan |
+| `CONTEXT.md` glossary | `docs/PRD.md` 的 Domain Language / Product Context |
+| ADRs | `docs/TECHSTACK.md` 的 project-level 技術決策，或 sprint `spec.md` 的 ADR |
+| codebase cross-reference | 既有 source、既有 sprint docs、README |
+| inline update `CONTEXT.md` | 必要時依 `AGENTS.md` 文件職責更新 `PRD.md`、`TECHSTACK.md` 或 `research.md` |
+| refined plan | 交接摘要，直接進 `/ddd.spec` |
 
 ## Checklist
 
-你必須為以下每個項目建立 task 並依序完成：
+1. **讀取 DDD anchor** — 讀 `docs/PRD.md`、`docs/TECHSTACK.md`、相關 sprint docs、README 與相關 code
+2. **選擇工作強度** — 判斷 Light / Standard / Deep，並向使用者簡短說明目前判斷
+3. **解析 decision tree** — 找出會阻塞設計的 domain、scope、technical、UX、data、migration、testability 決策
+4. **逐一 grill** — 一次只問一個阻塞決策；每題都給推薦答案；能查就查，不問使用者
+5. **對照 docs/code** — 檢查使用者說法是否與 PRD、TECHSTACK、既有 spec、ADR、code 相衝突
+6. **必要時更新輔助文件** — 依 `AGENTS.md` 文件職責更新 PRD、TECHSTACK 或 research.md
+7. **需求完整性摘要檢查** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`
+8. **接續 `/ddd.spec`** — invoke `/ddd.spec`，將規劃結論填入 spec 的背景、驗收條件、ADR 與 Milestones
 
-1. **探索專案上下文** — 讀現有文件（PRD.md、README.md）、查 codebase、檢查是否有相關需求文件、讀取 plan.md（如有，當作草稿起點）
-2. **建立文件包** — 確認或建立 `docs/<編號>-<名稱>/` 資料夾（若為新需求）
-3. **範圍評估** — 判斷需求是否涉及多個獨立子系統；若是，先協助拆分為獨立 sprint，再逐一深入。不要在巨大範圍上鑽細節
-4. **逐一追問釐清需求** — Grill Me 模式（見下方）
-5. **提出 2-3 個方案** — 附取捨分析與你的推薦
-6. **使用者確認方向** — 將規劃結論（背景、選定方案、取捨）摘要呈現，等使用者確認
-7. **接續 `/ddd.spec` 撰寫 spec.md** — invoke `/ddd.spec` skill，跳過其「準備工作」（已完成），規劃結論填入 spec 的「背景」與「ADR」段落
+## Grilling 規則
 
-## Grill Me 模式
+- **Decision tree 優先**：不要跑固定問題清單。沿著目前需求的決策樹前進，每次只處理一個會阻塞設計的分支。
+- **推薦答案必填**：每個決策題都要包含已知事實、2-3 個選項、Coordinator 的推薦選項與理由。
+- **Codebase-first**：問題若能由 docs/code 回答，自己查；只有缺少使用者判斷才提問。
+- **Question Tool**：真正需要使用者決策時，用 Question Tool，不用一般文字問句代替。
+- **不設問題上限**：簡單需求可能 1-2 題，Deep Planning 可能很多題。若使用者要求收斂，立即摘要目前決策與剩餘風險，進入 `/ddd.spec`。
+- **避免低價值問題**：不要問命名、路徑、技術棧等可由 docs/code 推得的細節；不要重複問已決定的分支。
 
-- **一次一題**：沿著決策樹逐一追問，每次只聚焦一個決策點，解決後再往下走
-- **選擇題優先**：能用 2-4 個選項框架化的問題，就用 AskUserQuestion 的多選項格式呈現，降低使用者的認知負擔。開放式問題只在無法預判答案範圍時使用
-- **能靠 codebase 回答的問題自己去查**，不要問使用者（用 Explore agent、Grep、Read）
-- 只有真正需要使用者判斷的問題才用 AskUserQuestion 提出
-- **在分歧點提出方案**：遇到多種可行路徑時，提出 2-3 個方案及各自取捨，附上你的推薦——讓使用者做選擇題而非申論題
-- 持續追問直到沒有未解決的分支為止
+## Domain / Docs 校準
 
-## Key Principles
+### Challenge against PRD language
 
-- **YAGNI**：在 plan 階段就積極砍功能——越早砍越便宜，不要把「以後可能需要」的東西帶進 spec
-- **一次一題**：不要用多個問題轟炸使用者
-- **選擇題優先**：降低認知負擔
-- **先探索後提問**：能從 codebase 得到的答案不要問使用者
-- **漸進式確認**：分段呈現，逐段確認，不要一次丟出整份文件
+當使用者用詞和 `PRD.md` 的 domain language 衝突時，立即指出：
 
-## 產出
+> PRD 目前把「Customer」定義為下單者，但你剛剛說的「Customer」似乎是付款帳號。這兩個要合併還是分開？
 
-`docs/<編號>-<名稱>/spec.md`（經由 `/ddd.spec` 流程產出）
+若使用者使用模糊或 overloaded term，提出 canonical term：
+
+> 你說「account」時，是指登入用的 User，還是付款/組織層級的 Billing Account？我建議這裡用 Billing Account，避免和 auth User 混淆。
+
+### Cross-reference with code
+
+當使用者描述「現在系統如何運作」時，查 code 或既有文件驗證。若發現矛盾，先 surface contradiction，再請使用者決策：
+
+> 你說可以 partial cancellation，但目前 code 只取消整筆 Order。這次要改 domain model 支援 partial cancellation，還是維持整筆取消？
+
+### Discuss concrete scenarios
+
+用具體情境 stress-test domain boundary，不要停在抽象描述：
+
+- 空資料、重複提交、權限不足、跨 tenant、partial failure
+- 舊資料 migration、外部 API timeout、背景 job 重試
+- 使用者取消、回復、修改已完成狀態的情境
+
+## 文件更新規則
+
+`/ddd.plan` 可以在規劃過程中更新輔助文件；各文件職責以 `references/AGENTS.md` 為準。Sprint-specific implementation detail 應進入該 sprint 的 `spec.md`。
+
+## ADR 判斷
+
+只有三者都成立才建議寫 ADR：
+
+1. **Hard to reverse**：改變成本高
+2. **Surprising without context**：未來維護者會問「為什麼這樣做？」
+3. **Real trade-off**：真的有替代方案且做了取捨
+
+Project-level ADR 放在 `TECHSTACK.md` 或其連結的 ADR；sprint-specific tradeoff 放在該 sprint 的 `spec.md` ADR。
 
 ## 結束條件
 
 `/ddd.spec` 流程完成、使用者確認規格後，依 spec 內 Milestones 複雜度引導使用者執行 `/ddd.work` 或 `/ddd.tasks`。
-如果有技術問題需要調研，直接用原生工具（Explore agent、WebSearch、WebFetch）進行，將結論記錄在 `research.md` 中。
+
+若中途需要收斂但尚未進入 `/ddd.spec`，先輸出目前已確認決策、未解風險、建議下一步，並用 Question Tool 讓使用者選擇繼續 grill 或進 spec。

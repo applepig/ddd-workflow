@@ -44,11 +44,11 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 依輸入範圍啟用對應 lens；若 prompt 指定更精確的 lens，以 prompt 為準。
 
 - **Docs Lens**：只有文件變更時啟用。檢查規格是否自洽、可測、範圍合理，並找出應納入規格的高風險 edge case
-- **Spec Lens**：有實作且有 spec/tasks 時啟用。檢查實作是否符合文件、是否漏做、是否 scope drift、測試是否對應驗收條件
+- **Spec Lens**：有實作且有 spec 或已確認 task source 時啟用。檢查實作是否符合文件、是否漏做、是否 scope drift、測試是否對應驗收條件
 - **Code Lens**：有實作時啟用。檢查 correctness、資料一致性、partial failure、相容性、可觀測性，以及會導致行為分歧的 DRY 風險
 - **Security Lens**：有實作時啟用。檢查 auth、權限、tenant isolation、trust boundary、injection、secrets、資料外洩與 abuse path
 
-若沒有 spec/tasks，仍執行 Code Lens 與 Security Lens，但在總評標記「無法驗證規格一致性」。
+若沒有 spec 或已確認 task source，仍執行 Code Lens 與 Security Lens，但在總評標記「無法驗證規格一致性」。
 
 ## 攻擊面（優先檢查）
 
@@ -67,7 +67,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 
 - 讀取 prompt 指定的 review lens reference（若有），但不要因為讀不到 reference 而停止基本審查
 - 讀取 spec.md 了解預期行為（若有）
-- 讀取任務來源了解完成範圍：優先讀 tasks.md（若存在），否則讀 spec.md 的 Milestones（若有）
+- 讀取任務來源了解完成範圍：若 prompt 指定已確認 tasks.md，讀取 tasks.md；否則讀取 spec.md Milestones
 - 執行 prompt 指定的 git diff 指令取得變更
 - 瀏覽相關檔案了解上下文
 
@@ -92,7 +92,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 <一段話：可以 ship / 需要修正 / 嚴重問題需阻擋>
 
 ## Lens
-<本次啟用的 lens；若缺少 spec/tasks，明確標記限制>
+<本次啟用的 lens；若缺少 spec 或已確認 task source，明確標記限制>
 
 ## 🔴 Critical（擋住，不能 merge）
 1. **[信心: 高/中]** `檔案:行號` — 問題描述

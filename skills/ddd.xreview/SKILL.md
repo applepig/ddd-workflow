@@ -22,12 +22,12 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及 `tasks.md` 路徑（若存在）。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及已確認的 `tasks.md` 路徑（若有）。
 - **Review Lens**：依變更範圍判斷本次啟用哪些 lens。
   1. 只有文件變更 → `Docs Lens`
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
-  3. 只有實作變更且有 spec/tasks → `Spec Lens`、`Code Lens`、`Security Lens`
-  4. 只有實作變更但無 spec/tasks → `Code Lens`、`Security Lens`，並標記無法驗證規格一致性
+  3. 只有實作變更且有 spec 或已確認 task source → `Spec Lens`、`Code Lens`、`Security Lens`
+  4. 只有實作變更但無 spec 或已確認 task source → `Code Lens`、`Security Lens`，並標記無法驗證規格一致性
 - **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
   1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
   2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
@@ -45,12 +45,12 @@ review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_fil
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務來源：<spec.md Milestones 或 tasks.md 路徑>
+- 任務來源：<spec.md Milestones 或已確認 tasks.md 路徑>
 - 變更：請執行 `<git diff 指令>` 取得
 - 本次啟用 lens：<Docs Lens / Spec Lens / Code Lens / Security Lens>
 - Lens reference：<skill-dir>/references/review-lenses.md
 
-先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源，最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
+先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源。若提供 tasks.md，先確認它是本 sprint 已確認的 optional 任務來源；未確認的 legacy tasks.md 只能作歷史參考，不可作完成度判定。最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```
@@ -80,15 +80,23 @@ XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_
 
 模型覆蓋、短名等用法見 `references/cli-reference.md`。
 
-### 4. 收集結果
+### 4. 收集並讀取結果
 
-orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。讀取各 RETURN 的 `<final-path>`，空檔標失敗。
+orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。Coordinator 必須先讀取各 RETURN 的 `<final-path>`，確認 reviewer report 內容後才進入整合；空檔標失敗。
 
 事件格式與邊界案例見 `references/orchestrator-internals.md`。
 
-### 5. 整合、驗證、呈現
+### 5. 整合、驗證、回報
 
-**5.1 組對照表**
+**5.1 閱讀 reviewer reports**
+
+收到 `RETURN` 後，逐一讀取每份 `<final-path>`：
+
+1. 確認 report 是否完整、可讀、且有明確 findings / 無 findings 結論
+2. 標記失敗、空報告、格式不完整的 reviewer
+3. 保留每位 reviewer 的原始觀點，後續整合時不得省略
+
+**5.2 組對照表**
 
 ```markdown
 # Cross Review 報告
@@ -118,9 +126,9 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 <多方都認可的設計>
 ```
 
-**5.2 Coordinator 驗證 Critical / Important findings**
+**5.3 Coordinator 驗證 Critical / Important findings**
 
-彙整完成後、呈給使用者前，coordinator 先自行驗證中～高嚴重度的 findings：
+彙整完成後、回報給使用者前，coordinator 先自行驗證中～高嚴重度的 findings：
 
 1. 從報告篩 Critical / Important findings
 2. 逐一讀 finding 引用的程式碼確認問題是否真實存在
@@ -131,9 +139,20 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 
 **原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
+**5.4 先回報驗證後的 review 結果**
+
+發問前必須先在對話中回報完整 cross review 結果，讓使用者先看到 coordinator 已讀取、確認與驗證後的結論。回報內容包含：
+
+1. Reviewer 組成與成功 / 失敗狀態
+2. 各 reviewer 的主要 findings 與觀點摘要
+3. Critical / Important findings 的驗證結果（✅ 確認、⚠️ 存疑、❌ False Positive）
+4. 建議優先處理順序與不建議處理的理由
+
+回報完成後，才進入下一步使用 Question Tool 詢問修正決策。
+
 ### 6. 逐條決策
 
-對步驟 5.2 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，用 Question Tool 逐條詢問使用者修正方向。
+對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在步驟 5.4 已回報後，用 Question Tool 逐條詢問使用者修正方向。
 
 **批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
 
