@@ -108,7 +108,8 @@ description: >
 
 1. **派發 subagent**
    - 對每條工作線呼叫 `ddd-developer` subagent
-   - 多條工作線可平行派發；若 host 不支援平行派發，依序派發並明確告知
+   - 多條工作線可平行派發；派發前必須先在 `$PROJECT_ROOT/.worktree/<branch-name>/` 建立每條工作線的獨立 git worktree，並要求 worker 只在自己的 worktree 內工作
+   - 若 host 不支援平行派發，或無法提供獨立 worktree，退回序列模式並明確告知
    - Worker 不得 commit；commit 由 coordinator 匯合後、經使用者確認才執行
 
 2. **追蹤結果**
