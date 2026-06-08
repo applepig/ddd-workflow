@@ -9,7 +9,9 @@ description: >
 
 # ddd.tasks — 細化 Milestones ／Optional Tasks ／拆分 Sprint
 
-任務拆解階段。`tasks.md` 是 optional，不是每個 sprint 的必備文件；簡單 sprint 直接使用 `spec.md` Milestones。
+任務拆解階段。預設任務來源是 `spec.md` Milestones；`/ddd.tasks` 多數時候只是把特定 milestone 在 spec.md 內就地展開。
+
+> **tasks.md 正在淘汰（deprecating）。** 它不是必備文件，長期會被移除；現階段僅保留給「複雜執行協調」一種情境，預設別用——能放回 spec.md Milestones 就放回去。本檔案是 tasks.md 生命週期規則（何時建、確認 gate、legacy 處理）的唯一真相來源，其他 skill 只引用、不重述。
 
 <HARD-GATE>
 嚴禁在 spec.md 未獲使用者確認前拆任務。

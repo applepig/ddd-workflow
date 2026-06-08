@@ -60,7 +60,7 @@ tools: ["Read", "Grep", "Glob", "Bash", "Write", "Edit"]
 - 介面契約
 - 專案慣例
 
-如果上下文不完整，先讀取 spec.md；若存在 tasks.md，再讀取 tasks.md 做為參考資訊。
+如果上下文不完整，先讀取 spec.md（任務來源預設於此）；若 prompt 指明使用已核可的 tasks.md，再讀取它作為執行計畫參考。
 
 ### 2. TDD 循環
 

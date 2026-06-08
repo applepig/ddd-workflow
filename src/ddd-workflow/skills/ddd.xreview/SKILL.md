@@ -22,7 +22,7 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及已確認的 `tasks.md` 路徑（若有）。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑（若有已核可的 `tasks.md` 也一併提供）。
 - **Review Lens**：依變更範圍判斷本次啟用哪些 lens。
   1. 只有文件變更 → `Docs Lens`
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
@@ -39,23 +39,24 @@ description: >
 
 ### 2. 組 Prompt 暫存檔
 
+`references/review-lenses.md` 是 coordinator 在判斷啟用哪些 lens 時的參考；`ddd-reviewer` agent definition 已內建同一套 review lens 共識。Reviewer prompt 只傳遞本次啟用的 lens 名稱，不要求 reviewer 讀取 `review-lenses.md`。
+
 ```bash
 review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_file" << 'XREVIEW_EOF'
 請依照 ddd-reviewer 角色定義執行獨立 DDD review。
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務來源：<spec.md Milestones 或已確認 tasks.md 路徑>
+- 任務來源：<spec.md Milestones；若有已核可 tasks.md 則填其路徑>
 - 變更：請執行 `<git diff 指令>` 取得
 - 本次啟用 lens：<Docs Lens / Spec Lens / Code Lens / Security Lens>
-- Lens reference：<skill-dir>/references/review-lenses.md
 
-先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源。若提供 tasks.md，先確認它是本 sprint 已確認的 optional 任務來源；未確認的 legacy tasks.md 只能作歷史參考，不可作完成度判定。最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
+請依啟用的 lens 與 ddd-reviewer 角色定義審查。先讀取 sprint 文件理解目標、驗收條件與任務來源；任務來源預設為 spec.md Milestones，只有已核可的 tasks.md 才取代它（legacy tasks.md 僅供歷史參考，不作完成度判定）。最後檢視文件與程式碼變更。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```
 
-審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶；`review-lenses.md` 只補充 checklist，不取代 agent definition。
+審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶；`review-lenses.md` 只補充 coordinator 的 lens 選擇 checklist，不取代 agent definition，也不需要交給 reviewer agent 讀取。
 
 ### 3. 派 Orchestrator
 

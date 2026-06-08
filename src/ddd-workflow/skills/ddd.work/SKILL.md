@@ -1,20 +1,20 @@
 ---
 name: ddd.work
 description: >
-  TDD 開發執行：以 Red → Green → Refactor 循環實作 spec.md Milestones 或已確認的 optional tasks.md。
+  TDD 開發執行：以 Red → Green → Refactor 循環實作 spec.md Milestones。
   遇到 🔀 平行工作線時，coordinator 直接派 ddd-developer subagent 分工。
   Trigger: "start implementing", "begin development", "let's code", "do TDD",
   "開始實作", "開始寫", "動工", /ddd.work。
-  spec.md 已確認後，準備寫程式碼時使用；若本 sprint 有 optional tasks.md，也必須先確認。
+  spec.md 已確認後，準備寫程式碼時使用。
 ---
 
 # ddd.work — 開發執行
 
-開發執行階段。以 TDD 循環逐一完成任務來源中的 milestone。任務來源預設為 `spec.md` Milestones；若本 sprint 有已確認的 optional `tasks.md`，則使用 `tasks.md`。
+開發執行階段。以 TDD 循環逐一完成**任務來源**中的 milestone。任務來源預設為 `spec.md` Milestones。
 
 不指定 milestone 編號時，從第一個未完成的 milestone 開始。
 
-若 sprint 目錄存在 `tasks.md`，但 prompt、spec 或 works.md 沒有明確顯示它已被使用者確認為本次任務來源，先停下來請使用者確認：沿用 tasks.md、整合回 spec.md、或只當歷史參考。
+> 若 sprint 目錄存在 `tasks.md`（淘汰中的路徑，規則見 `/ddd.tasks`），先確認它已被使用者核可為本次任務來源才改用；未確認則只當歷史參考。
 
 ## 模式判定
 
@@ -28,8 +28,8 @@ description: >
 適用於一般的線性 milestone。
 
 1. **鎖定範圍**
-   - 讀取任務來源（spec.md Milestones 或已確認 tasks.md），確認當前 milestone 的範圍與驗收條件
-   - 讀取 spec.md 中對應的驗收條件；tasks.md 只承載執行計畫，不取代 spec.md 的需求定義
+   - 讀取任務來源，確認當前 milestone 的範圍與驗收條件
+   - 驗收條件一律以 `spec.md` 為準；tasks.md（若使用）只承載執行計畫，不取代需求定義
 
 2. **TDD 開發循環（Red → Green → Refactor）**
    - **Red**：根據驗收條件撰寫測試案例（Vitest / Playwright）
@@ -89,7 +89,7 @@ description: >
 
    ## 參考檔案
    - `docs/<編號>-<名稱>/spec.md`
-   - `docs/<編號>-<名稱>/tasks.md`（若本 sprint 使用已確認的 optional tasks.md）
+   - `docs/<編號>-<名稱>/tasks.md`（若本 sprint 使用已核可的 tasks.md）
    - （其他相關 source files）
 
    ## Worker 完成協議
@@ -135,7 +135,7 @@ description: >
 * **No Test Modification**：在 Green 階段絕對禁止修改測試檔案來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即撤回，禁止在錯誤的基礎上疊加修補。
 * **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。若變更影響已確認的 tasks.md，也必須同步更新並確認。
+* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。
 * **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
 * **Worker 自足性**：Worker prompt 必須讓 worker 理解「要做什麼」，並列出可按需讀取的參考檔案。
 * **Worker 測試紀律**：未貼測試輸出、隱瞞失敗、或跳過環境問題，一律視為未完成。
@@ -144,7 +144,7 @@ description: >
 ## 產出
 
 - 通過測試的程式碼
-- 更新後的任務來源（`spec.md` Milestones 或已確認 `tasks.md`，勾選進度）
+- 更新後的任務來源（勾選進度）
 - 更新後的 `works.md`（開發日誌）
 - Git commits（使用者確認後）
 

@@ -175,4 +175,4 @@ docs/
 > 範圍：`references/AGENTS.md`、`agents/ddd-developer.md`、`agents/ddd-reviewer.md`、`README.md`、`skills/ddd.xreview/SKILL.md`、`skills/ddd.xreview/references/review-lenses.md`
 > 驗證：全文搜尋 `tasks.md`、`plan.md` gate 相關字眼，確認已更新、移除、或明確標為 optional / legacy 參考
 > 預期結果：所有文件與新的文件結構和流程一致；`works.md` 被描述為 work / xreview / fixbug 的成果紀錄；xreview 與 reviewer 只使用 `spec.md` 或已確認的 optional `tasks.md` 判定任務完成度
-- [ ] Red → Green → Refactor
+- [x] Red → Green → Refactor
