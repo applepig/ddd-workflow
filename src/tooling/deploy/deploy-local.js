@@ -54,11 +54,12 @@ function copyActionsFromDir(source_dir, target_dir, predicate = () => true, get_
 export function planSkillsInstall({ publish_root = PUBLISH_ROOT } = {}) {
   return {
     type: 'command',
-    command: 'pnpm',
+    command: 'sh',
     cwd: PROJECT_ROOT,
     args: [
-      'exec',
-      'skills',
+      '-c',
+      'if command -v skills >/dev/null 2>&1; then skills "$@"; else npx -y skills "$@"; fi',
+      'skills-install',
       'add',
       publish_root,
       '--skill',
@@ -74,7 +75,7 @@ export function planSkillsInstall({ publish_root = PUBLISH_ROOT } = {}) {
       '-a',
       'gemini-cli',
     ],
-    label: 'install skills with repo-local skills CLI',
+    label: 'install skills with available skills CLI',
   }
 }
 

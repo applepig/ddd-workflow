@@ -351,14 +351,16 @@ describe('deploy-local CLI args', () => {
 })
 
 describe('planSkillsInstall', () => {
-  it('should install skills through the repo-local skills dependency', () => {
+  it('should install skills through an available skills CLI with npx fallback', () => {
     const action = planSkillsInstall({ publish_root: '/publish' })
 
-    expect(action.command).toBe('pnpm')
+    expect(action.command).toBe('sh')
     expect(action.cwd).toBe(PROJECT_ROOT)
-    expect(action.args).toEqual([
-      'exec',
-      'skills',
+    expect(action.args[0]).toBe('-c')
+    expect(action.args[1]).toContain('command -v skills')
+    expect(action.args[1]).toContain('skills "$@"')
+    expect(action.args[1]).toContain('npx -y skills "$@"')
+    expect(action.args.slice(3)).toEqual([
       'add',
       '/publish',
       '--skill',
@@ -374,6 +376,52 @@ describe('planSkillsInstall', () => {
       '-a',
       'gemini-cli',
     ])
+  })
+
+  it('should prefer installed skills CLI over npx fallback', () => {
+    const tmp_dir = mkdtempLike(join(tmpdir(), 'skills-install-prefer-'))
+    const bin_dir = join(tmp_dir, 'bin')
+    const calls_path = join(tmp_dir, 'calls.txt')
+    mkdirSync(bin_dir, { recursive: true })
+    writeFileSync(join(bin_dir, 'skills'), `#!/bin/sh
+printf 'skills:%s\n' "$*" >> "${calls_path}"
+`)
+    writeFileSync(join(bin_dir, 'npx'), `#!/bin/sh
+printf 'npx:%s\n' "$*" >> "${calls_path}"
+`)
+    chmodSync(join(bin_dir, 'skills'), 0o755)
+    chmodSync(join(bin_dir, 'npx'), 0o755)
+
+    try {
+      const action = planSkillsInstall({ publish_root: '/publish' })
+      const result = withPath(`${bin_dir}:/usr/bin:/bin`, () => spawnSync(action.command, action.args, { encoding: 'utf-8' }))
+
+      expect(result.status).toBe(0)
+      expect(readFileSync(calls_path, 'utf8')).toBe('skills:add /publish --skill * -g -y -a claude-code -a opencode -a codex -a gemini-cli\n')
+    } finally {
+      rmSync(tmp_dir, { recursive: true, force: true })
+    }
+  })
+
+  it('should fall back to npx -y when skills CLI is unavailable', () => {
+    const tmp_dir = mkdtempLike(join(tmpdir(), 'skills-install-fallback-'))
+    const bin_dir = join(tmp_dir, 'bin')
+    const calls_path = join(tmp_dir, 'calls.txt')
+    mkdirSync(bin_dir, { recursive: true })
+    writeFileSync(join(bin_dir, 'npx'), `#!/bin/sh
+printf 'npx:%s\n' "$*" >> "${calls_path}"
+`)
+    chmodSync(join(bin_dir, 'npx'), 0o755)
+
+    try {
+      const action = planSkillsInstall({ publish_root: '/publish' })
+      const result = withPath(`${bin_dir}:/usr/bin:/bin`, () => spawnSync(action.command, action.args, { encoding: 'utf-8' }))
+
+      expect(result.status).toBe(0)
+      expect(readFileSync(calls_path, 'utf8')).toBe('npx:-y skills add /publish --skill * -g -y -a claude-code -a opencode -a codex -a gemini-cli\n')
+    } finally {
+      rmSync(tmp_dir, { recursive: true, force: true })
+    }
   })
 })
 
