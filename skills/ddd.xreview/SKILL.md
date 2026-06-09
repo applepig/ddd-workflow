@@ -22,7 +22,7 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑，以及已確認的 `tasks.md` 路徑（若有）。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑（若有已核可的 `tasks.md` 也一併提供）。
 - **Review Lens**：依變更範圍判斷本次啟用哪些 lens。
   1. 只有文件變更 → `Docs Lens`
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
@@ -39,23 +39,24 @@ description: >
 
 ### 2. 組 Prompt 暫存檔
 
+`references/review-lenses.md` 是 coordinator 在判斷啟用哪些 lens 時的參考；`ddd-reviewer` agent definition 已內建同一套 review lens 共識。Reviewer prompt 只傳遞本次啟用的 lens 名稱，不要求 reviewer 讀取 `review-lenses.md`。
+
 ```bash
 review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_file" << 'XREVIEW_EOF'
 請依照 ddd-reviewer 角色定義執行獨立 DDD review。
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務來源：<spec.md Milestones 或已確認 tasks.md 路徑>
+- 任務來源：<spec.md Milestones；若有已核可 tasks.md 則填其路徑>
 - 變更：請執行 `<git diff 指令>` 取得
 - 本次啟用 lens：<Docs Lens / Spec Lens / Code Lens / Security Lens>
-- Lens reference：<skill-dir>/references/review-lenses.md
 
-先讀取 lens reference，再讀取 sprint 文件理解目標、驗收條件與任務來源。若提供 tasks.md，先確認它是本 sprint 已確認的 optional 任務來源；未確認的 legacy tasks.md 只能作歷史參考，不可作完成度判定。最後檢視文件與程式碼變更。若讀不到 reference，仍依 ddd-reviewer 角色定義完成審查並在報告中註明。
+請依啟用的 lens 與 ddd-reviewer 角色定義審查。先讀取 sprint 文件理解目標、驗收條件與任務來源；任務來源預設為 spec.md Milestones，只有已核可的 tasks.md 才取代它（legacy tasks.md 僅供歷史參考，不作完成度判定）。最後檢視文件與程式碼變更。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```
 
-審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶；`review-lenses.md` 只補充 checklist，不取代 agent definition。
+審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶；`review-lenses.md` 只補充 coordinator 的 lens 選擇 checklist，不取代 agent definition，也不需要交給 reviewer agent 讀取。
 
 ### 3. 派 Orchestrator
 
@@ -139,28 +140,37 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 
 **原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
-**5.4 先回報驗證後的 review 結果**
+**5.4 Decision Brief Gate**
 
-發問前必須先在對話中回報完整 cross review 結果，讓使用者先看到 coordinator 已讀取、確認與驗證後的結論。回報內容包含：
+使用 Question Tool 前，必須先輸出足以讓使用者直接決策的 Decision Brief。不得只列 issue 標題或一句話摘要。
 
-1. Reviewer 組成與成功 / 失敗狀態
-2. 各 reviewer 的主要 findings 與觀點摘要
-3. Critical / Important findings 的驗證結果（✅ 確認、⚠️ 存疑、❌ False Positive）
-4. 建議優先處理順序與不建議處理的理由
+Decision Brief 至少包含：
 
-回報完成後，才進入下一步使用 Question Tool 詢問修正決策。
+1. Review 範圍、啟用 lens、reviewer 成功 / 失敗狀態
+2. 每個待決策 issue 的 ID、嚴重度、提出者、驗證結果
+3. 證據：檔案路徑、行號、必要程式碼片段
+4. 影響：不修會造成什麼風險
+5. Coordinator 建議：建議修法、可跳過項目與理由
+
+若一則訊息放不下，先分段輸出完整 Decision Brief，再提問。
+
+**5.5 Question Tool Gate**
+
+Question Tool 只收集決策，不補背景。每題必須引用 Decision Brief 中的 issue ID，且不可在 Question Tool 中首次揭露關鍵資訊。
+
+Question Tool 的 `preview` 欄位僅在 host 支援時使用（例如 Claude Code）。若 host 不支援，程式碼片段必須放在 Decision Brief。
 
 ### 6. 逐條決策
 
-對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在步驟 5.4 已回報後，用 Question Tool 逐條詢問使用者修正方向。
+對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在 Decision Brief 已完整輸出後，用 Question Tool 逐條詢問使用者修正方向。
 
 **批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
 
 **每個 issue 一題**，格式：
 
 - `header`：`"Issue #N"`
-- `question`：一句話說明問題
-- `preview`：引用的問題程式碼片段（含檔案路徑與行號）
+- `question`：一句話詢問修正方向，引用 Decision Brief issue ID
+- `preview`（if applicable）：host 支援時放問題程式碼片段（含檔案路徑與行號）
 - `options`：根據 reviewer 意見與 coordinator 驗證結果，列出具體可行的修法方案（各方案在 description 簡述怎麼改），加上「不修，跳過」。使用者可透過自動附加的 Other 給自訂指示
 
 收集完所有決策後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。

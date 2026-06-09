@@ -118,7 +118,7 @@ docs/
     ├── plan.md                   # (optional) 初步筆記
     ├── research.md               # (optional) 技術調研
     ├── spec.md                   # 規格書：User Story、驗收條件、ADR、輕量 Milestones
-    ├── tasks.md                  # (optional) 複雜執行計畫，需確認後才作任務來源
+    ├── tasks.md                  # (optional, 淘汰中) 複雜執行協調用，需核可才作任務來源
     └── works.md                  # 成果與決策紀錄
 ```
 
@@ -132,8 +132,8 @@ docs/
 |---------------|------|----------|
 | `/ddd.plan` | 需求模糊時釐清方向 | 「我有個想法…」 |
 | `/ddd.spec` | 撰寫正式規格書 spec.md，含輕量 Milestones | 需求明確，準備定義規格 |
-| `/ddd.tasks` | 細化 Milestones、建立 optional tasks.md 或拆分 Sprint | spec 確認後，且需要複雜執行協調或拆分 Sprint |
-| `/ddd.work` | 以 TDD 循環實作（支援平行派工） | spec 確認後；若有 tasks.md，也需先確認 |
+| `/ddd.tasks` | 細化 Milestones 或拆分 Sprint（複雜協調才建 optional tasks.md） | spec 確認後，且需要細化或拆分 Sprint |
+| `/ddd.work` | 以 TDD 循環實作（支援平行派工） | spec 確認後 |
 | `/ddd.xreview` | 多模型 cross review | 實作完成，準備提交前 |
 
 輔助 skills：
@@ -145,9 +145,9 @@ docs/
 ## 核心原則
 
 - **SSOT**：每個需求一個文件包，文件就是唯一真相來源
-- **No Code Without Docs**：spec 獲得確認前，嚴禁寫程式碼；若有 optional tasks.md，也必須先確認
+- **No Code Without Docs**：spec 獲得確認前，嚴禁寫程式碼
 - **No Code Without Tests**：修改 production code 前，必須先有測試
-- **Sync on Finish**：完成任務前，先更新任務來源（spec.md Milestones 或已確認 tasks.md）和 works.md
+- **Sync on Finish**：完成任務前，先更新任務來源和 works.md
 - **明確的決策點**：需要使用者決策時，必須暫停等待確認
 
 ## 專案結構

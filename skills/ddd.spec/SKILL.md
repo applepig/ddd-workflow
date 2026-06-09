@@ -143,7 +143,7 @@ digraph spec_flow {
 
 Self-review 通過後，向使用者呈現 spec：
 
-> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`。請審閱內容，有需要調整的地方告訴我。確認後可直接進入 `/ddd.work`；需要細化 Milestones、建立 optional tasks.md 或拆分 sprint 時才進入 `/ddd.tasks`。」
+> 「Spec 已寫入 `docs/<編號>-<名稱>/spec.md`。請審閱內容，有需要調整的地方告訴我。確認後可直接進入 `/ddd.work`；需要細化 Milestones 或拆分 sprint 時才進入 `/ddd.tasks`。」
 
 等待使用者回應。如果要求修改，改完後重跑 Self-Review。使用者確認後才結束。
 
@@ -154,4 +154,4 @@ Self-review 通過後，向使用者呈現 spec：
 
 ## 結束條件
 
-使用者確認規格後，引導使用者執行 `/ddd.work`；需要細化 Milestones、建立 optional tasks.md 或拆分 sprint 時，引導使用者執行 `/ddd.tasks`。
+使用者確認規格後，引導使用者執行 `/ddd.work`；需要細化 Milestones 或拆分 sprint 時，才引導 `/ddd.tasks`。
