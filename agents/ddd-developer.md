@@ -100,7 +100,7 @@ it('should call database query')
 完成所有 task 後：
 1. 執行完整測試套件，確認全過
 2. 如有 E2E 驗證食譜，依步驟執行
-3. 用 Conventional Commits 格式 commit（僅在 coordinator prompt 明確授權時）
+3. 不得自行 commit——commit 由 coordinator 經使用者確認後執行
 4. 最後一行輸出：`DONE: <一句話摘要>`
 
 如果失敗且無法自行解決：
@@ -115,7 +115,7 @@ it('should call database query')
 - ESM import/export + 相對路徑
 - Guard Clauses 優先
 - 純函式優先，Class 只管狀態與生命週期
-- Single Function File：一個檔案一個 function
+- 相關 function 用資料夾分組，讓 file system 充當導航索引
 - 禁止 barrel file
 - 命名慣例：檔案 kebab-case、變數 snake_case、函式 camelCase、Class UpperCamelCase
 

@@ -102,7 +102,7 @@ flowchart LR
 
 | 角色 | 職責 | 不做什麼 |
 |------|------|----------|
-| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時細化 Milestones、派工、驗收 | 不寫 production code、不 debug、不做 review |
+| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時細化 Milestones、派工、驗收 | 不寫 production code、不 debug、不做 review（例外：`/ddd.fixbug` 直接修） |
 | **ddd-developer** | 以 TDD 循環實作功能程式碼與測試 | 不做架構決策、不跳過測試 |
 | **ddd-reviewer** | 獨立審查程式碼變更，產出 review 報告 | 不修改程式碼 |
 
@@ -140,6 +140,7 @@ docs/
 
 | Slash Command | 用途 |
 |---------------|------|
+| `/ddd.fixbug` | Bug 快速修復——main agent 直接診斷與修復（唯一不派工的例外） |
 | `/ddd.agent-browser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
 
 ## 核心原則

@@ -2,31 +2,23 @@
 name: ddd.fixbug
 description: >
   Bug 修復：系統性診斷與修復 bug，產出三合一 works.md。
-  可作為 xreview 後的 proper fix，或獨立觸發的 hotfix。
-  Main agent 直接修，不派 ddd-developer。
+  獨立觸發的 hotfix 快速解，main agent 直接修，不派 ddd-developer。
   Trigger: "fix bug", "fix this", "bugfix", "hotfix", "修 bug", "修這個",
   "這裡壞了", "有 bug", /ddd.fixbug。
-  發現 bug 或 xreview 後需要修正時使用。
+  發現 bug 需要快速修復時使用；xreview findings 的修正走 /ddd.xreview 流程，不用本 skill。
 ---
 
 # ddd.fixbug — Bug 修復
 
 系統性診斷與修復 bug。參考 Superpowers systematic-debugging 方法論，強制四階段流程，禁止跳過根因分析直接猜修。
 
-**Main agent 直接修**——bug fix 通常小且急，派工開銷不值得。這是唯一 main agent 直接寫 code 的 skill。
+**Main agent 直接修**——bug 修復是探索性任務，需要與使用者即時討論假設與發現，且通常小而急，派工開銷不值得。這是唯一 main agent 直接寫 code 的 skill。
 
-## 兩個入口
-
-| 入口 | 情境 | 差異 |
-|------|------|------|
-| **Post-xreview** | xreview 產出 findings，使用者確認要修 | 跳過 Phase 1（問題已定位），從 Phase 2 開始 |
-| **獨立觸發** | 使用者回報 bug 或自行發現 | 完整四階段 |
+**定位**：例外的快速解，與 `/ddd.xreview` 互斥。xreview findings 的修正屬於正式流程，由 `/ddd.xreview` 收集決策後派 `ddd-developer` 執行，不進入本 skill。
 
 ---
 
-## Phase 1：根因調查（獨立觸發時）
-
-Post-xreview 入口跳過此階段。
+## Phase 1：根因調查
 
 1. **釐清問題**
    - 從使用者描述中理解症狀
@@ -104,15 +96,6 @@ Post-xreview 入口跳過此階段。
 - **修了什麼**：<具體改動>
 - **測試**：<新增或修改了哪些測試>
 - **驗證結果**：<測試執行結果>
-```
-
-Post-xreview 的修復直接記在當前 sprint 的 works.md，不需要獨立開檔。格式簡化為一筆日誌紀錄：
-
-```markdown
-### xreview 修正
-
-- **[finding 摘要]**：<修了什麼> → <測試結果>
-- **[finding 摘要]**：<修了什麼> → <測試結果>
 ```
 
 ---

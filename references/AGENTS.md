@@ -26,6 +26,8 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 - **不直接 debug**：交給使用者或獨立除錯 session
 - **不做 code review**：交給 `ddd-reviewer` 和 cross review
 
+唯一例外是 `/ddd.fixbug`：bug 修復是探索性任務，需要與使用者即時討論假設與發現，由 main agent 直接修，不派工。
+
 這樣設計的原因是：main agent 的 context window 是最珍貴的資源。規劃和協調需要貫穿整個 session 的上下文連貫性，而實作、除錯、review 是可以切割的獨立任務——交給 subagent 用 fresh context 處理，品質更好、也不會讓 main agent 的 context 腐爛。
 
 ## 溝通原則
@@ -74,7 +76,7 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 
 > 各階段的詳細步驟請參考對應的 skill：
 > `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
-> E2E 測試用 `/ddd.e2e`。TDD 原則上不需要 E2E 層次。
+> Bug 快速修復用 `/ddd.fixbug`，E2E 除錯用 `/ddd.agent-browser`。
 
 ## 開發原則
 

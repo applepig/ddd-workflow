@@ -147,10 +147,11 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 Decision Brief 至少包含：
 
 1. Review 範圍、啟用 lens、reviewer 成功 / 失敗狀態
-2. 每個待決策 issue 的 ID、嚴重度、提出者、驗證結果
+2. 每個待決策 issue 的 ID、嚴重度、提出者、驗證結果；ID 採 `Issue #N` 循序編號，與第 6 節 Question Tool 的 `header` 同一套編號
 3. 證據：檔案路徑、行號、必要程式碼片段
 4. 影響：不修會造成什麼風險
-5. Coordinator 建議：建議修法、可跳過項目與理由
+5. Coordinator 建議：建議優先處理順序、建議修法、可跳過項目與理由
+6. ❌ False Positive 項目：每項一行帶過（finding 與駁回理由），不列入待決策
 
 若一則訊息放不下，先分段輸出完整 Decision Brief，再提問。
 
@@ -170,15 +171,25 @@ Question Tool 的 `preview` 欄位僅在 host 支援時使用（例如 Claude Co
 
 - `header`：`"Issue #N"`
 - `question`：一句話詢問修正方向，引用 Decision Brief issue ID
-- `preview`（if applicable）：host 支援時放問題程式碼片段（含檔案路徑與行號）
+- `preview`（規則見 5.5）：問題程式碼片段（含檔案路徑與行號）
 - `options`：根據 reviewer 意見與 coordinator 驗證結果，列出具體可行的修法方案（各方案在 description 簡述怎麼改），加上「不修，跳過」。使用者可透過自動附加的 Other 給自訂指示
 
 收集完所有決策後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
+
+修正完成並驗收後，由 coordinator 在當前 sprint 的 `works.md` 追加紀錄，不需要獨立開檔（works.md 整體格式見 `/ddd.work`）：
+
+```markdown
+### xreview 修正
+
+- **[finding 摘要]**：<修了什麼> → <測試結果>
+- **[finding 摘要]**：<修了什麼> → <測試結果>
+```
 
 ## 產出
 
 - Cross Review 對照報告（對話中呈現）
 - 使用者確認後的程式碼修正（由 `ddd-developer` 執行）
+- 更新後的 `works.md`（xreview 修正紀錄）
 
 ## 結束條件
 

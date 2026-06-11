@@ -37,8 +37,9 @@ description: >
    - **Refactor**：最佳化程式碼結構，確保測試維持通過
 
 3. **Simplify**
-   - 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff
+   - 由 main agent 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff
    - 它會平行啟動 code reuse / code quality / efficiency 三個 review agent 並直接修正問題
+   - `ddd-developer` worker 沒有 Skill tool，嚴禁把這步交給 worker；host 沒有 `/simplify` 時跳過此步，不要嘗試替代實作
 
 4. **自我驗收**
    - 執行所有相關測試，確認全部通過
@@ -47,7 +48,7 @@ description: >
 
 5. **更新文件**
    - 任務來源：勾選已完成的 task（`- [x]`）
-   - `works.md`：記錄本次 milestone 的技術決策與問題解決
+   - `works.md`：記錄本次 milestone 的技術決策與問題解決（格式見下方「works.md 格式」）
 
 6. **回報使用者**
    - 展示完成的功能與測試結果
@@ -121,12 +122,28 @@ description: >
    - 逐一整合每條工作線的變更
    - 每整合一條工作線後立即跑該線相關測試
    - 全部整合後執行 `🔗 匯合點` 中的整合測試 task
-   - 呼叫 `/simplify` 審查合併後的完整變更
+   - 由 main agent 呼叫 `/simplify` 審查合併後的完整變更（host 沒有 `/simplify` 時跳過）
 
 4. **更新文件與回報**
    - 任務來源：勾選所有已完成的 task（含各工作線 + 匯合點）
    - `works.md`：記錄平行派發的決策、各 worker 結果、合併過程
    - 展示最終狀態與測試結果，等待使用者確認後 commit
+
+## works.md 格式
+
+works.md 的格式以本節為唯一真相來源，其他 skill 只引用、不重述。每完成一個 milestone（或一次修正批次）追加一筆：
+
+```markdown
+# Works: <sprint 名稱>
+
+## Milestone N: <名稱>
+
+- **技術決策**：<實作層面的選擇與理由>
+- **問題與解法**：<遇到的問題、根因、處理方式>
+- **測試結果**：<測試指令與結果摘要>
+```
+
+平行模式額外記錄：派發決策、各 worker 結果、合併過程。沒有值得記錄的決策或問題時，該欄寫「無」即可，不要硬湊。
 
 ## 核心防呆限制 (Agentic Constraints)
 

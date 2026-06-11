@@ -41,7 +41,7 @@ description: >
 | `CONTEXT.md` glossary | `docs/PRD.md` 的 Domain Language / Product Context |
 | ADRs | `docs/TECHSTACK.md` 的 project-level 技術決策，或 sprint `spec.md` 的 ADR |
 | codebase cross-reference | 既有 source、既有 sprint docs、README |
-| inline update `CONTEXT.md` | 必要時依 `AGENTS.md` 文件職責更新 `PRD.md`、`TECHSTACK.md` 或 `research.md` |
+| inline update `CONTEXT.md` | 必要時依文件職責更新 `PRD.md`、`TECHSTACK.md` 或 `research.md` |
 | refined plan | 交接摘要，直接進 `/ddd.spec` |
 
 ## Checklist
@@ -51,7 +51,7 @@ description: >
 3. **解析 decision tree** — 找出會阻塞設計的 domain、scope、technical、UX、data、migration、testability 決策
 4. **逐一 grill** — 一次只問一個阻塞決策；每題都給推薦答案；能查就查，不問使用者
 5. **對照 docs/code** — 檢查使用者說法是否與 PRD、TECHSTACK、既有 spec、ADR、code 相衝突
-6. **必要時更新輔助文件** — 依 `AGENTS.md` 文件職責更新 PRD、TECHSTACK 或 research.md
+6. **必要時更新輔助文件** — 依文件職責更新 PRD、TECHSTACK 或 research.md
 7. **需求完整性摘要檢查** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`
 8. **接續 `/ddd.spec`** — invoke `/ddd.spec`，將規劃結論填入 spec 的背景、驗收條件、ADR 與 Milestones
 
@@ -92,7 +92,7 @@ description: >
 
 ## 文件更新規則
 
-`/ddd.plan` 可以在規劃過程中更新輔助文件；各文件職責以 `references/AGENTS.md` 為準。Sprint-specific implementation detail 應進入該 sprint 的 `spec.md`。
+`/ddd.plan` 可以在規劃過程中更新輔助文件：`PRD.md`、`TECHSTACK.md` 只放跨 sprint 長期事實，技術調研細節進 `research.md`。Sprint-specific implementation detail 應進入該 sprint 的 `spec.md`。
 
 ## ADR 判斷
 

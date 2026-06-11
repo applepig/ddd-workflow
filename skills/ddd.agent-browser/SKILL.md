@@ -12,8 +12,6 @@ description: >
 
 在 DDD 工作流的開發階段（`/ddd.work`），當 Playwright E2E 測試失敗或需要視覺驗證時，用 `agent-browser` CLI 直接操作瀏覽器來定位問題。
 
-**與 `/ddd.e2e` 的分工**：`/ddd.e2e` 規劃與撰寫 E2E 測試；本 skill 是測試失敗後的除錯工具。
-
 這份說明書不是完整指令手冊，而是從「測試掛了」走到「找到根因」的流程速查。指令細節以目前安裝版本內建說明為準：`agent-browser skills get core --full`。
 
 ## 核心循環
