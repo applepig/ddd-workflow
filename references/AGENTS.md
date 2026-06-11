@@ -64,6 +64,8 @@ docs/
 
 `PRD.md` 和 `TECHSTACK.md` 只放跨 sprint 長期事實。`works.md` 是工作紀錄，開工前沒有是正常狀態。
 
+Instruction file（`CLAUDE.md`、`AGENTS.md` 等）只放耐久事實（架構、慣例、約束），不放會變動的進度（branch、PR 編號、待辦）——進度屬於 `works.md`，寫在這裡只會過時誤導。
+
 ### 執行流程概述
 
 1. **Plan/Research** (optional)：需求不明確時，先規劃方向、進行技術調研
