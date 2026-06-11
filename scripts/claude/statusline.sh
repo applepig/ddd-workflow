@@ -373,12 +373,19 @@ json_used_pct=$(normalizePct "$json_used_pct")
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
 # 將 model id 轉成短名
-# claude-opus-4-6[1m] → Opus 4.6
+# claude-opus-4-8[1m] → Opus 4.8[1M]
 # claude-sonnet-4-6 → Sonnet 4.6
 # claude-haiku-4-5-20251001 → Haiku 4.5
+# claude-fable-5 → Fable 5
 formatModel() {
   local raw="$1"
-  # 去掉 [1m] 等後綴
+  local suffix=""
+
+  # 偵測 [1m] 後綴
+  if [[ "$raw" =~ \[1[mM]\] ]]; then
+    suffix="[1M]"
+  fi
+  # 去掉 [...] 後綴
   raw="${raw%%\[*}"
 
   # 嘗試匹配 claude-<family>-<major>-<minor> 模式
@@ -388,10 +395,16 @@ formatModel() {
     local minor="${BASH_REMATCH[3]}"
     # 首字母大寫
     family="$(echo "${family:0:1}" | tr '[:lower:]' '[:upper:]')${family:1}"
-    echo "${family} ${major}.${minor}"
+    echo "${family} ${major}.${minor}${suffix}"
+  # 嘗試匹配 claude-<family>-<major> 模式（如 claude-fable-5）
+  elif [[ "$raw" =~ ^claude-([a-z]+)-([0-9]+)$ ]]; then
+    local family="${BASH_REMATCH[1]}"
+    local major="${BASH_REMATCH[2]}"
+    family="$(echo "${family:0:1}" | tr '[:lower:]' '[:upper:]')${family:1}"
+    echo "${family} ${major}${suffix}"
   else
     # 無法辨識，直接回傳
-    echo "$raw"
+    echo "$raw${suffix}"
   fi
 }
 
@@ -537,6 +550,19 @@ line3_right=""
 if [[ -n "$git_branch" ]]; then
   line3_right="Branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
 fi
+
+# ─── 動態左欄寬度（依實際內容對齊） ──────────────────────────────────────────
+_dyn_w=$(( 7 + ${#model_short} ))   # "Model: " = 7
+_w2=$(( 7 + ${#timer_str} ))        # "Reset: " = 7
+_w3=$(( 5 + ${#dir_name} ))         # "Dir: " = 5
+(( _w2 > _dyn_w )) && _dyn_w=$_w2
+(( _w3 > _dyn_w )) && _dyn_w=$_w3
+(( _dyn_w += 2 ))
+(( _dyn_w < 20 )) && _dyn_w=20
+(( _dyn_w > 30 )) && _dyn_w=30
+line1_left=$(formatLabelValue "Model:" "$model_short" "$_dyn_w")
+line2_left=$(formatLabelValue "Reset:" "$timer_str" "$_dyn_w")
+line3_left=$(formatLabelValue "Dir:" "$dir_name" "$_dyn_w")
 
 # ─── 輸出 ────────────────────────────────────────────────────────────────────
 
