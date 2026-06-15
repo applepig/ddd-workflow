@@ -28,6 +28,11 @@ description: >
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
   3. 只有實作變更且有 spec 或已確認 task source → `Spec Lens`、`Code Lens`、`Security Lens`
   4. 只有實作變更但無 spec 或已確認 task source → `Code Lens`、`Security Lens`，並標記無法驗證規格一致性
+- **Lens 摘要**（詳細 checklist 由 `ddd-reviewer` agent definition 自帶）：
+  - **Docs**：規格自洽、可測性、edge case、scope、決策紀錄
+  - **Spec**：規格符合度、任務完成度、scope drift、測試對應、SSOT 同步
+  - **Code**：correctness、資料安全、failure mode、相容性、DRY 風險、可觀測性
+  - **Security**：auth、trust boundary、injection、secrets、data exposure、abuse、supply chain
 - **變更範圍**——依優先順序判斷，**勿硬套 `main`**：
   1. **使用者明確指定** → 直接採用（如「review changes from dev」→ `git diff dev...HEAD`）
   2. **使用者未指定** → 自動偵測上游：先查 tracking branch（`git rev-parse --abbrev-ref @{upstream}`），無則依序找 `dev`、`main`、`master`。偵測後用 Question Tool 確認：
@@ -39,7 +44,7 @@ description: >
 
 ### 2. 組 Prompt 暫存檔
 
-`references/review-lenses.md` 是 coordinator 在判斷啟用哪些 lens 時的參考；`ddd-reviewer` agent definition 已內建同一套 review lens 共識。Reviewer prompt 只傳遞本次啟用的 lens 名稱，不要求 reviewer 讀取 `review-lenses.md`。
+Reviewer prompt 只傳遞本次啟用的 lens 名稱；詳細 checklist 由 `ddd-reviewer` agent definition 自帶。
 
 ```bash
 review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_file" << 'XREVIEW_EOF'
@@ -56,7 +61,7 @@ XREVIEW_EOF
 echo "$review_prompt_file"
 ```
 
-審查方法論由各 reviewer 的 `ddd-reviewer` agent 定義自帶；`review-lenses.md` 只補充 coordinator 的 lens 選擇 checklist，不取代 agent definition，也不需要交給 reviewer agent 讀取。
+審查方法論由各 reviewer 的 `ddd-reviewer` agent definition 自帶。
 
 ### 3. 派 Orchestrator
 
