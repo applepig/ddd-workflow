@@ -2,13 +2,14 @@
 
 # statusline.sh — Claude Code custom status line
 #
-# 從 stdin 讀取 StatusJSON，輸出 ANSI 格式化的三行文字到 stdout。
+# 從 stdin 讀取 StatusJSON，輸出 ANSI 格式化的四行文字到 stdout。
 # 依賴：jq, git, curl（OAuth Usage API）
 #
-# 三行布局：
-#   Line 1: Model: {短名}     | Context: {bar} {pct}%
-#   Line 2: Reset: {timer}    | Session: {bar} {pct}%
-#   Line 3: Dir: {目錄名}     | branch: {分支名} (+ins, -del)
+# 四行布局：
+#   Line 1: Model: {短名} | Dir: {目錄名} | Branch: {分支名} (+ins, -del)
+#   Line 2: Context {bar} {pct}% | {tokens}
+#   Line 3: Session {bar} {pct}% | {5h 倒數}
+#   Line 4: Weekly  {bar} {pct}% | {7d 重置時刻}
 
 # ─── 錯誤處理 ────────────────────────────────────────────────────────────────
 ERR_LOG="/tmp/statusline-err.log"
@@ -20,31 +21,6 @@ _statusline_err() {
 }
 set -o pipefail
 
-# ─── Parent Process TTY Detection ────────────────────────────────────────────
-
-# 向上走 process tree，找到有 TTY 的祖先，用 stty size 讀取實際寬度
-# 回傳: 偵測到的 columns 數，或空字串（偵測失敗）
-_detect_term_cols() {
-  local pid=$$
-  local i
-  for i in $(seq 1 10); do
-    local ppid tty_dev
-    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || break
-    tty_dev=$(ps -o tty= -p "$ppid" 2>/dev/null | tr -d ' ') || break
-    if [[ "$tty_dev" != "?" && "$tty_dev" != "??" && -n "$tty_dev" ]]; then
-      local cols
-      cols=$(stty size < "/dev/$tty_dev" 2>/dev/null | awk '{print $2}')
-      if [[ -n "$cols" && "$cols" -gt 0 ]] 2>/dev/null; then
-        echo "$cols"
-        return 0
-      fi
-    fi
-    pid="$ppid"
-    [[ "$ppid" == "1" || "$ppid" == "0" || -z "$ppid" ]] && break
-  done
-  echo ""
-}
-
 # ─── 常數 ────────────────────────────────────────────────────────────────────
 
 BAR_WIDTH=25
@@ -52,7 +28,6 @@ CONTEXT_CAP=250000
 FILL_CHAR=$'\xe2\x96\x88'   # █ (U+2588)
 EMPTY_CHAR=$'\xe2\x96\x91'  # ░ (U+2591)
 NBSP=$'\xc2\xa0'             # non-breaking space (U+00A0)
-LEFT_COL_WIDTH=20
 
 # ANSI 色彩
 RST=$'\x1b[0m'
@@ -243,6 +218,30 @@ colorByPct() {
     echo "$YELLOW"
   else
     echo "$GREEN"
+  fi
+}
+
+# quota bar 色彩判斷（session / weekly 共用）：0-79% 藍、80-89% 橘、90%+ 紅
+# 用法: quotaColor <percentage>
+quotaColor() {
+  local pct=$1
+  if (( pct >= 90 )); then
+    echo "$RED"
+  elif (( pct >= 80 )); then
+    echo "$YELLOW"
+  else
+    echo "$CYAN"
+  fi
+}
+
+# 將 token 數縮寫：>=1000 顯示為 {n}k，否則原樣。
+# 用法: formatTokens <tokens>
+formatTokens() {
+  local t=$1
+  if (( t >= 1000 )); then
+    echo "$(( t / 1000 ))k"
+  else
+    echo "$t"
   fi
 }
 
@@ -442,26 +441,22 @@ nbspify() {
   echo -n "${1// /${NBSP}}"
 }
 
-# 格式化 label-value 字串：label 用預設色、value 用亮白，pad 到指定寬度
-# 用法: formatLabelValue <label> <value> <width>
-formatLabelValue() {
-  local label="$1"
-  local value="$2"
-  local width="$3"
-  local plain="${label} ${value}"
-  local pad_needed=$(( width - ${#plain} ))
-  (( pad_needed < 0 )) && pad_needed=0
-  local padding=""
-  for (( i=0; i<pad_needed; i++ )); do padding+=" "; done
-  local result="${label} ${WHITE}${value}${RST}${padding}"
-  nbspify "$result"
+# 渲染一行 bar 列：{label 補齊 7}{NBSP}{bar}{NBSP}{pct 補齊 3}{NBSP}|{NBSP}{extra}
+# 用法: makeBarRow <label> <bar> <pct> <extra>
+makeBarRow() {
+  local label="$1" bar="$2" pct="$3" extra="$4"
+  local label_padded pct_padded
+  printf -v label_padded '%-7s' "$label"
+  printf -v pct_padded '%-3s' "${pct}%"
+  local row="${label_padded}${NBSP}${bar}${NBSP}${WHITE}${pct_padded}${RST}${NBSP}|${NBSP}${extra}"
+  nbspify "$row"
 }
 
-# ─── Line 1: Model + Context Usage Bar ───────────────────────────────────────
+# ─── 資料計算 ────────────────────────────────────────────────────────────────
 
 model_short=$(formatModel "$json_model_id")
 
-# Context bar：min(CONTEXT_CAP, context_window_size) 為分母
+# Context：min(CONTEXT_CAP, context_window_size) 為分母
 if (( json_ctx_window_size > 0 && json_ctx_window_size < CONTEXT_CAP )); then
   ctx_max=$json_ctx_window_size
 else
@@ -470,60 +465,39 @@ fi
 ctx_pct=$(( json_ctx_tokens * 100 / ctx_max ))
 ctx_pct=$(normalizePct "$ctx_pct")
 ctx_filled=$(pctToFilled "$ctx_pct" "$BAR_WIDTH")
+ctx_color=$(colorByPct "$ctx_pct")         # 0-60% 綠、60-80% 橘、80%+ 紅
+ctx_tokens_str=$(formatTokens "$json_ctx_tokens")
 
-# 色彩規則：0-60% 綠、60-80% 橘、80%+ 紅
-ctx_color=$(colorByPct "$ctx_pct")
-
-# 左欄
-line1_left=$(formatLabelValue "Model:" "$model_short" "$LEFT_COL_WIDTH")
-
-# 右欄
-line1_bar=$(makeBar "$ctx_filled" "$BAR_WIDTH" "$ctx_color")
-line1_right_label="$(nbspify "Context:")${NBSP}"
-line1_right_suffix="${NBSP}${WHITE}$(nbspify "${ctx_pct}%")${RST}"
-
-# ─── Line 2: Block Reset Timer + Session Usage Bar ───────────────────────────
-
+# Session（5h block）：倒數計時 + 用量 bar
 now=$(date +%s)
 if (( json_resets_at > 0 && json_resets_at > now )); then
   remaining=$(( json_resets_at - now ))
   hours=$(( remaining / 3600 ))
   minutes=$(( (remaining % 3600) / 60 ))
-  # 用普通空格，nbspify 會在 pad 後統一轉換
   timer_str="${hours}h ${minutes}m"
 else
   timer_str="--:--"
 fi
-
-# Session bar
 session_filled=$(pctToFilled "$json_used_pct" "$BAR_WIDTH")
+session_color=$(quotaColor "$json_used_pct")
 
-# Session bar 色彩規則：0-79% 藍、80-89% 橘、90%+ 紅
-if (( json_used_pct >= 90 )); then
-  session_color="$RED"
-elif (( json_used_pct >= 80 )); then
-  session_color="$YELLOW"
+# Weekly（7d quota）：用量 bar + 絕對重置時刻（週重置在數天後，顯示時刻比倒數實用）
+weekly_pct=$(normalizePct "$api_seven_day_util")
+weekly_filled=$(pctToFilled "$weekly_pct" "$BAR_WIDTH")
+weekly_color=$(quotaColor "$weekly_pct")
+if [[ -n "$api_seven_day_resets_at" ]]; then
+  weekly_reset=$(date -d "$api_seven_day_resets_at" "+%a %H:%M" 2>/dev/null) || weekly_reset="--"
 else
-  session_color="$CYAN"
+  weekly_reset="--"
 fi
 
-# 左欄
-line2_left=$(formatLabelValue "Reset:" "$timer_str" "$LEFT_COL_WIDTH")
-
-# 右欄
-line2_bar=$(makeBar "$session_filled" "$BAR_WIDTH" "$session_color")
-line2_right_label="$(nbspify "Session:")${NBSP}"
-line2_right_suffix="${NBSP}${WHITE}$(nbspify "${json_used_pct}%")${RST}"
-
-# ─── Line 3: Working Dir + Git Branch + Diff Lines ───────────────────────────
-
+# Dir + Git branch + diff（diff 永遠顯示，含 0）
 cwd="$json_project_dir"
 dir_name="${cwd##*/}"
 [[ -z "$dir_name" ]] && dir_name="~"
 
 git_branch=""
 git_diff_str=""
-
 if [[ -n "$json_project_dir" ]] && [[ -d "$json_project_dir" ]]; then
   git_branch=$(git -C "$json_project_dir" branch --show-current 2>/dev/null || true)
 
@@ -537,90 +511,35 @@ if [[ -n "$json_project_dir" ]] && [[ -d "$json_project_dir" ]]; then
     deletions="${BASH_REMATCH[1]}"
   fi
 
-  if (( insertions > 0 || deletions > 0 )); then
+  if [[ -n "$git_branch" ]]; then
     git_diff_str="${NBSP}(${GREEN}+${insertions}${RST},${NBSP}${RED}-${deletions}${RST})"
   fi
 fi
 
-# 左欄
-line3_left=$(formatLabelValue "Dir:" "$dir_name" "$LEFT_COL_WIDTH")
+logStatuslineInvocation "full" ""
 
-# 右欄
-line3_right=""
-if [[ -n "$git_branch" ]]; then
-  line3_right="Branch:${NBSP}${WHITE}${git_branch}${RST}${git_diff_str}"
-fi
-
-# ─── 動態左欄寬度（依實際內容對齊） ──────────────────────────────────────────
-_dyn_w=$(( 7 + ${#model_short} ))   # "Model: " = 7
-_w2=$(( 7 + ${#timer_str} ))        # "Reset: " = 7
-_w3=$(( 5 + ${#dir_name} ))         # "Dir: " = 5
-(( _w2 > _dyn_w )) && _dyn_w=$_w2
-(( _w3 > _dyn_w )) && _dyn_w=$_w3
-(( _dyn_w += 2 ))
-(( _dyn_w < 20 )) && _dyn_w=20
-(( _dyn_w > 30 )) && _dyn_w=30
-line1_left=$(formatLabelValue "Model:" "$model_short" "$_dyn_w")
-line2_left=$(formatLabelValue "Reset:" "$timer_str" "$_dyn_w")
-line3_left=$(formatLabelValue "Dir:" "$dir_name" "$_dyn_w")
-
-# ─── 輸出 ────────────────────────────────────────────────────────────────────
+# ─── 輸出：四行 ──────────────────────────────────────────────────────────────
 
 SEP="${NBSP}|${NBSP}"
 
-# Fallback chain: $STATUSLINE_TERM_COLS → Parent TTY detection → tput cols → 80
-term_cols="${STATUSLINE_TERM_COLS:-}"
-: "${term_cols:=$(_detect_term_cols)}"
-: "${term_cols:=$(tput cols 2>/dev/null)}"
-: "${term_cols:=80}"
-
-if (( term_cols < 60 )); then
-  output_mode="compact"
-else
-  output_mode="full"
+# Line 1: header — Model | Dir | Branch (+ins, -del)
+line1="$(nbspify "Model:")${NBSP}${WHITE}$(nbspify "$model_short")${RST}"
+line1+="${SEP}$(nbspify "Dir:")${NBSP}${WHITE}$(nbspify "$dir_name")${RST}"
+if [[ -n "$git_branch" ]]; then
+  line1+="${SEP}$(nbspify "Branch:")${NBSP}${WHITE}$(nbspify "$git_branch")${RST}${git_diff_str}"
 fi
 
-logStatuslineInvocation "$output_mode" "$term_cols"
+ctx_bar=$(makeBar "$ctx_filled" "$BAR_WIDTH" "$ctx_color")
+session_bar=$(makeBar "$session_filled" "$BAR_WIDTH" "$session_color")
+weekly_bar=$(makeBar "$weekly_filled" "$BAR_WIDTH" "$weekly_color")
 
-if [[ "$output_mode" == "compact" ]]; then
-  # ─── Compact 模式：單行輸出 ──────────────────────────────────────────────
-  # 格式: Opus 4.6 | Context 8% | Usage 84% | Reset 10m
-  compact_sep=" | "
+# 開頭 reset 覆蓋 Claude Code 的 dim
+output="${RST}${line1}"
+output+=$'\n'
+output+="${RST}$(makeBarRow "Context" "$ctx_bar" "$ctx_pct" "$ctx_tokens_str")"
+output+=$'\n'
+output+="${RST}$(makeBarRow "Session" "$session_bar" "$json_used_pct" "$timer_str")"
+output+=$'\n'
+output+="${RST}$(makeBarRow "Weekly" "$weekly_bar" "$weekly_pct" "$weekly_reset")"
 
-  # CTX 色彩：0-60% 綠、60-80% 橘、80%+ 紅
-  compact_ctx_color=$(colorByPct "$ctx_pct")
-
-  # USG 色彩：對齊 compact 百分比門檻（0-59% 綠、60-79% 橘、80%+ 紅）
-  compact_usg_color=$(colorByPct "$json_used_pct")
-
-  # RES：只顯示最精簡的倒數（不上色）
-  if (( json_resets_at > 0 && json_resets_at > now )); then
-    compact_remaining=$(( json_resets_at - now ))
-    compact_hours=$(( compact_remaining / 3600 ))
-    compact_minutes=$(( (compact_remaining % 3600) / 60 ))
-    if (( compact_hours > 0 )); then
-      compact_res="${compact_hours}h${compact_minutes}m"
-    else
-      compact_res="${compact_minutes}m"
-    fi
-  else
-    compact_res="--:--"
-  fi
-
-  output="${RST}${model_short}"
-  output+="${compact_sep}CTX ${compact_ctx_color}${ctx_pct}%${RST}"
-  output+="${compact_sep}USG ${compact_usg_color}${json_used_pct}%${RST}"
-  output+="${compact_sep}RES ${compact_res}"
-
-  echo -n "$output"
-else
-  # ─── 完整模式：三行輸出 ──────────────────────────────────────────────────
-  # 開頭 reset 覆蓋 Claude Code 的 dim
-  output="${RST}${line1_left}${SEP}${line1_right_label}${line1_bar}${line1_right_suffix}"
-  output+=$'\n'
-  output+="${RST}${line2_left}${SEP}${line2_right_label}${line2_bar}${line2_right_suffix}"
-  output+=$'\n'
-  output+="${RST}${line3_left}${SEP}${line3_right}"
-
-  echo -n "$output"
-fi
+echo -n "$output"
