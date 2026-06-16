@@ -2,14 +2,15 @@
 
 # statusline.sh — Claude Code custom status line
 #
-# 從 stdin 讀取 StatusJSON，輸出 ANSI 格式化的四行文字到 stdout。
+# 從 stdin 讀取 StatusJSON，輸出 ANSI 格式化的多行文字到 stdout。
 # 依賴：jq, git, curl（OAuth Usage API）
 #
-# 四行布局：
-#   Line 1: Model: {短名} | Dir: {目錄名} | Branch: {分支名} (+ins, -del)
+# 布局（git repo 內 5 行，否則 4 行）：
+#   Line 1: Model: {短名} {effort level} | Dir: {目錄名}
 #   Line 2: Context {bar} {pct}% | {tokens}
 #   Line 3: Session {bar} {pct}% | {5h 倒數}
 #   Line 4: Weekly  {bar} {pct}% | {7d 重置時刻}
+#   Line 5: Branch: {分支名} (+ins, -del)   （僅在 git repo 內顯示）
 
 # ─── 錯誤處理 ────────────────────────────────────────────────────────────────
 ERR_LOG="/tmp/statusline-err.log"
@@ -345,7 +346,8 @@ eval "$(echo "$json" | jq -r '
     ),
     ctx_window_size: (.context_window.context_window_size | safe_num),
     used_pct: (.rate_limits.five_hour.used_percentage | safe_num | round),
-    resets_at: (.rate_limits.five_hour.resets_at | safe_num)
+    resets_at: (.rate_limits.five_hour.resets_at | safe_num),
+    effort_level: (.effort.level // "")
   } | to_entries | map("json_\(.key)=\(.value | @sh)") | .[]
 ' 2>/dev/null)" || {
   # JSON 解析失敗時的 fallback
@@ -356,6 +358,7 @@ eval "$(echo "$json" | jq -r '
   json_ctx_window_size=0
   json_used_pct=0
   json_resets_at=0
+  json_effort_level=""
 }
 
 # ─── API 資料覆蓋 StatusJSON ──────────────────────────────────────────────────
@@ -456,6 +459,11 @@ makeBarRow() {
 
 model_short=$(formatModel "$json_model_id")
 
+# 附加 thinking effort level（如 high / medium），依使用者偏好直接顯示、不轉大寫
+if [[ -n "$json_effort_level" ]]; then
+  model_short="${model_short} ${json_effort_level}"
+fi
+
 # Context：min(CONTEXT_CAP, context_window_size) 為分母
 if (( json_ctx_window_size > 0 && json_ctx_window_size < CONTEXT_CAP )); then
   ctx_max=$json_ctx_window_size
@@ -522,12 +530,9 @@ logStatuslineInvocation "full" ""
 
 SEP="${NBSP}|${NBSP}"
 
-# Line 1: header — Model | Dir | Branch (+ins, -del)
+# Line 1: header — Model {effort level} | Dir
 line1="$(nbspify "Model:")${NBSP}${WHITE}$(nbspify "$model_short")${RST}"
 line1+="${SEP}$(nbspify "Dir:")${NBSP}${WHITE}$(nbspify "$dir_name")${RST}"
-if [[ -n "$git_branch" ]]; then
-  line1+="${SEP}$(nbspify "Branch:")${NBSP}${WHITE}$(nbspify "$git_branch")${RST}${git_diff_str}"
-fi
 
 ctx_bar=$(makeBar "$ctx_filled" "$BAR_WIDTH" "$ctx_color")
 session_bar=$(makeBar "$session_filled" "$BAR_WIDTH" "$session_color")
@@ -541,5 +546,12 @@ output+=$'\n'
 output+="${RST}$(makeBarRow "Session" "$session_bar" "$json_used_pct" "$timer_str")"
 output+=$'\n'
 output+="${RST}$(makeBarRow "Weekly" "$weekly_bar" "$weekly_pct" "$weekly_reset")"
+
+# Line 5: git 狀態（Branch + diff），僅在 git repo 內顯示
+if [[ -n "$git_branch" ]]; then
+  line5="$(nbspify "Branch:")${NBSP}${WHITE}$(nbspify "$git_branch")${RST}${git_diff_str}"
+  output+=$'\n'
+  output+="${RST}${line5}"
+fi
 
 echo -n "$output"
