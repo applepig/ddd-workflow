@@ -3,13 +3,12 @@
 #
 # Modes:
 #   xreview-orchestrator.sh          → xreview
-#   work-orchestrator.sh             → work
 #   agent-runner.sh --mode <mode>    → explicit mode for tests/direct calls
 
 set -uo pipefail
 
 usage_agent_runner() {
-echo "Usage: agent-runner.sh --mode <xreview|work>"
+echo "Usage: agent-runner.sh --mode <xreview>"
 }
 
 usage_xreview() {
@@ -18,17 +17,10 @@ Usage: xreview-orchestrator.sh <prompt-file|-> [cli:model ...]
 EOF
 }
 
-usage_work() {
-cat <<'EOF'
-Usage: work-orchestrator.sh --jobs-file <jsonl> --cwd <project-root>
-EOF
-}
-
 infer_mode_from_invocation() {
 local self_name="$1"
-case "$self_name" in
+  case "$self_name" in
   xreview-orchestrator.sh) echo "xreview" ;;
-  work-orchestrator.sh) echo "work" ;;
   agent-runner.sh) echo "" ;;
   *) echo "" ;;
 esac
@@ -52,7 +44,7 @@ else
 fi
 
 case "$RUNNER_MODE" in
-  xreview|work) ;;
+  xreview) ;;
   *)
     usage_agent_runner >&2
     exit 2
@@ -162,231 +154,6 @@ cleanup_process_groups() {
   fi
 
   wait 2>/dev/null || true
-}
-
-run_work() {
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  usage_work
-  exit 0
-fi
-
-local jobs_file=""
-local cwd=""
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --jobs-file)
-      if [[ $# -lt 2 || "${2:-}" == --* ]]; then
-        echo "FAIL orchestrator missing_value:--jobs-file"
-        emit_all_done_event
-        exit 2
-      fi
-      jobs_file="$2"
-      shift 2
-      ;;
-    --cwd)
-      if [[ $# -lt 2 || "${2:-}" == --* ]]; then
-        echo "FAIL orchestrator missing_value:--cwd"
-        emit_all_done_event
-        exit 2
-      fi
-      cwd="$2"
-      shift 2
-      ;;
-    *)
-      echo "FAIL orchestrator unknown_argument:$1"
-      emit_all_done_event
-      exit 2
-      ;;
-  esac
-done
-
-if [[ -z "$jobs_file" || -z "$cwd" ]]; then
-  usage_work >&2
-  echo "FAIL orchestrator missing_required_args"
-  emit_all_done_event
-  exit 2
-fi
-
-if [[ ! -f "$jobs_file" ]]; then
-  echo "FAIL orchestrator jobs_file_not_found:$jobs_file"
-  emit_all_done_event
-  exit 2
-fi
-
-if [[ ! -d "$cwd" ]]; then
-  echo "FAIL orchestrator cwd_not_found:$cwd"
-  emit_all_done_event
-  exit 2
-fi
-
-if ! command -v jq >/dev/null 2>&1; then
-  echo "FAIL orchestrator jq_required_for_jobs_file_parse"
-  emit_all_done_event
-  exit 2
-fi
-
-local runner_file worker_script runid timeout_val
-runner_file="$(get_runner_file)"
-worker_script="${DDD_AGENT_RUNNER_WORKER_SCRIPT:-}"
-if [[ -z "$worker_script" ]]; then
-  worker_script="$(dirname "$runner_file")/opencode-worker.sh"
-fi
-if [[ ! -f "$worker_script" ]]; then
-  echo "FAIL orchestrator worker_script_not_found:$worker_script"
-  emit_all_done_event
-  exit 2
-fi
-
-runid="$(make_run_id)"
-timeout_val="${DDD_WORK_TIMEOUT_SEC:-7200}"
-
-local parsed_jobs
-parsed_jobs="$(mktemp /tmp/ddd-work-parsed-XXXXXX.jsonl)"
-if ! jq -c '.' "$jobs_file" > "$parsed_jobs" 2>/dev/null; then
-  rm -f "$parsed_jobs"
-  echo "FAIL orchestrator jobs_file_invalid:$jobs_file"
-  emit_all_done_event
-  exit 2
-fi
-
-local -a job_lines=()
-while IFS= read -r line; do
-  [[ -n "$line" ]] && job_lines+=("$line")
-done < "$parsed_jobs"
-rm -f "$parsed_jobs"
-
-if [[ ${#job_lines[@]} -eq 0 ]]; then
-  echo "FAIL orchestrator jobs_file_empty_or_invalid:$jobs_file"
-  emit_all_done_event
-  exit 2
-fi
-
-local -a work_pids=()
-local _work_cleanup_ran=false
-cleanup_work() {
-  $_work_cleanup_ran && return
-  _work_cleanup_ran=true
-  cleanup_process_groups "${work_pids[@]:-}"
-}
-
-trap 'cleanup_work; exit 130' INT
-trap 'cleanup_work; exit 143' TERM
-trap cleanup_work EXIT
-
-local job_json id description prompt_file agent model isolation slug log result
-local -a valid_job_specs=()
-for job_json in "${job_lines[@]}"; do
-  id="$(jq -r '.id // empty' <<< "$job_json" 2>/dev/null)"
-  description="$(jq -r '.description // empty' <<< "$job_json" 2>/dev/null)"
-  prompt_file="$(jq -r '.prompt_file // empty' <<< "$job_json" 2>/dev/null)"
-  agent="$(jq -r '.agent // "ddd-developer"' <<< "$job_json" 2>/dev/null)"
-  model="$(jq -r '.model // "openai/gpt-5.5"' <<< "$job_json" 2>/dev/null)"
-  isolation="$(jq -r '.isolation // ""' <<< "$job_json" 2>/dev/null)"
-
-  if [[ -z "$id" || -z "$prompt_file" ]]; then
-    local invalid_slug
-    invalid_slug="$(printf '%s' "${id:-invalid}" | tr '[:upper:] :/' '[:lower:]-__' | tr -cd 'a-z0-9_.-')"
-    [[ -z "$invalid_slug" ]] && invalid_slug="invalid"
-    log="/tmp/ddd-worker-$runid-$invalid_slug.log"
-    result="/tmp/ddd-worker-$runid-$invalid_slug.result.txt"
-    printf '[work] WORK_ERROR: job requires id and prompt_file\n' > "$log"
-    : > "$result"
-    echo "START ${id:-invalid} $log $result"
-    emit_fail_event "${id:-invalid}" "2" "$log" "result" "$result"
-    continue
-  fi
-
-  slug="$(printf '%s' "$id" | tr '[:upper:] :/' '[:lower:]-__' | tr -cd 'a-z0-9_.-')"
-  [[ -z "$slug" ]] && slug="job"
-  log="/tmp/ddd-worker-$runid-$slug.log"
-  result="/tmp/ddd-worker-$runid-$slug.result.txt"
-  printf '[work] START %s at %s\n[work] log=%s\n[work] result=%s\n[work] ---\n' \
-    "$id" "$(date -Iseconds)" "$log" "$result" > "$log"
-  : > "$result"
-  echo "START $id $log $result"
-  valid_job_specs+=("$id" "$description" "$prompt_file" "$agent" "$model" "$isolation" "$log" "$result")
-done
-
-local i
-for ((i = 0; i < ${#valid_job_specs[@]}; i += 8)); do
-  id="${valid_job_specs[i]}"
-  description="${valid_job_specs[i + 1]}"
-  prompt_file="${valid_job_specs[i + 2]}"
-  agent="${valid_job_specs[i + 3]}"
-  model="${valid_job_specs[i + 4]}"
-  isolation="${valid_job_specs[i + 5]}"
-  log="${valid_job_specs[i + 6]}"
-  result="${valid_job_specs[i + 7]}"
-
-  setsid bash -c '
-    id="$1"
-    description="$2"
-    prompt_file="$3"
-    agent="$4"
-    model="$5"
-    isolation="$6"
-    cwd="$7"
-    worker_script="$8"
-    timeout_val="$9"
-    log="${10}"
-    result="${11}"
-
-    worker_result=""
-    worker_args=(
-      --description "$description"
-      --subagent-type "$agent"
-      --model "$model"
-      --prompt-file "$prompt_file"
-      --cwd "$cwd"
-    )
-    if [[ -n "$isolation" ]]; then
-      worker_args+=(--isolation "$isolation")
-    fi
-
-    timeout --foreground "$timeout_val" bash "$worker_script" "${worker_args[@]}" >> "$log" 2>&1
-    rc=$?
-
-    if [[ $rc -eq 124 ]]; then
-      sweep_pgid="$BASHPID"
-      for orphan in $(pgrep -g "$sweep_pgid" 2>/dev/null); do
-        [[ "$orphan" -eq "$sweep_pgid" ]] && continue
-        kill -TERM "$orphan" 2>/dev/null || true
-      done
-      sleep 1
-      for orphan in $(pgrep -g "$sweep_pgid" 2>/dev/null); do
-        [[ "$orphan" -eq "$sweep_pgid" ]] && continue
-        kill -KILL "$orphan" 2>/dev/null || true
-      done
-      echo "WORK_ERROR: orchestrator timeout after ${timeout_val}s" >> "$log"
-    fi
-
-    while IFS= read -r line; do
-      case "$line" in
-        "[opencode-worker] RESULT_FILE "*) worker_result="${line#"[opencode-worker] RESULT_FILE "}" ;;
-      esac
-    done < "$log"
-
-    if [[ -n "$worker_result" && -f "$worker_result" ]]; then
-      cp "$worker_result" "$result" 2>/dev/null || true
-    fi
-
-    echo "$rc" > "${log%.log}.status"
-    if [[ $rc -eq 0 ]]; then
-      echo "RETURN $id $log $result"
-    else
-      echo "FAIL $id exit_code=$rc log=$log result=$result"
-    fi
-  ' _ "$id" "$description" "$prompt_file" "$agent" "$model" "$isolation" "$cwd" "$worker_script" "$timeout_val" "$log" "$result" &
-  work_pids+=($!)
-done
-
-for pid in "${work_pids[@]}"; do
-  wait "$pid" || true
-done
-
-emit_all_done_event
-exit 0
 }
 
 run_xreview() {
@@ -859,5 +626,4 @@ exit 0
 parse_runner_mode "$@"
 case "$RUNNER_MODE" in
   xreview) run_xreview "${RUNNER_ARGS[@]}" ;;
-  work) run_work "${RUNNER_ARGS[@]}" ;;
 esac

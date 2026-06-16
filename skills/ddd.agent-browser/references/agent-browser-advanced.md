@@ -3,11 +3,11 @@
 ## 錄製操作過程
 
 ```bash
-# 開始錄影
-agent-browser record start debug-session.webm
+# 先啟動 browser session，再開始錄影
+agent-browser open http://localhost:3000/form
+agent-browser record start ./debug-session.webm
 
 # 執行操作...
-agent-browser open http://localhost:3000/form
 agent-browser snapshot -i
 agent-browser fill @e1 "test"
 agent-browser click @e3
@@ -16,7 +16,7 @@ agent-browser click @e3
 agent-browser record stop
 ```
 
-## Playwright Trace
+## Chrome DevTools Trace
 
 ```bash
 # 開始 trace（記錄每一步的 DOM 快照、網路請求、console）
@@ -25,10 +25,9 @@ agent-browser trace start
 # 執行操作...
 
 # 停止並儲存
-agent-browser trace stop debug-trace.zip
+agent-browser trace stop ./debug-trace.json
 
-# 用 Playwright Trace Viewer 分析
-npx playwright show-trace debug-trace.zip
+# 用 Chrome DevTools Performance 或 Perfetto 分析
 ```
 
 ## 效能分析

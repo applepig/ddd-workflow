@@ -6,7 +6,7 @@ Document Driven Development 工作流——讓 AI agent 用結構化的文件驅
 
 **No Code Without Docs, No Code Without Tests.**
 
-每個功能都從文件開始：先釐清需求、寫 spec、拆 tasks，確認後才動手寫程式碼。Main agent 擔任 Coordinator（規劃、派工、驗收），實作和 review 交給專屬 subagent，保護 main agent 的 context window 不被消耗。
+每個功能都從文件開始：先釐清需求、寫 spec，確認後才動手寫程式碼。Main agent 擔任 Coordinator（規劃、派工、驗收），實作和 review 交給專屬 subagent，保護 main agent 的 context window 不被消耗。
 
 ## 安裝 Skills
 
@@ -61,17 +61,17 @@ flowchart TD
 
     Feature --> Clarity{需求明確？}
 
-    Clarity -- 模糊 --> Plan["/ddd.plan<br/>釐清方向、產出 plan.md"]
+    Clarity -- 模糊 --> Plan["/ddd.plan<br/>釐清方向"]
     Plan --> Spec
 
     Clarity -- 明確 --> Spec["/ddd.spec<br/>撰寫 spec.md"]
     Spec --> UserSpec{使用者確認 spec？}
     UserSpec -- 修改 --> Spec
-    UserSpec -- 確認 --> NeedTasks{需要獨立 tasks？}
+    UserSpec -- 確認 --> NeedTasks{需要細化 Milestones？}
 
     NeedTasks -- 否 --> Work
     NeedTasks -- 是 --> Tasks
-    Tasks["/ddd.tasks<br/>複雜執行計畫"] --> UserTasks{使用者確認 tasks？}
+    Tasks["/ddd.tasks<br/>細化 Milestones / optional tasks / 拆分 Sprint"] --> UserTasks{使用者確認任務來源？}
     UserTasks -- 修改 --> Tasks
     UserTasks -- 確認 --> Work
 
@@ -102,7 +102,7 @@ flowchart LR
 
 | 角色 | 職責 | 不做什麼 |
 |------|------|----------|
-| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時拆解 tasks、派工、驗收 | 不寫 production code、不 debug、不做 review |
+| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時細化 Milestones、派工、驗收 | 不寫 production code、不 debug、不做 review（例外：`/ddd.fixbug` 直接修） |
 | **ddd-developer** | 以 TDD 循環實作功能程式碼與測試 | 不做架構決策、不跳過測試 |
 | **ddd-reviewer** | 獨立審查程式碼變更，產出 review 報告 | 不修改程式碼 |
 
@@ -115,11 +115,11 @@ docs/
 ├── PRD.md                        # 產品需求文件（專案層級，只建一次）
 ├── TECHSTACK.md                  # 技術棧 + 參考文件連結（專案層級，只建一次）
 └── <編號>-<名稱>/                # Sprint 文件包（每個功能一個）
-    ├── plan.md                   # (optional) 前置規劃
+    ├── plan.md                   # (optional) 初步筆記
     ├── research.md               # (optional) 技術調研
     ├── spec.md                   # 規格書：User Story、驗收條件、ADR、輕量 Milestones
-    ├── tasks.md                  # (optional) 複雜執行計畫：平行工作線、匯合點、跨 agent 派工
-    └── works.md                  # 開發日誌：決策與問題記錄
+    ├── tasks.md                  # (optional, 淘汰中) 複雜執行協調用，需核可才作任務來源
+    └── works.md                  # 成果與決策紀錄
 ```
 
 專案初始化時先建立 `PRD.md`（產品目標、使用者、範圍）和 `TECHSTACK.md`（語言、框架、部署環境），後續每個功能的 spec 都以此為基礎。
@@ -130,24 +130,25 @@ docs/
 
 | Slash Command | 用途 | 何時觸發 |
 |---------------|------|----------|
-| `/ddd.plan` | 需求模糊時釐清方向，產出 plan.md | 「我有個想法…」 |
+| `/ddd.plan` | 需求模糊時釐清方向 | 「我有個想法…」 |
 | `/ddd.spec` | 撰寫正式規格書 spec.md，含輕量 Milestones | 需求明確，準備定義規格 |
-| `/ddd.tasks` | 必要時抽出複雜執行計畫 | spec 確認後，且需要平行派工或複雜依賴 |
-| `/ddd.work` | 以 TDD 循環實作（支援平行派工） | spec 確認後；若有 tasks，也需先確認 |
+| `/ddd.tasks` | 細化 Milestones 或拆分 Sprint（複雜協調才建 optional tasks.md） | spec 確認後，且需要細化或拆分 Sprint |
+| `/ddd.work` | 以 TDD 循環實作（支援平行派工） | spec 確認後 |
 | `/ddd.xreview` | 多模型 cross review | 實作完成，準備提交前 |
 
 輔助 skills：
 
 | Slash Command | 用途 |
 |---------------|------|
+| `/ddd.fixbug` | Bug 快速修復——main agent 直接診斷與修復（唯一不派工的例外） |
 | `/ddd.agent-browser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
 
 ## 核心原則
 
 - **SSOT**：每個需求一個文件包，文件就是唯一真相來源
-- **No Code Without Docs**：spec 獲得確認前，嚴禁寫程式碼；若有獨立 tasks，也必須先確認
+- **No Code Without Docs**：spec 獲得確認前，嚴禁寫程式碼
 - **No Code Without Tests**：修改 production code 前，必須先有測試
-- **Sync on Finish**：完成任務前，先更新任務來源（spec.md Milestones 或 tasks.md）和 works.md
+- **Sync on Finish**：完成任務前，先更新任務來源和 works.md
 - **明確的決策點**：需要使用者決策時，必須暫停等待確認
 
 ## 專案結構
