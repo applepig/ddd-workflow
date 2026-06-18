@@ -15,6 +15,7 @@ description: >
 嚴禁在 spec.md 獲使用者確認前撰寫任何實作程式碼。
 嚴禁省略邊界案例——每份 spec 至少列出一種 Edge Case。
 嚴禁引入 docs/TECHSTACK.md 以外的技術而不在 ADR 中說明。
+嚴禁在未盤點既有可複用資產前定稿——每份 spec 必須含「既有資產盤點 / Reuse Map」，列出可複用的 utility / 元件 / 樣式 token / pattern，或註明已搜尋確認無，不得留空。
 </HARD-GATE>
 
 ## Checklist
@@ -22,7 +23,7 @@ description: >
 你必須為以下每個項目建立 task 並依序完成：
 
 1. **準備工作** — 建立/切換 feature branch、確認文件包、讀取 plan.md 與專案脈絡
-2. **探索現有 codebase** — 了解現有架構、pattern、相關模組
+2. **探索現有 codebase 並盤點可複用資產** — 了解現有架構、pattern、相關模組；產出「既有資產盤點 / Reuse Map」，列出可複用的 utility / 元件 / 樣式 token / pattern
 3. **需求分析** — 釐清 User Story、驗收條件、邊界案例
 4. **撰寫 spec.md** — 按模板填寫
 5. **Spec self-review** — 5 項檢查（見下方）
@@ -104,6 +105,15 @@ digraph spec_flow {
 ## 相關檔案
 - `src/path/to/file.js` — 說明
 
+## 既有資產盤點 / Reuse Map
+（動工前盤點既有可複用結構，優先沿用而非新造）
+
+| 既有資產 | 位置 | 本次如何沿用 |
+|---|---|---|
+| <utility / 元件 / 樣式 token / pattern> | `src/...` | <複用 / 擴充 / 為何不合用要新建> |
+
+新建項目：<列出確需新造者與理由；真的沒有可複用時寫「無，已搜尋 X、Y 確認」——不得留空>
+
 ## 介面/資料結構 (API / Data Structure)
 （必須明確標示通訊協定：REST / SSE / WebSocket，並提供 Request / Response 的 JSON 範例）
 
@@ -136,6 +146,7 @@ digraph spec_flow {
 2. **內部一致性**：目標、User Story、驗收條件、Milestones 之間有沒有矛盾？介面設計是否支撐所有驗收條件？
 3. **Scope 檢查**：這個範圍適合一個 sprint 嗎？還是需要再拆？
 4. **歧義檢查**：有沒有哪個驗收條件能被兩種方式解讀？挑一個寫明確
+5. **Reuse Map 完整性**：「既有資產盤點」是否真的盤點過既有 utility / 元件 / 樣式 token？留空、寫「待補」、或顯然沒搜尋就動筆，視為未過——補搜或註明「無，已搜尋 X、Y 確認」
 
 發現問題直接修正，不需要重跑整個流程。
 

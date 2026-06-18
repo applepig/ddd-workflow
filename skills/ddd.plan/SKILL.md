@@ -19,6 +19,7 @@ description: >
 嚴禁撰寫程式碼或修改專案設定檔，直到 spec.md 獲使用者確認。
 嚴禁自行假設商業邏輯，需求模糊時必須提問。
 嚴禁跳過 docs/code 校準直接產 spec；能從 docs/code 查到的答案必須自己查。
+方向涉及新建 function / 元件 / 樣式時，必須先盤點既有可複用資產，帶入 spec 的「既有資產盤點 / Reuse Map」。
 </HARD-GATE>
 
 ## 工作強度
@@ -52,7 +53,7 @@ description: >
 4. **逐一 grill** — 一次只問一個阻塞決策；每題都給推薦答案；能查就查，不問使用者
 5. **對照 docs/code** — 檢查使用者說法是否與 PRD、TECHSTACK、既有 spec、ADR、code 相衝突
 6. **必要時更新輔助文件** — 依文件職責更新 PRD、TECHSTACK 或 research.md
-7. **需求完整性摘要檢查** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`
+7. **需求完整性與可複用資產摘要** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`；並把探索 code 時發現的可複用 utility / 元件 / 樣式 token 整理成清單，帶入 spec 的「既有資產盤點 / Reuse Map」
 8. **接續 `/ddd.spec`** — invoke `/ddd.spec`，將規劃結論填入 spec 的背景、驗收條件、ADR 與 Milestones
 
 ## Grilling 規則
