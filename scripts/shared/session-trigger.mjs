@@ -62,6 +62,7 @@ import { execFile, spawn } from "node:child_process"
 import { appendFile, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 
 // ---------------------------------------------------------------------------
 // Constants — all tunables live here
@@ -444,7 +445,12 @@ async function main() {
   await Promise.all(AGENTS.map((agent) => triggerAgent(agent)))
 }
 
-main().catch((err) => {
-  console.error("session-trigger fatal:", err)
-  process.exit(1)
-})
+const is_main_module = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (is_main_module) {
+  main().catch((err) => {
+    console.error("session-trigger fatal:", err)
+    process.exit(1)
+  })
+}
