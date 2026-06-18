@@ -93,11 +93,14 @@ description: >
    - `docs/<編號>-<名稱>/tasks.md`（若本 sprint 使用已核可的 tasks.md）
    - （其他相關 source files）
 
+   ## 開工協議
+   動工前，先把每條 deliverable / 驗收條件列成 checklist，作為實作與最終對帳的基準。
+
    ## Worker 完成協議
    完成實作後，依序執行：
    1. Unit test：執行相關測試並回報完整結果
    2. E2E 驗證：若工作線有標註驗證方式，依步驟執行
-   3. 回報：輸出 `DONE: <一句話摘要>（測試結果：X passed, Y failed）`；若失敗則輸出 `FAIL: <原因>`
+   3. 回報：首行單行 `<STATUS>: <一句話摘要>（測試結果：X passed, Y failed）`，狀態取 `DONE`（全部完成且驗證）/ `DONE_WITH_CONCERNS`（完成但有未驗證項或疑慮，coordinator 會逐項 review）/ `BLOCKED`（外部阻塞）/ `FAIL`（自己無法解決）；首行後附「Deliverable 對帳」逐條對照開工 checklist 列 deliverable + 證據，與「未驗證」清單。禁止把未完成/未驗證包進 `DONE`
    4. 不得自行 commit
    ```
 
@@ -114,9 +117,10 @@ description: >
    - Worker 不得 commit；commit 由 coordinator 匯合後、經使用者確認才執行
 
 2. **追蹤結果**
-   - 收到 worker 回報後，檢查是否有 `DONE` / `FAIL` 與測試輸出
+   - 收到 worker 回報後，檢查狀態（`DONE` / `DONE_WITH_CONCERNS` / `BLOCKED` / `FAIL`）、Deliverable 對帳與測試輸出
    - 沒有測試執行結果的 `DONE` 視為未完成，要求補驗證
-   - Worker 失敗時，向使用者提供重試 / 主行程修復 / 跳過的決策選項
+   - 收到 `DONE_WITH_CONCERNS`：逐項 review 對帳中的未驗證/疑慮，決定補做或接受，不得當 clean `DONE` 推進
+   - Worker `BLOCKED` / `FAIL` 時，向使用者提供重試 / 主行程修復 / 跳過的決策選項
 
 3. **匯合（🔗 匯合點）**
    - 逐一整合每條工作線的變更
