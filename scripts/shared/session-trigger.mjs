@@ -59,10 +59,11 @@
 // ==========================================================================
 
 import { execFile, spawn } from "node:child_process"
+import { realpathSync } from "node:fs"
 import { appendFile, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 
 // ---------------------------------------------------------------------------
 // Constants — all tunables live here
@@ -445,8 +446,11 @@ async function main() {
   await Promise.all(AGENTS.map((agent) => triggerAgent(agent)))
 }
 
+// Compare realpath-resolved filesystem paths, not file URLs: when invoked via a
+// symlink, Node resolves import.meta.url to the real file but leaves argv[1] as
+// the symlink, so a URL comparison would skip main() and exit 0 silently.
 const is_main_module = process.argv[1]
-  && import.meta.url === pathToFileURL(process.argv[1]).href
+  && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
 
 if (is_main_module) {
   main().catch((err) => {
