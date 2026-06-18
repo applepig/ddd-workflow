@@ -11,10 +11,10 @@
 //
 // ## Setup
 //
-//   # Create a dedicated HOME so Claude won't load your CLAUDE.md / persona:
-//   mkdir -p ~/.session-trigger
-//   ln -s ~/.claude ~/.session-trigger/.claude
-//   touch ~/.session-trigger/CLAUDE.md          # empty file overrides yours
+//   # Create a dedicated HOME so Claude won't load your CLAUDE.md / persona.
+//   # The isolated .claude only needs the auth token — nothing else:
+//   mkdir -p ~/.session-trigger/.claude
+//   ln -s ~/.claude/.credentials.json ~/.session-trigger/.claude/.credentials.json
 //
 //   Logs are written to ~/.session-trigger/session-trigger.log
 //
@@ -34,7 +34,7 @@
 //   1. Triggers each CLI in parallel (Claude + Codex + opencode) with minimal-token
 //      flags (cheapest model, no tools, custom system prompt, etc.)
 //   2. Verifies each trigger succeeded by parsing the rate-limit response:
-//      - Claude: `rate_limit_event` in --output-format json stdout
+//      - Claude: `rate_limit_event` in --output-format stream-json --verbose stdout
 //      - Codex: `token_count` event in ~/.codex/sessions/ file
 //      - opencode: captured `x-codex-*` headers in ~/.config/ddd-workflow/opencode-codex-usage/codex-usage.json
 //   3. On failure, applies retry logic based on the window expiry time:
@@ -59,9 +59,11 @@
 // ==========================================================================
 
 import { execFile, spawn } from "node:child_process"
+import { realpathSync } from "node:fs"
 import { appendFile, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 // ---------------------------------------------------------------------------
 // Constants — all tunables live here
@@ -85,7 +87,7 @@ const AGENTS = [
     cwd: "/tmp",
     env: { HOME: TRIGGER_HOME },
     cmd: [
-      "claude", "-p", "hi", "--output-format", "json",
+      "claude", "-p", "hi", "--output-format", "stream-json", "--verbose",
       "--model", "haiku",
       "--tools", "",
       "--effort", "low",
@@ -214,19 +216,22 @@ function sleep(ms) {
 // Claude Code: parse result
 // ---------------------------------------------------------------------------
 
-function parseClaudeResult(stdout) {
+// stream-json (--output-format stream-json --verbose) is JSONL: one JSON
+// object per line. The verbose flag surfaces a rate_limit_event without
+// relying on any ~/.claude config, so the isolated HOME only needs auth.
+export function parseClaudeResult(stdout) {
   try {
-    const items = JSON.parse(stdout)
+    const items = parseJsonl(stdout)
+
+    const result_item = items.find((e) => e.type === "result")
+    const reply = result_item?.result ?? null
 
     const event = items.find((e) => e.type === "rate_limit_event")
-    if (!event) return { ok: false, resets_at: null, reply: null }
+    if (!event) return { ok: false, resets_at: null, reply }
 
     const info = event.rate_limit_info
     const resets_at = typeof info.resetsAt === "number" ? info.resetsAt * 1000 : null
     const ok = info.status === "allowed" && resets_at !== null
-
-    const result_item = items.find((e) => e.type === "result")
-    const reply = result_item?.result ?? null
 
     return { ok, resets_at, reply }
   } catch {
@@ -441,7 +446,15 @@ async function main() {
   await Promise.all(AGENTS.map((agent) => triggerAgent(agent)))
 }
 
-main().catch((err) => {
-  console.error("session-trigger fatal:", err)
-  process.exit(1)
-})
+// Compare realpath-resolved filesystem paths, not file URLs: when invoked via a
+// symlink, Node resolves import.meta.url to the real file but leaves argv[1] as
+// the symlink, so a URL comparison would skip main() and exit 0 silently.
+const is_main_module = process.argv[1]
+  && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+
+if (is_main_module) {
+  main().catch((err) => {
+    console.error("session-trigger fatal:", err)
+    process.exit(1)
+  })
+}
