@@ -4,12 +4,13 @@
 
 ## 總覽
 
-| CLI | Read-Only 機制 | 呼叫方式 | model 指定 |
+| CLI | Read-Only / Enforcement 機制 | 呼叫方式 | model 指定 |
 |-----|---------------|---------|-----------|
 | Claude | `--permission-mode plan` + `--agent ddd-reviewer` | `claude -p --agent ddd-reviewer --model "$model" --permission-mode plan < prompt.md` | `--model` flag |
 | OpenCode | Agent 定義檔中設定 `edit: deny` + `bash` 白名單 | `opencode run --agent ddd-reviewer --model "$model" < prompt.md` | `--model` flag |
-| Gemini CLI | `--approval-mode=plan`（Plan Mode，禁止寫入專案檔案） | `gemini --approval-mode=plan -m "$model" < prompt.md` | `-m` / `--model` flag |
+| Antigravity CLI（agy） | `os-write-confinement`：`bwrap --ro-bind / /` 把整個 FS（含真實 repo 與 `.git`）掛唯讀，唯一可寫處是拋棄式 isolated HOME | bwrap 包住 `agy --add-dir "$REPO_DIR" --model "$model" --print "$prompt"`（見下方章節） | `--model` flag |
 | Codex CLI | `--sandbox read-only`（預設值，明確指定更清楚） | `codex exec --sandbox read-only --ephemeral --model "$model" - < prompt.md` | `--model` / `-m` flag |
+| Gemini CLI（DEPRECATED） | `--approval-mode=plan`（Plan Mode，禁止寫入專案檔案） | `gemini --approval-mode=plan -m "$model" < prompt.md` | `-m` / `--model` flag |
 
 ## Final 抽取（ADR-11 雙輸出）
 
@@ -38,6 +39,52 @@ ADR-11 雙輸出設計對 adapter 的 stdout / stderr 行為有隱性契約，�
 - **exit code：透傳 CLI rc。** adapter 只在「必要工具缺失」（如 jq、prompt file、CLI 本身）時提前 `exit 1`；其餘情況用 `PIPESTATUS[0]` 或 `$?` 回傳 CLI 自己的 rc，讓 orchestrator 依 rc 發 RETURN / FAIL 事件。
 
 每個 adapter 檔頭 comment 都會帶一行 `stdout contract: must be empty (...)` 提醒；CI 的 `adapters.test.sh` 會 grep 該標記與本段標題作 static check，文件與實作不同步會立刻紅。
+
+## Antigravity CLI
+
+`agy`（Antigravity CLI）是 `/ddd.xreview` 的**預設 `pro` / `flash` reviewer**（ADR-4），取代 runtime-availability 已壞掉的 gemini-cli。adapter 為 `adapters/agy.sh`。
+
+### Enforcement level：`os-write-confinement`（bwrap 唯讀真 repo）
+
+agy 的寫入邊界是 **OS 級別、由 bwrap（bubblewrap）施加**，不是 permission mode。誠實標示：enforcement level = **`os-write-confinement`**。機制：
+
+- **`bwrap --ro-bind / /`**：把整個 FS（含**真實 repo 與其 `.git`**）對 agy 掛**唯讀**。agy 以**真實 repo 為 cwd 與 workspace** 跑（`--chdir "$REPO_DIR"` + agy 端 `--add-dir "$REPO_DIR"`），但任何寫嘗試（terminal 工具的 `echo > file`、file 工具的 `write_to_file`、相對或絕對路徑）都會收到 `read-only file system`、優雅回報、不 hang。連 `git config core.hooksPath` 注入 / `git commit` / object 注入這類寫入攻擊都被物理擋住，因為 `.git` 也是唯讀。
+- **唯一可寫處 = per-invocation 拋棄式 isolated HOME**（`--bind "$ISO_HOME"`）+ 私有 `/dev`（`--dev /dev`）、私有 `/dev/shm`（`--tmpfs /dev/shm`）。review 結束清掉。
+- **不物化 repo、不複製、不另建隔離目錄**：沒有 staging dir、stash / archive 物化、diff 物化、dirty-check canary——這些是 pre-bwrap 時代的邊界遺留物，bwrap ro-bind 已使其多餘，全數移除（ADR-7）。真實 repo 由 ro-bind 物理保護，不需 canary。
+
+bwrap 硬化 flag（ADR-8，純縮攻擊面，不影響 reviewer 能力）：`--dev /dev` + `--tmpfs /dev/shm`（取代會把 host `/dev/shm` 寫入洩漏到 host 的 `--dev-bind /dev /dev`）、`--unshare-pid`（agy 看不到 host 行程）、`--new-session`（杜絕 TIOCSTI terminal 注入）、`--die-with-parent`（orchestrator 死則 agy 收掉）、`--clearenv` + 最小注入（只給 `PATH` / `HOME` / `TMPDIR` / `TERM`，不把 orchestrator env 機密交給 agy）。
+
+### git 能力完整
+
+因為 ro-bind 掛的是真實 repo（含 `.git` 與完整歷史，唯讀但可讀），reviewer 在 sandbox 內可原生跑任意 git：`git log`、`git diff HEAD`、以及**任意 commit range diff**如 `git diff <base>...HEAD`。coordinator 在 xreview prompt 裡照常給 `git diff <range>` 指令即可（與 claude / opencode reviewer 一致），不需 diff 物化或「git 不可用」說明。
+
+### Read 與 network 不封閉（明列殘留風險）
+
+寫入邊界是 OS-hard，但 read 與 network **不在本邊界範圍內**：
+
+- **read 範圍未封閉**：`--ro-bind / /` 讓 agy 能**讀**整個 FS（其他 repo、`~/.ssh`、token 等）。針對的威脅是「reviewer 改檔」（write）；reviewer 本來就要讀使用者程式碼，且 permission mode 同樣救不了 read。縮 read 面（只 ro-bind 必要路徑）列為後續。
+- **network 全開**：未 `--unshare-net`（agy 需網路打 Gemini API）。結合 read 開放，理論上「prompt-injection → 讀機密 → 網路外洩」不被本邊界擋；network egress 控制列後續獨立決策。
+- **secret leakage（送雲）**：agy 把讀到的 repo 內容送 Google，與其他雲端 reviewer 同級。
+- **agy 版本飄移**：行為可能隨版本變動（實測於 agy 1.0.13/1.0.14）；bwrap 邊界本身不隨 agy 版本變動。
+
+> isolated HOME settings.json 注入的 `permissions` 是純 allow-list（`["read_file(*)","write_file(*)","command(*)","mcp(*)"]`，**不含 `unsandboxed(*)`**、無 deny），**不是**安全邊界——它只用來消除 headless trust-prompt / tool-approval hang。邊界是 bwrap。
+
+### ddd-reviewer 角色 prepend
+
+agy 把 agent 檔當純 markdown 讀、不視為 subagent，故 adapter 把 ddd-reviewer 角色正文 **prepend** 到 prompt（不是當 `--agent` 載入）。查找序：`${XDG_CONFIG_HOME:-$HOME/.config}/gemini/agents/ddd-reviewer.md` → `$HOME/.gemini/agents/ddd-reviewer.md`。用 awk 剝除 YAML frontmatter 取正文，組成 `role_body + "\n\n---\n\n" + 原 prompt` 經 `--print` argv 傳入。缺檔 / 空檔降級：stderr 印 `XREVIEW_WARN`、原 prompt 原樣送出、exit code 仍透傳 agy rc。
+
+### Final 抽取與 stdout/stderr/exit 契約
+
+- **final = agy `--print` 的 stdout 直導 `<final-out>`**（第 3 個 arg），純 text 無需 JSON 解析（類 codex `-o`，少一個 jq 失敗點）。`> "$final_out"` 的 fd 在進 bwrap 前由外層 shell 開好，agy 繼承寫入；ro-bind 只擋 namespace 內的新 `open()`，不影響繼承 fd，故 final 落在 `/tmp` 仍寫得進。jq 只用於改寫 isolated HOME settings.json，不解析 agy 輸出。
+- **stdout：必須為空**——final 全走第 3 arg，adapter 自身不對 stdout 印任何東西（成功路徑下 `[[ ! -s ]]` 為真）。
+- **stderr：自然傳遞**——agy 的 progress / trace 與 adapter 自訂的 `XREVIEW_WARN` / `XREVIEW_ERROR` 都走 stderr，併入 orchestrator log。
+- **exit code：透傳 agy rc**——adapter 只在必要工具缺失（prompt file / `agy` / `bwrap` / `jq`）或 REPO_DIR 過大時提前 `exit 1`；其餘透傳 agy 自己的 rc。
+
+### Fail-closed 與失敗區分
+
+- **bwrap 缺席 → fail-closed**：PATH 無 `bwrap` 時 adapter 在跑 agy 前 fail-fast（`XREVIEW_ERROR: agy requires bwrap ...` + 非零 exit），**絕不**退回無封裝直接跑 agy。
+- **bwrap 失敗 vs agy 失敗可區分**：adapter 用 `--json-status-fd` 讀 bwrap 的 `{"exit-code": N}`。bwrap 成功建 namespace 並 exec agy 後該行才出現；若 namespace 建立失敗，agy 從未執行、該行缺席，adapter 印 `XREVIEW_ERROR: agy bwrap sandbox setup failed (rc=N) ...`（wrapper 失敗）而非誤報成 `agy exited with code N`（agy review 失敗）。
+- **REPO_DIR 過大 → fail-fast**：推導後拒絕 `/` 與 `$HOME`（`XREVIEW_ERROR: agy REPO_DIR refuses overly-broad path: ...` + exit 1），避免把過多內容交給 agy 當 workspace / trust grant。
 
 ## OpenCode
 
@@ -104,7 +151,9 @@ EOF
 優點：IDE 級整合協定、結構化回應、可設定 pipe 級超時。
 缺點：需要額外的 JSON-RPC client wrapper。
 
-## Gemini CLI
+## Gemini CLI（DEPRECATED）
+
+> **DEPRECATED（sprint 26, ADR-4）。** 預設 `pro` / `flash` reviewer 已改指 `agy:<model>`（見上方 ## Antigravity CLI）。gemini-cli「壞掉」是 **runtime-availability** 問題（CLI / headless auth 在環境中失效），**非 adapter-correctness** 問題——本 adapter 邏輯本身仍正確。`gemini.sh` 與 `gemini:*` alias **保留不移除**，作為 escape hatch：顯式 `gemini:<model>` spec 仍可被 `resolve_spec` 解析並 dispatch 到此 adapter，執行邏輯凍結。
 
 ### 呼叫方式
 

@@ -166,7 +166,7 @@ fi
 # Usage:
 #   xreview-orchestrator.sh <prompt-file> <cli:model> [<cli:model> ...]
 #
-# Supported CLIs: claude, opencode, gemini, codex
+# Supported CLIs: claude, opencode, gemini, codex, agy
 #
 # Stdout event stream (one event per line):
 #   START <cli:model> <log-path>
@@ -501,7 +501,7 @@ for spec in "${valid_specs[@]:-}"; do
     adapter="$adapter_dir/$cli.sh"
 
     if [[ ! -f "$adapter" ]]; then
-      echo "XREVIEW_ERROR: unknown cli: $cli (supported: claude, opencode, gemini, codex)" \
+      echo "XREVIEW_ERROR: unknown cli: $cli (supported: claude, opencode, gemini, codex, agy)" \
         >> "$log"
       rc=1
     else

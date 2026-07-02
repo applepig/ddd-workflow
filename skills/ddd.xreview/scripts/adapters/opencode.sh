@@ -7,6 +7,9 @@
 #   - stderr: raw ndjson via tee for orchestrator log
 #   - final-out: extracted text events written via jq -rs
 #   - sandbox: read-only via OPENCODE_PERMISSION env
+#
+# stdout contract: must be empty (final flows to $3 via jq -rs). The CLI's
+# ndjson is teed to stderr for the orchestrator log; stdout carries nothing.
 
 set -uo pipefail
 

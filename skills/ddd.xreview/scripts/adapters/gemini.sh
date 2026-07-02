@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 # gemini.sh — xreview adapter for Gemini CLI
 #
+# ============================================================================
+# DEPRECATED (sprint 26, ADR-4). The default `pro` / `flash` reviewer slots no
+# longer route here — they now resolve to `agy:<model>` (Antigravity CLI). See
+# adapters/agy.sh and references/cli-adapters.md ## Antigravity CLI.
+#
+# WHY: gemini-cli is "broken" only in the runtime-availability sense (the CLI /
+# its headless auth stopped working in our environment), NOT in the
+# adapter-correctness sense — this adapter's logic is sound. Removing it would
+# break existing explicit references and the doc/pack gate, so we keep it as an
+# ESCAPE HATCH: an explicit `gemini:<model>` spec still resolves and dispatches
+# to this adapter unchanged.
+#
+# FROZEN: do not change the execution logic below. gemini.test.sh must keep
+# passing as-is. This deprecation is documentation-only.
+# ============================================================================
+#
 # Interface: bash gemini.sh <prompt-file> <model> <final-out-file>
 #
 # The 3rd arg is the final-output file (ADR-11). Adapter pipes the CLI's
