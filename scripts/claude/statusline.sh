@@ -47,6 +47,14 @@ CACHE_STALE_MAX_AGE=300  # fallback 到舊快取的最大容忍秒數
 : "${STATUSLINE_CACHE_FILE:=/tmp/claude/statusline-usage-cache.json}"
 : "${STATUSLINE_CREDENTIALS_FILE:=${HOME}/.claude/.credentials.json}"
 : "${STATUSLINE_INVOCATION_LOG:=/tmp/claude/statusline-invocations.log}"
+if [[ -z "${STATUSLINE_INPUT_LOG+x}" ]]; then
+  STATUSLINE_INPUT_LOG="/tmp/claude/statusline-input.jsonl"
+fi
+STATUSLINE_CACHE_DIR="$(dirname "$STATUSLINE_CACHE_FILE")"
+: "${STATUSLINE_REFRESHER_PID_FILE:=${STATUSLINE_CACHE_DIR}/statusline-usage-refresher.pid}"
+: "${STATUSLINE_REFRESHER_LOCK_DIR:=${STATUSLINE_CACHE_DIR}/statusline-usage-refresher.lock}"
+: "${STATUSLINE_REFRESHER_INTERVAL:=60}"
+: "${STATUSLINE_REFRESHER_LOCK_STALE_MAX_AGE:=120}"
 
 # ─── OAuth + API Functions ───────────────────────────────────────────────────
 
@@ -75,8 +83,48 @@ getOAuthToken() {
   echo ""
 }
 
-# 呼叫 Usage API，帶快取 + throttle 防止多 session 同時打 API
-# 用 throttle 檔的 mtime 記錄上次 API 請求時間，CACHE_MAX_AGE 內不重複請求
+isUsageResponseValid() {
+  local input="$1"
+
+  if [[ -z "$input" ]]; then
+    return 1
+  fi
+
+  echo "$input" | jq -e '
+    def pct_ok: type == "number" and . >= 0 and . <= 100;
+    def reset_ok: . == null or type == "string" or type == "number";
+    def window_ok: type == "object" and (.utilization | pct_ok) and (.resets_at | reset_ok);
+    (.five_hour | window_ok) and
+    ((.seven_day == null) or (.seven_day | window_ok)) and
+    ((.extra_usage == null) or (.extra_usage | type == "object"))
+  ' > /dev/null 2>&1
+}
+
+readUsableUsageCache() {
+  local max_age="$1"
+  local cache_file="$STATUSLINE_CACHE_FILE"
+
+  if [[ ! -f "$cache_file" ]]; then
+    return 1
+  fi
+
+  local cache_mtime cache_age cache_payload
+  cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || cache_mtime=0
+  cache_age=$(( $(date +%s) - cache_mtime ))
+  if (( cache_age >= max_age )); then
+    return 1
+  fi
+
+  cache_payload=$(<"$cache_file") || return 1
+  if ! isUsageResponseValid "$cache_payload"; then
+    return 1
+  fi
+
+  echo "$cache_payload"
+}
+
+# 呼叫 Usage API，live-first；只有打不到 API 或 throttle 併發保護時才 fallback cache
+# 用 throttle 檔的 mtime 記錄上次 API 請求時間，CACHE_MAX_AGE 內避免多 session 重複請求
 # 用法: fetchUsageAPI <oauth_token>
 # 回傳: JSON response 或空字串
 fetchUsageAPI() {
@@ -93,19 +141,7 @@ fetchUsageAPI() {
   cache_dir="$(dirname "$cache_file")"
   throttle_file="${cache_dir}/statusline-usage.throttle"
 
-  # 快取命中：cache 檔 mtime 在 CACHE_MAX_AGE 內
-  if [[ -f "$cache_file" ]]; then
-    local file_mtime now age
-    file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || file_mtime=0
-    now=$(date +%s)
-    age=$(( now - file_mtime ))
-    if (( age < CACHE_MAX_AGE )); then
-      cat "$cache_file"
-      return 0
-    fi
-  fi
-
-  # 快取過期——檢查 throttle：若其他 session 近期已請求過，用舊快取
+  # 檢查 throttle：若其他 session 近期已請求過，用可用快取，避免併發打爆 API。
   mkdir -p "$cache_dir"
   if [[ -f "$throttle_file" ]]; then
     local throttle_mtime now throttle_age
@@ -113,8 +149,9 @@ fetchUsageAPI() {
     now=$(date +%s)
     throttle_age=$(( now - throttle_mtime ))
     if (( throttle_age < CACHE_MAX_AGE )); then
-      if [[ -f "$cache_file" ]]; then
-        cat "$cache_file"
+      local throttled_cache
+      if throttled_cache=$(readUsableUsageCache "$CACHE_STALE_MAX_AGE"); then
+        echo "$throttled_cache"
         return 0
       fi
       echo ""
@@ -133,22 +170,18 @@ fetchUsageAPI() {
     "$USAGE_API_URL" 2>/dev/null) && curl_exit=0 || curl_exit=$?
 
   if [[ $curl_exit -eq 0 ]] && [[ -n "$response" ]]; then
-    if echo "$response" | jq -e '.five_hour' > /dev/null 2>&1; then
+    if isUsageResponseValid "$response"; then
       echo "$response" > "$cache_file"
       echo "$response"
       return 0
     fi
   fi
 
-  # API 失敗：fallback 到舊快取（不超過 CACHE_STALE_MAX_AGE）
-  if [[ -f "$cache_file" ]]; then
-    local stale_mtime stale_age
-    stale_mtime=$(stat -c %Y "$cache_file" 2>/dev/null) || stale_mtime=0
-    stale_age=$(( $(date +%s) - stale_mtime ))
-    if (( stale_age < CACHE_STALE_MAX_AGE )); then
-      cat "$cache_file"
-      return 0
-    fi
+  # API 失敗：fallback 到時間與數字都合理的舊快取。
+  local fallback_cache
+  if fallback_cache=$(readUsableUsageCache "$CACHE_STALE_MAX_AGE"); then
+    echo "$fallback_cache"
+    return 0
   fi
 
   # 完全沒有資料
@@ -307,6 +340,138 @@ logStatuslineInput() {
     '{ts: $ts, payload: $payload}' >> "$STATUSLINE_INPUT_LOG" 2>/dev/null || true
 }
 
+isProcessAlive() {
+  local pid="$1"
+
+  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  local process_state
+  process_state=$(getProcessState "$pid") || process_state=""
+  if [[ "$process_state" == "Z" ]]; then
+    return 1
+  fi
+
+  kill -0 "$pid" 2>/dev/null
+}
+
+getProcessState() {
+  local pid="$1"
+  local stat_file="${STATUSLINE_PROC_DIR:-/proc}/${pid}/stat"
+
+  if [[ ! -r "$stat_file" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local stat_content state_part
+  stat_content=$(<"$stat_file") || {
+    echo ""
+    return 0
+  }
+  state_part="${stat_content##*) }"
+  echo "${state_part%% *}"
+}
+
+shouldStartUsageRefresher() {
+  local pid=""
+
+  if [[ -f "$STATUSLINE_REFRESHER_PID_FILE" ]]; then
+    pid=$(<"$STATUSLINE_REFRESHER_PID_FILE") || pid=""
+    if isProcessAlive "$pid"; then
+      return 1
+    fi
+    rm -f "$STATUSLINE_REFRESHER_PID_FILE" 2>/dev/null || true
+  fi
+
+  return 0
+}
+
+isUsageRefresherLockStale() {
+  if [[ ! -d "$STATUSLINE_REFRESHER_LOCK_DIR" ]]; then
+    return 1
+  fi
+
+  local lock_mtime now lock_age
+  lock_mtime=$(stat -c %Y "$STATUSLINE_REFRESHER_LOCK_DIR" 2>/dev/null) || lock_mtime=0
+  now=$(date +%s)
+  lock_age=$(( now - lock_mtime ))
+
+  (( lock_age >= STATUSLINE_REFRESHER_LOCK_STALE_MAX_AGE ))
+}
+
+acquireUsageRefresherLock() {
+  local lock_parent
+  lock_parent="$(dirname "$STATUSLINE_REFRESHER_LOCK_DIR")"
+  mkdir -p "$lock_parent" 2>/dev/null || return 1
+
+  if mkdir "$STATUSLINE_REFRESHER_LOCK_DIR" 2>/dev/null; then
+    return 0
+  fi
+
+  if isUsageRefresherLockStale; then
+    rm -rf "$STATUSLINE_REFRESHER_LOCK_DIR" 2>/dev/null || true
+    mkdir "$STATUSLINE_REFRESHER_LOCK_DIR" 2>/dev/null
+    return $?
+  fi
+
+  return 1
+}
+
+releaseUsageRefresherLock() {
+  rm -rf "$STATUSLINE_REFRESHER_LOCK_DIR" 2>/dev/null || true
+}
+
+cleanupUsageRefresherPid() {
+  local pid=""
+
+  if [[ -f "$STATUSLINE_REFRESHER_PID_FILE" ]]; then
+    pid=$(<"$STATUSLINE_REFRESHER_PID_FILE") || pid=""
+    if [[ "$pid" == "${BASHPID:-$$}" ]]; then
+      rm -f "$STATUSLINE_REFRESHER_PID_FILE" 2>/dev/null || true
+    fi
+  fi
+}
+
+runUsageRefresherLoop() {
+  trap cleanupUsageRefresherPid EXIT
+  trap 'cleanupUsageRefresherPid; exit 0' TERM INT
+
+  while true; do
+    local oauth_token
+    oauth_token=$(getOAuthToken)
+    fetchUsageAPI "$oauth_token" > /dev/null
+    sleep "$STATUSLINE_REFRESHER_INTERVAL"
+  done
+}
+
+startUsageRefresher() {
+  shouldStartUsageRefresher || return 0
+  acquireUsageRefresherLock || return 0
+
+  if ! shouldStartUsageRefresher; then
+    releaseUsageRefresherLock
+    return 0
+  fi
+
+  local pid_parent bg_pid
+  pid_parent="$(dirname "$STATUSLINE_REFRESHER_PID_FILE")"
+  mkdir -p "$pid_parent" 2>/dev/null || {
+    releaseUsageRefresherLock
+    return 0
+  }
+
+  (
+    runUsageRefresherLoop
+  ) > /dev/null 2>&1 &
+  bg_pid=$!
+  if ! printf '%s\n' "$bg_pid" > "$STATUSLINE_REFRESHER_PID_FILE" 2>/dev/null; then
+    kill "$bg_pid" 2>/dev/null || true
+  fi
+  releaseUsageRefresherLock
+}
+
 # ─── 測試模式：只載入函式，不執行主流程 ─────────────────────────────────────
 if [[ "${STATUSLINE_TEST_MODE:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
@@ -317,6 +482,7 @@ fi
 oauth_token=$(getOAuthToken)
 usage_response=$(fetchUsageAPI "$oauth_token")
 eval "$(parseUsageResponse "$usage_response")"
+startUsageRefresher
 
 # ─── 讀取 JSON ───────────────────────────────────────────────────────────────
 
@@ -364,10 +530,24 @@ eval "$(echo "$json" | jq -r '
 # ─── API 資料覆蓋 StatusJSON ──────────────────────────────────────────────────
 # 若 API 有資料，用 API 的 five_hour 資料覆蓋 StatusJSON 的 rate_limits
 if [[ -n "$api_five_hour_resets_at" ]]; then
-  # API utilization 覆蓋 StatusJSON used_percentage
-  json_used_pct=$(normalizePct "$api_five_hour_util")
+  status_json_used_pct=$(normalizePct "$json_used_pct")
+  api_used_pct=$(normalizePct "$api_five_hour_util")
   # ISO 8601 → Unix timestamp
-  json_resets_at=$(date -d "$api_five_hour_resets_at" +%s 2>/dev/null) || json_resets_at=0
+  api_resets_at=$(date -d "$api_five_hour_resets_at" +%s 2>/dev/null) || api_resets_at=0
+
+  # 同一個 reset window 內，較低的 API/cache 值通常是 stale cache；不要讓用量倒退。
+  if (( json_resets_at > 0 && api_resets_at > 0 )); then
+    reset_diff=$(( api_resets_at - json_resets_at ))
+    (( reset_diff < 0 )) && reset_diff=$(( -reset_diff ))
+    if (( reset_diff <= 60 && api_used_pct < status_json_used_pct )); then
+      json_used_pct="$status_json_used_pct"
+    else
+      json_used_pct="$api_used_pct"
+    fi
+  else
+    json_used_pct="$api_used_pct"
+  fi
+  json_resets_at=$api_resets_at
 fi
 
 json_used_pct=$(normalizePct "$json_used_pct")

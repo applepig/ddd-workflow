@@ -126,7 +126,7 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 * 儲存/狀態：Node 內建 SQLite、Pinia
 * 測試：Vitest、Playwright
 * Lint / Format：ESLint、Pint(Laravel)
-* Spec 中的驗收條件必須對映到測試案例
+* Spec 中的驗收條件必須對映到測試案例；對映不出行為測試的驗收條件是 spec 寫壞了——回頭改 AC，不是硬湊字串斷言測試
 
 ## 除錯紀律
 
@@ -136,6 +136,11 @@ Coordinator 主導階段 1–3（規劃），階段 4–5 轉為派工、追蹤�
 
 ## 測試品質
 
+* 測行為，不測實作字面：測試從公開介面進，斷言可觀測輸出（回傳值、render DOM、resolved config 值）。判準：重構內部實作而行為不變時，測試不許紅
+* 反模式一律禁止：讀原始碼／config／docs 做字串斷言（source-grep）、寫死 fixture 數量、把受測程式輸出貼回當 expected、斷言 CSS 數值、over-mock 到只剩 mock 互測
+* 層級對位：純邏輯→unit；元件行為→render；config→讀 resolved 值；視覺→E2E 截圖或人工驗收；文件用字→不測
+* 行為變更必須有行為測試；非行為變更（docs、純視覺）不需要也不得硬造 unit test
+* AC 寫不成行為測試＝spec 的 bug，回頭改 AC，禁止硬湊測試充數
 * 不為規避難度刪測試：因「太複雜／嫌麻煩」而刪除既有測試案例，禁止；但行為已從 spec 移除（deprecate）時，連帶刪掉對應測試是正確的同步——判準是行為還在不在，不是測試好不好寫
 * 邊界案例測試不可省略，不能只寫 happy path
 * 測試覆蓋率數字不代表品質，複雜邏輯需要對應的複雜測試

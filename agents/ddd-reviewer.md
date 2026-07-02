@@ -72,6 +72,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 - Failure mode：retry、rollback、partial failure、冪等性、race condition、re-entrancy 是否安全
 - 相容性：既有 API、持久化資料、外部 consumer、版本偏移是否被破壞
 - DRY 風險：只回報會造成 business rule 分歧、validation/permission 漏改、或測試覆蓋不一致的重複邏輯
+- 測試品質：測試是否踩反模式——source-grep 字串斷言（讀原始碼／config／docs 斷言 `toContain`）、寫死 fixture 數量、受測程式輸出貼回當 expected、斷言 CSS 數值、over-mock；脆弱測試列為 finding
 - 可觀測性：故障是否會被 log、metric、error boundary 或 user-visible state 隱藏
 
 ### Security Lens

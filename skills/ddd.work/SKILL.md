@@ -32,7 +32,8 @@ description: >
    - 驗收條件一律以 `spec.md` 為準；tasks.md（若使用）只承載執行計畫，不取代需求定義
 
 2. **TDD 開發循環（Red → Green → Refactor）**
-   - **Red**：根據驗收條件撰寫測試案例（Vitest / Playwright）
+   - **Red**：根據驗收條件撰寫測試案例（Vitest / Playwright）。動筆前先答「Red 前三問」：這條測試防哪個真實 bug？會因什麼非 bug 原因誤紅？屬於哪一層（純邏輯→unit；元件行為→render；config→讀 resolved 值；視覺→E2E 截圖或人工；文件用字→不測）？第一問答不出來就不寫
+   - 反模式一律禁止：source-grep 字串斷言、寫死 fixture 數量、受測程式輸出貼回當 expected、斷言 CSS 數值、over-mock。AC 寫不成行為測試＝spec 的 bug，暫停回 `/ddd.spec` 改 AC，禁止硬湊測試
    - **Green**：撰寫程式碼直到測試通過
    - **Refactor**：最佳化程式碼結構，確保測試維持通過
 
@@ -152,6 +153,7 @@ works.md 的格式以本節為唯一真相來源，其他 skill 只引用、不�
 ## 核心防呆限制 (Agentic Constraints)
 
 * **Red State Check**：寫完測試後必須先執行，確認看到預期的測試失敗，才准進入實作階段。
+* **測試設計 gate**：「Red 前三問」答不出防哪個真實 bug 的測試不得寫；反模式（source-grep、寫死 fixture 數量、snapshot 當 spec、CSS 數值、over-mock）一律禁止；AC 對映不出行為測試時，暫停回 `/ddd.spec` 改 AC，不硬湊測試充數。
 * **No Logic Leaks**：嚴禁在撰寫測試的階段偷寫任何業務邏輯。測試階段只產出測試檔案。
 * **No Test Modification**：在 Green 階段絕對禁止修改測試檔案來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
 * **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即撤回，禁止在錯誤的基礎上疊加修補。
