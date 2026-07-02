@@ -513,6 +513,8 @@ eval "$(echo "$json" | jq -r '
     ctx_window_size: (.context_window.context_window_size | safe_num),
     used_pct: (.rate_limits.five_hour.used_percentage | safe_num | round),
     resets_at: (.rate_limits.five_hour.resets_at | safe_num),
+    weekly_used_pct: (.rate_limits.seven_day.used_percentage | safe_num | round),
+    weekly_resets_at: (.rate_limits.seven_day.resets_at | safe_num),
     effort_level: (.effort.level // "")
   } | to_entries | map("json_\(.key)=\(.value | @sh)") | .[]
 ' 2>/dev/null)" || {
@@ -524,6 +526,8 @@ eval "$(echo "$json" | jq -r '
   json_ctx_window_size=0
   json_used_pct=0
   json_resets_at=0
+  json_weekly_used_pct=0
+  json_weekly_resets_at=0
   json_effort_level=""
 }
 
@@ -670,14 +674,32 @@ session_filled=$(pctToFilled "$json_used_pct" "$BAR_WIDTH")
 session_color=$(quotaColor "$json_used_pct")
 
 # Weekly（7d quota）：用量 bar + 絕對重置時刻（週重置在數天後，顯示時刻比倒數實用）
-weekly_pct=$(normalizePct "$api_seven_day_util")
+status_json_weekly_pct=$(normalizePct "$json_weekly_used_pct")
+api_weekly_pct=$(normalizePct "$api_seven_day_util")
+weekly_pct=0
+weekly_reset="--"
+if [[ -n "$api_seven_day_resets_at" ]]; then
+  api_weekly_resets_at=$(date -d "$api_seven_day_resets_at" +%s 2>/dev/null) || api_weekly_resets_at=0
+  if (( json_weekly_resets_at > 0 && api_weekly_resets_at > 0 )); then
+    weekly_reset_diff=$(( api_weekly_resets_at - json_weekly_resets_at ))
+    (( weekly_reset_diff < 0 )) && weekly_reset_diff=$(( -weekly_reset_diff ))
+    if (( weekly_reset_diff <= 60 && api_weekly_pct < status_json_weekly_pct )); then
+      weekly_pct="$status_json_weekly_pct"
+    else
+      weekly_pct="$api_weekly_pct"
+    fi
+  else
+    weekly_pct="$api_weekly_pct"
+  fi
+  weekly_reset=$(date -d "$api_seven_day_resets_at" "+%a %H:%M" 2>/dev/null) || weekly_reset="--"
+elif (( json_weekly_resets_at > 0 || status_json_weekly_pct > 0 )); then
+  weekly_pct="$status_json_weekly_pct"
+  if (( json_weekly_resets_at > 0 )); then
+    weekly_reset=$(date -d "@${json_weekly_resets_at}" "+%a %H:%M" 2>/dev/null) || weekly_reset="--"
+  fi
+fi
 weekly_filled=$(pctToFilled "$weekly_pct" "$BAR_WIDTH")
 weekly_color=$(quotaColor "$weekly_pct")
-if [[ -n "$api_seven_day_resets_at" ]]; then
-  weekly_reset=$(date -d "$api_seven_day_resets_at" "+%a %H:%M" 2>/dev/null) || weekly_reset="--"
-else
-  weekly_reset="--"
-fi
 
 # Dir + Git branch + diff（diff 永遠顯示，含 0）
 cwd="$json_project_dir"
