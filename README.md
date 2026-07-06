@@ -71,7 +71,7 @@ flowchart TD
 
     NeedTasks -- 否 --> Work
     NeedTasks -- 是 --> Tasks
-    Tasks["/ddd.tasks<br/>細化 Milestones / optional tasks / 拆分 Sprint"] --> UserTasks{使用者確認任務來源？}
+    Tasks["/ddd.tasks<br/>細化 Milestones / 拆分 Sprint"] --> UserTasks{使用者確認 Milestones？}
     UserTasks -- 修改 --> Tasks
     UserTasks -- 確認 --> Work
 
@@ -102,7 +102,7 @@ flowchart LR
 
 | 角色 | 職責 | 不做什麼 |
 |------|------|----------|
-| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時細化 Milestones、派工、驗收 | 不寫 production code、不 debug、不做 review（例外：`/ddd.fixbug` 直接修） |
+| **Coordinator**（main agent） | 需求分析、撰寫 spec、必要時細化 Milestones、派工、驗收 | 不寫 production code、不 debug、不做 review；`/ddd.fixbug` 的例外條件見該 skill |
 | **ddd-developer** | 以 TDD 循環實作功能程式碼與測試 | 不做架構決策、不跳過測試 |
 | **ddd-reviewer** | 獨立審查程式碼變更，產出 review 報告 | 不修改程式碼 |
 
@@ -118,7 +118,6 @@ docs/
     ├── plan.md                   # (optional) 初步筆記
     ├── research.md               # (optional) 技術調研
     ├── spec.md                   # 規格書：User Story、驗收條件、ADR、輕量 Milestones
-    ├── tasks.md                  # (optional, 淘汰中) 複雜執行協調用，需核可才作任務來源
     └── works.md                  # 成果與決策紀錄
 ```
 
@@ -132,7 +131,7 @@ docs/
 |---------------|------|----------|
 | `/ddd.plan` | 需求模糊時釐清方向 | 「我有個想法…」 |
 | `/ddd.spec` | 撰寫正式規格書 spec.md，含輕量 Milestones | 需求明確，準備定義規格 |
-| `/ddd.tasks` | 細化 Milestones 或拆分 Sprint（複雜協調才建 optional tasks.md） | spec 確認後，且需要細化或拆分 Sprint |
+| `/ddd.tasks` | 細化 Milestones 或拆分 Sprint | spec 確認後，且需要細化或拆分 Sprint |
 | `/ddd.work` | 以 TDD 循環實作（支援平行派工） | spec 確認後 |
 | `/ddd.xreview` | 多模型 cross review | 實作完成，準備提交前 |
 
@@ -140,7 +139,7 @@ docs/
 
 | Slash Command | 用途 |
 |---------------|------|
-| `/ddd.fixbug` | Bug 快速修復——main agent 直接診斷與修復（唯一不派工的例外） |
+| `/ddd.fixbug` | Bug 快速修復；適用條件與例外限制見該 skill |
 | `/ddd.agent-browser` | E2E 除錯——用瀏覽器自動化系統性地除錯前端問題 |
 
 ## 核心原則

@@ -10,9 +10,9 @@ description: >
 
 # ddd.fixbug — Bug 修復
 
-系統性診斷與修復 bug。參考 Superpowers systematic-debugging 方法論，強制四階段流程，禁止跳過根因分析直接猜修。
+系統性診斷與修復 bug。強制四階段流程，禁止跳過根因分析直接猜修。
 
-**Main agent 直接修**——bug 修復是探索性任務，需要與使用者即時討論假設與發現，且通常小而急，派工開銷不值得。這是唯一 main agent 直接寫 code 的 skill。
+**Main agent 直接修**——bug 修復是探索性任務，需要與使用者即時討論假設與發現，且通常小而急，派工開銷不值得。這是唯一 main agent 直接寫 code 的 skill；例外只存在於本 skill，其他文件只引用本 skill，不重述條件。
 
 **定位**：例外的快速解，與 `/ddd.xreview` 互斥。xreview findings 的修正屬於正式流程，由 `/ddd.xreview` 收集決策後派 `ddd-developer` 執行，不進入本 skill。
 
@@ -78,7 +78,7 @@ description: >
 
 ## 三合一 works.md 格式
 
-獨立 hotfix 不走 spec/tasks 流程，改用一份三合一的 works.md 記錄完整脈絡：
+獨立 hotfix 不開 sprint 文件包，以一份三合一 works.md 承擔規格與紀錄：Phase 1 與使用者對齊預期行為與根因假設後才進入修復，這就是底線第 1 條（No Code Without Docs）的輕量規格確認形式。格式如下：
 
 ```markdown
 # Hotfix: <簡述>

@@ -29,37 +29,6 @@ description: >
 5. **Spec self-review** — 5 項檢查（見下方）
 6. **使用者審閱** — 呈現 spec、等待確認、根據回饋修改
 
-## Process Flow
-
-```dot
-digraph spec_flow {
-    "準備工作" [shape=box];
-    "探索 codebase" [shape=box];
-    "需求分析" [shape=box];
-    "撰寫 spec.md" [shape=box];
-    "Spec self-review" [shape=box];
-    "有問題？" [shape=diamond];
-    "修正" [shape=box];
-    "呈現給使用者" [shape=box];
-    "使用者確認？" [shape=diamond];
-    "根據回饋修改" [shape=box];
-    "引導 /ddd.work（或 /ddd.tasks）" [shape=doublecircle];
-
-    "準備工作" -> "探索 codebase";
-    "探索 codebase" -> "需求分析";
-    "需求分析" -> "撰寫 spec.md";
-    "撰寫 spec.md" -> "Spec self-review";
-    "Spec self-review" -> "有問題？";
-    "有問題？" -> "修正" [label="yes"];
-    "修正" -> "Spec self-review";
-    "有問題？" -> "呈現給使用者" [label="no"];
-    "呈現給使用者" -> "使用者確認？";
-    "使用者確認？" -> "根據回饋修改" [label="no"];
-    "根據回饋修改" -> "Spec self-review";
-    "使用者確認？" -> "引導 /ddd.work（或 /ddd.tasks）" [label="yes"];
-}
-```
-
 ## 設計指引
 
 ### 沿用現有 Pattern
@@ -99,7 +68,9 @@ digraph spec_flow {
 
 ### 驗收條件
 （每條必須是可觀測行為——輸入→輸出、render 結果、讀 resolved 值；寫成實作字面（檔案內容、CSS 數值、config 字串）的 AC 會在開發階段誘發 source-grep 測試）
+（關鍵 AC 附具體範例值——輸入→輸出可枚舉的附小表，枚舉不了的寫成不變量。範例值經使用者確認即成為測試預期值的權威來源（oracle），開發階段 worker 不得自行另訂）
 - [ ] 條件 1
+  - 範例：`<輸入> → <輸出>`、`<邊界輸入> → <輸出>`
 - [ ] 條件 2
 - [ ] 條件 3
 
@@ -149,6 +120,7 @@ digraph spec_flow {
 4. **歧義檢查**：有沒有哪個驗收條件能被兩種方式解讀？挑一個寫明確
 5. **Reuse Map 完整性**：「既有資產盤點」是否真的盤點過既有 utility / 元件 / 樣式 token？留空、寫「待補」、或顯然沒搜尋就動筆，視為未過——補搜或註明「無，已搜尋 X、Y 確認」
 6. **AC 行為性檢查**：每條驗收條件能寫成行為測試（輸入→輸出、render 結果、讀 resolved 值）嗎？寫不成的當場改寫成可觀測行為，或明確標註驗收方式（E2E 截圖、人工驗收）——實作字面 AC 會在開發階段誘發 source-grep 測試
+7. **AC 範例值檢查**：關鍵 AC（格式化、計算、排序、邊界值這類輸入→輸出可枚舉者）是否附了具體範例值？枚舉不了的是否改寫成不變量？缺範例的 AC 會迫使 worker 在開發階段自行推導預期值——同一顆腦推導測試與實作，錯會錯得自洽
 
 發現問題直接修正，不需要重跑整個流程。
 

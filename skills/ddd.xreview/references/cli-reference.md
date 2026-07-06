@@ -14,6 +14,18 @@
 
 支援短名（由 `~/.config/ddd-workflow/xreview.json` 的 `aliases` 定義）。`5.4` 保留給 `opencode:github-copilot/gpt-5.4` 等 Copilot fallback 或 legacy 用法。
 
+完整 `<cli:model>` spec 會原樣傳給對應 adapter；短名只是捷徑，不是能力邊界。要針對特定 harness／模型測試時，直接傳完整 spec，例如 `opencode:openai/gpt-5.5` 與 `codex:gpt-5.5` 是不同 harness。
+
+查最新 model id 時先問各 harness CLI，再把查到的 model id 組成 `<cli:model>`：
+
+| Harness | 查詢命令 | 傳給 runner 的格式 |
+|---|---|---|
+| Claude Code | `claude --help` | `claude:<model-or-alias>`，例如 `claude:opus` |
+| Codex CLI | `codex debug models` | `codex:<model>`，例如 `codex:gpt-5.5` |
+| OpenCode | `opencode models --refresh`，或 `opencode models openai --refresh` | `opencode:<provider/model>`，例如 `opencode:openai/gpt-5.5` |
+| Antigravity | `agy models` | `agy:<model>`，例如 `agy:gemini-3.1-pro` |
+| Gemini CLI | 無可靠查詢入口，且本 workflow 已 deprecated | 優先改用 `agy:<model>` |
+
 ### Alias 對照
 
 | 短名 | 解析到的 spec | 走的 adapter |
