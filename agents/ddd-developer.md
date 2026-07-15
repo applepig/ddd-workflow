@@ -143,14 +143,51 @@ Deliverable 對帳：
 - 禁止 barrel file
 - 命名慣例：檔案 kebab-case、變數 snake_case、函式 camelCase、Class UpperCamelCase
 
-## 測試品質標準
+## 測試設計標準
+
+### 行為契約判準
+
+測試從公開介面進，斷言可觀測輸出（回傳值、render 結果、狀態變化、resolved config 值）。唯一判準：**重構內部實作而行為不變時，測試不許紅**——會誤紅的不是行為測試，是實作快照。
+
+### Red 前三問（強制前置）
+
+寫任何測試前，必須先回答；第一問答不出來就不寫這條測試：
+
+1. 這條測試防的是哪個**真實 bug**？
+2. 它會因什麼「非 bug」原因誤紅（改名、格式化、改 seed、視覺微調）？誤紅面大就重新設計。
+3. 它屬於哪一層？（見層級選擇表）
+
+### 層級選擇表
+
+| 要驗的東西 | 正確層級 |
+|---|---|
+| 純邏輯（輸入→輸出） | unit test |
+| 元件行為（互動、條件渲染、事件） | render test（如 @vue/test-utils） |
+| config / wiring | import 後斷言 resolved 值（如 `nuxt.config` 實際的 `allowedHosts`），不是 grep config 檔原文 |
+| 視覺（間距、字級、配色數值） | E2E 截圖或人工驗收，不寫 unit test |
+| 文件用字（README、註解、docs） | 不測 |
+
+### 反模式表（一律禁止）
+
+| 反模式 | 判準 |
+|---|---|
+| source-grep | 讀原始碼／config／docs／其他測試檔做字串斷言——測的是「檔案長怎樣」，不是「程式做什麼」 |
+| 寫死 fixture 數量 | `expect(products).toHaveLength(62)`——只會在有人改 seed 時紅。改測不變量（每筆都 published、依 category 過濾只回該 category），或由 spec 常數推導預期值；數量本身是驗收條件時（如分頁每頁 20 筆），預期值仍須由 spec 常數推導，不從 seed 反查 |
+| snapshot 當 spec | 跑一次受測程式把輸出貼回當 expected——預期值必須從 spec 推導或經使用者核可，不得由受測程式自身產生 |
+| 斷言 CSS 數值 | exact `padding` / `grid-template-columns` 等——視覺回歸交給 E2E 截圖或人眼 |
+| over-mock | mock 到只剩 mock 在互測——只在架構邊界 mock，不 mock 被測模組 |
+
+遇到既有測試踩反模式而誤紅：判定後改寫為行為測試，或回報 coordinator 決策；禁止默默刪除，也禁止遷就它回頭斷言實作字面。
+
+### AC 反向出口
+
+驗收條件寫不成行為測試＝spec 的 bug，不是你的測試技巧問題。回報 coordinator 修 AC，**禁止硬湊 grep 測試充數**。
+
+### 通用紀律
 
 - **不為規避難度刪測試**：因「太複雜／嫌麻煩／想讓它變綠」而刪除或弱化既有測試，禁止。但行為或驗收條件已被 spec 正式移除（deprecate／重構移除功能）時，連帶刪掉對應測試是正確的同步——判準是「行為還在不在」，不是「測試好不好寫」。
 - **邊界案例不可省略**：不能只寫 happy path
-- **測試要有意義**：不測 getter/setter 等無邏輯的程式碼
-- **測不變量，不測 fixture 數量**：assertion 要表達「不管種多少資料都成立的規則」。不要對 seed/fixture 的偶然數量寫死 magic number——`expect(products).toHaveLength(62)` 是反例。改測關係／不變量（「回傳的每筆都 published」「依 category 過濾只回該 category」「排序正確」），或把預期數字由 spec 常數／輸入推導。若數量本身就是驗收條件（如分頁每頁 20 筆），預期值仍須由 spec 常數推導，不從 seed 反查。
-- **每個 assertion 對映一條驗收條件或行為**：寫不出對映的 acceptance criterion / 行為，就不是該測的——刪掉。
-- **測試要能因正確的理由失敗**：只會在「有人改了 seed」時紅的測試，測的不是受測程式碼。
+- **每個 assertion 對映一條驗收條件或行為**：寫不出對映的就刪掉；反過來，AC 對映不出行為測試，走 AC 反向出口
 - **命名要清晰**：讀測試名稱就知道在測什麼
 - **獨立性**：每個測試獨立執行，不依賴其他測試的狀態
 
