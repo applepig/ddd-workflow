@@ -2,7 +2,7 @@
 name: ddd.xreview
 description: >
   Cross review：派多個獨立 AI 模型平行審查文件、規格一致性、實作與安全性，交叉比對 findings 降低單一模型盲點，
-  驗證高嚴重度問題後再交使用者決策。
+  驗證高嚴重度問題後直接回報對話並提出解決方法提案。
   Trigger: "review code", "cross review", "let's review", "check my changes",
   "審查程式碼", "code review", "review 一下", /ddd.xreview。
   開發完成後、commit 或 push 前使用。
@@ -10,7 +10,7 @@ description: >
 
 # ddd.xreview — Cross Review
 
-派多個獨立模型平行審查文件、規格一致性、實作與安全性，交叉比對 findings，**由 coordinator 驗證 Critical/Important 再呈給使用者**。主流程聚焦在「蒐集各方觀點 → 驗證 → 決策」，執行細節交給 orchestrator script。
+派多個獨立模型平行審查文件、規格一致性、實作與安全性，交叉比對 findings，**由 coordinator 驗證 Critical/Important 後直接回報對話**。主流程聚焦在「蒐集各方觀點 → 驗證 → 提出修法」，執行細節交給 orchestrator script。
 
 ## 嚴格禁令
 
@@ -22,7 +22,7 @@ description: >
 
 ### 1. 確認 Review 範圍
 
-- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑（若有已核可的 `tasks.md` 也一併提供）。
+- **Sprint 文件**：當前 sprint 的 `spec.md` 路徑。
 - **Review Lens**：依變更範圍判斷本次啟用哪些 lens。
   1. 只有文件變更 → `Docs Lens`
   2. 文件 + 實作變更 → `Docs Lens`、`Spec Lens`、`Code Lens`、`Security Lens`
@@ -52,11 +52,11 @@ review_prompt_file=$(mktemp /tmp/xreview-XXXXXX.md) && cat > "$review_prompt_fil
 
 審查範圍：
 - Sprint 規格：<spec.md 路徑>
-- 任務來源：<spec.md Milestones；若有已核可 tasks.md 則填其路徑>
+- 任務來源：<spec.md 路徑>（Milestones）
 - 變更：請執行 `<git diff 指令>` 取得
 - 本次啟用 lens：<Docs Lens / Spec Lens / Code Lens / Security Lens>
 
-請依啟用的 lens 與 ddd-reviewer 角色定義審查。先讀取 sprint 文件理解目標、驗收條件與任務來源；任務來源預設為 spec.md Milestones，只有已核可的 tasks.md 才取代它（legacy tasks.md 僅供歷史參考，不作完成度判定）。最後檢視文件與程式碼變更。
+請依啟用的 lens 與 ddd-reviewer 角色定義審查。先讀取 sprint 文件理解目標、驗收條件與任務來源（spec.md Milestones），再檢視文件與程式碼變更。
 XREVIEW_EOF
 echo "$review_prompt_file"
 ```
@@ -145,41 +145,22 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 
 **原則**：驗證時讀實際程式碼，不靠 reviewer 描述；共識不等於正確，共識問題仍須驗證；低嚴重度直接帶過。
 
-**5.4 Decision Brief Gate**
+**5.4 對話回報**
 
-使用 Question Tool 前，必須先輸出足以讓使用者直接決策的 Decision Brief。不得只列 issue 標題或一句話摘要。
+完整報告直接回應到對話，不另寫 `xreview-<YYYYMMDD>.md`，也不串 Question Tool。使用者要修哪些項目、採用哪個方案，改由一般對話確認；不得在同一輪自動修改程式碼。
 
-Decision Brief 至少包含：
+對話報告至少包含：
 
 1. Review 範圍、啟用 lens、reviewer 成功 / 失敗狀態
 2. 每個待決策 issue 的 ID、嚴重度、提出者、驗證結果；ID 採 `Issue #N` 循序編號，與第 6 節 Question Tool 的 `header` 同一套編號
 3. 證據：檔案路徑、行號、必要程式碼片段
 4. 影響：不修會造成什麼風險
-5. Coordinator 建議：建議優先處理順序、建議修法、可跳過項目與理由
+5. 解決方法提案：每個待處理 issue 至少列 1 個建議修法；有明顯 tradeoff 時列 2–3 個方案，標出推薦方案與理由
 6. ❌ False Positive 項目：每項一行帶過（finding 與駁回理由），不列入待決策
 
-若一則訊息放不下，先分段輸出完整 Decision Brief，再提問。
+### 6. 修正銜接
 
-**5.5 Question Tool Gate**
-
-Question Tool 只收集決策，不補背景。每題必須引用 Decision Brief 中的 issue ID，且不可在 Question Tool 中首次揭露關鍵資訊。
-
-Question Tool 的 `preview` 欄位僅在 host 支援時使用（例如 Claude Code）。若 host 不支援，程式碼片段必須放在 Decision Brief。
-
-### 6. 逐條決策
-
-對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在 Decision Brief 已完整輸出後，用 Question Tool 逐條詢問使用者修正方向。
-
-**批次策略**：Question Tool 每次最多 4 題，盡量一次問完。issues 超過 4 個時分批，每批一次 Question Tool call。
-
-**每個 issue 一題**，格式：
-
-- `header`：`"Issue #N"`
-- `question`：一句話詢問修正方向，引用 Decision Brief issue ID
-- `preview`（規則見 5.5）：問題程式碼片段（含檔案路徑與行號）
-- `options`：根據 reviewer 意見與 coordinator 驗證結果，列出具體可行的修法方案（各方案在 description 簡述怎麼改），加上「不修，跳過」。使用者可透過自動附加的 Other 給自訂指示
-
-收集完所有決策後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
+對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在對話報告中附修法提案與建議優先序。使用者明確要求修正後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
 
 修正完成並驗收後，由 coordinator 在當前 sprint 的 `works.md` 追加紀錄，不需要獨立開檔（works.md 整體格式見 `/ddd.work`）：
 
@@ -192,7 +173,7 @@ Question Tool 的 `preview` 欄位僅在 host 支援時使用（例如 Claude Co
 
 ## 產出
 
-- Cross Review 對照報告（對話中呈現）
+- 對話中的 Cross Review 報告（對照表＋驗證結果＋解決方法提案）
 - 使用者確認後的程式碼修正（由 `ddd-developer` 執行）
 - 更新後的 `works.md`（xreview 修正紀錄）
 

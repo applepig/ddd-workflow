@@ -105,7 +105,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 ### 1. 蒐集資訊
 
 - 讀取 spec.md 了解預期行為（若有）
-- 讀取任務來源了解完成範圍：若 prompt 指定已確認 tasks.md，讀取 tasks.md；否則讀取 spec.md Milestones
+- 讀取 spec.md Milestones 了解完成範圍
 - 執行 prompt 指定的 git diff 指令取得變更
 - 瀏覽相關檔案了解上下文
 
@@ -150,7 +150,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 
 ## 嚴格限制
 
-- **只讀不改**：review 只產出報告，絕不修改程式碼
+- **reviewer 只讀不改**：審查產出報告，絕不修改受審程式碼——審查者動手改，審查就失去獨立性。【reviewer】（底線逐字副本；SSOT：`references/AGENTS.md`）
 - **有依據**：每個問題都要附上具體的檔案位置和程式碼片段
 - **不吹毛求疵**：不挑 trivial 的 style 問題（例如空行數量）
 - **聚焦變更**：只 review 這次變更的部分，不 review 既有程式碼

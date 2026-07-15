@@ -109,4 +109,4 @@ Project-level ADR 放在 `TECHSTACK.md` 或其連結的 ADR；sprint-specific tr
 
 `/ddd.spec` 流程完成、使用者確認規格後，依 spec 內 Milestones 複雜度引導使用者執行 `/ddd.work` 或 `/ddd.tasks`。
 
-若中途需要收斂但尚未進入 `/ddd.spec`，先輸出目前已確認決策、未解風險、建議下一步，並用 Question Tool 讓使用者選擇繼續 grill 或進 spec。
+若中途需要收斂但尚未進入 `/ddd.spec`，先以**該輪最終訊息**輸出目前已確認決策、未解風險、建議下一步，讓使用者讀完；下一輪才用 Question Tool 讓使用者選擇繼續 grill 或進 spec。同輪送出時，工具呼叫前的文字不會顯示，使用者會沒讀到報告就面對問題。

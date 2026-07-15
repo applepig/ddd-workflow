@@ -1,48 +1,29 @@
 ---
 name: ddd.tasks
 description: >
-  任務拆解：spec.md 確認後，必要時細化 Milestones、建立 optional tasks.md 作為複雜執行計畫，
+  任務拆解：spec.md 確認後，必要時將 Milestones 就地細化為 task 列表，
   或將過大的 scope 拆成 semver-like 子編號資料夾。
   Trigger: "細化 milestones", "拆分 sprint", "break down tasks",
   "create a task list", "split into sub-sprints", /ddd.tasks。
 ---
 
-# ddd.tasks — 細化 Milestones ／Optional Tasks ／拆分 Sprint
+# ddd.tasks — 細化 Milestones ／ 拆分 Sprint
 
-任務拆解階段。預設任務來源是 `spec.md` Milestones；`/ddd.tasks` 多數時候只是把特定 milestone 在 spec.md 內就地展開。
+任務拆解階段。任務來源永遠是 `spec.md` Milestones；`/ddd.tasks` 做的是把特定 milestone 在 spec.md 內就地展開，或在 scope 過大時拆分 sprint。拆解建立在已對齊的規格上——spec.md 未經使用者確認前不拆任務（底線第 1 條的同一道理）。
 
-> **tasks.md 正在淘汰（deprecating）。** 它不是必備文件，長期會被移除；現階段僅保留給「複雜執行協調」一種情境，預設別用——能放回 spec.md Milestones 就放回去。本檔案是 tasks.md 生命週期規則（何時建、確認 gate、legacy 處理）的唯一真相來源，其他 skill 只引用、不重述。
-
-<HARD-GATE>
-嚴禁在 spec.md 未獲使用者確認前拆任務。
-更新 spec.md 或建立 tasks.md 後必須停在 User Review Gate，使用者確認或明確跳過審閱後才可進入 /ddd.work。
-嚴禁因為 sprint 目錄存在 legacy tasks.md 就自動把它當任務來源；必須先取得使用者確認。
-嚴禁用過大的 spec 或 tasks.md 硬撐；scope 過大時必須先拆 sprint。
-</HARD-GATE>
+> 歷史註記：舊版曾支援 optional `tasks.md` 作為獨立執行計畫，已淘汰；既有專案裡的 legacy tasks.md 僅供歷史參考，不作任務來源。
 
 ## Decision Gate
 
-讀取 spec.md 後，先判斷下一步：
+讀取 spec.md 後，判斷下一步：
 
-- **不需要 tasks**：Milestone 已夠清楚、沒有平行工作線、沒有複雜匯合點、task 總數約 10 個以內。不要建立 tasks.md，直接引導 `/ddd.work`。
-- **在 spec.md 內細化**：需要展開少量 task、補範圍/驗證、或標記簡單平行工作線，但內容仍適合留在 spec.md。→ 更新 spec.md Milestones。
-- **建立 optional tasks.md**：需要多 agent / 多 worktree 平行派工、跨模組依賴、介面先行、複雜匯合點，或 task 上下文太長，放在 spec.md 會干擾需求閱讀。→ 建立 `tasks.md`，經使用者確認後作任務來源。
-- **拆分 sprint**：預期超過 5 個 milestone、超過約 15 個 task，或涵蓋多個可獨立交付的子系統。→ 拆成 semver-like 子編號資料夾。
-
-## Checklist
-
-1. **讀取 spec.md** — 確認目標、非目標、驗收條件、邊界案例、ADR 與既有 Milestones
-2. **檢查 legacy tasks.md** — 若已存在 tasks.md，先確認它是歷史參考、要沿用，或要整合回 spec.md
-3. **Decision Gate** — 判定：不需要 tasks、在 spec.md 內細化、建立 optional tasks.md、或拆分 Sprint
-4. **執行** — 更新 spec.md Milestones、建立 tasks.md，或建立子 sprint 資料夾與各自的 spec.md
-5. **Self-Review** — 依下方清單自我檢查，修正問題
-6. **User Review Gate** — 呈現任務來源，等待確認；若建立 `tasks.md`，只有 User Review Gate 通過後才可把狀態更新為「已由使用者確認作為本 sprint 任務來源」，再引導 `/ddd.work`
+- **不需要細化**：Milestone 已夠清楚、沒有平行工作線、沒有複雜匯合點、task 總數約 10 個以內 → 不改檔案，直接引導 `/ddd.work`。
+- **細化 Milestones**：需要展開 task、補範圍／驗證、或標記平行工作線 → 在 spec.md 內就地更新。
+- **拆分 Sprint**：預期超過 5 個 milestone、超過約 15 個 task，或涵蓋多個可獨立交付的子系統 → 拆成 semver-like 子編號資料夾。scope 過大時先拆，不用過大的 spec 硬撐。
 
 ## 細化 Milestones
 
-將 spec.md 的 Milestone 就地展開為 task 列表。每個 task 遵循 Agentic TDD：測試與實作分離、原子性（一個 task 專注一個行為）。
-
-適合條件：細化後仍容易閱讀、沒有大量 worker 上下文卡片、task 不會把 spec.md 撐成執行手冊。
+將 spec.md 的 Milestone 就地展開為 task 列表。每個 task 遵循 Agentic TDD：測試與實作分離、原子性（一個 task 專注一個行為）。細化後的 spec.md 仍要容易閱讀——task 列表若把 spec 撐成執行手冊，代表該走拆分 Sprint。
 
 ### 細化後的 Milestone 格式範例
 
@@ -76,44 +57,14 @@ description: >
 - [ ] 前後端整合測試 (Red → Green)
 ```
 
-## 建立 optional tasks.md
-
-當執行計畫太長或需要獨立協調空間時，建立 `docs/<編號>-<名稱>/tasks.md`。它只在本 sprint 被使用者確認後成為任務來源；否則只是草稿或歷史參考。
-
-新建 `tasks.md` 的預設狀態必須是草稿／待使用者確認。User Review Gate 通過前，不得把狀態寫成已確認；通過後才可更新狀態並作為 `/ddd.work` 任務來源。
-
-### tasks.md 格式
-
-```markdown
-# Tasks: <功能名稱>
-
-## 任務來源
-
-- Spec: `docs/<編號>-<名稱>/spec.md`
-- 狀態：草稿，待使用者確認；確認前不得作為本 sprint 任務來源
-
-## Milestone 1: <名稱>
-> 範圍：...
-> 驗證：...
-> 預期結果：...
-
-- [ ] 撰寫/更新測試 (Red)
-- [ ] 實作最小功能 (Green)
-- [ ] Refactor 並確認測試維持通過
-```
-
 ## 平行工作指引
 
 若 task 總數不超過 4 個且只涉及 1–2 個檔案，直接序列執行，跳過平行分析。
 
-**切分標準**：兩條工作線不會修改同一個檔案，且透過明確介面（API contract / shared types）銜接，即可平行。反之若共用全域狀態、需要同時改同一檔案、或介面尚未確定，則不可平行。
-
-**執行原則**：
-- **Worktree 隔離**：平行前必須在 `$PROJECT_ROOT/.worktree/<branch-name>/` 建立每條工作線的獨立 git worktree；worker 只在自己的 worktree 內工作，完成後以分支保留，主行程負責合併
-- **介面先行**：銜接介面必須在分線前確定；未定義則先用序列 task 確立
-- **匯合點必測**：合併後必須有整合測試驗證銜接正確
-
-**Worker 上下文卡片**：每條工作線的 blockquote 是 worker 的上下文卡片——`/ddd.work` 的 coordinator 直接擷取這裡的資訊組裝 worker prompt。必須包含：範圍（檔案/目錄路徑）、依賴（前置 task 或外部依賴）、介面契約（有平行線時必填）、驗證（完成後的驗證方式）。
+- **切分標準**：兩條工作線互不修改同一檔案，且透過明確介面（API contract / shared types）銜接，即可平行；共用全域狀態、需要同時改同一檔案、或介面尚未確定時，先用序列 task 確立介面再分線。
+- **介面先行**：銜接介面在分線前確定。
+- **匯合點必測**：合併後以整合測試驗證銜接正確。
+- 每條工作線標題下的 blockquote 是 worker 的上下文卡片；欄位定義與擷取方式見 `/ddd.work` 的「工作線上下文卡片（格式 SSOT）」。
 
 ## 拆分 Sprint
 
@@ -129,26 +80,23 @@ docs/18.3-auth-ui/
     └── spec.md
 ```
 
-拆分後，父 sprint 不再承載可執行任務。`/ddd.work`、`/ddd.xreview`、`ddd-developer`、`ddd-reviewer` 都只以各子 sprint 的 `spec.md` 或已確認的 optional `tasks.md` 作為任務來源。
+拆分後，父 sprint 不再承載可執行任務；`/ddd.work`、`/ddd.xreview`、`ddd-developer`、`ddd-reviewer` 都以各子 sprint 的 `spec.md` 作為任務來源。
 
 ## Self-Review
 
-以新鮮眼光對照 spec 自我檢查：
+以新鮮眼光對照 spec 自我檢查，發現問題直接修正：
 
-1. **Spec 覆蓋度**：逐條掃描 spec 的目標、驗收條件、邊界案例，確認每項都反映在任務來源中。列出遺漏並修正
-2. **Task 完整性**：檢查是否有模糊描述、測試與實作混在同一 task、缺少 Red/Green 標記、milestone 缺少預期結果或驗證方式
+1. **Spec 覆蓋度**：逐條掃描 spec 的目標、驗收條件、邊界案例，確認每項都反映在 Milestones 中。列出遺漏並修正。
+2. **Task 完整性**：是否有模糊描述、測試與實作混在同一 task、缺少 Red/Green 標記、milestone 缺少預期結果或驗證方式。
 3. **依賴一致性**：平行工作線的介面契約是否在分線前確立？Milestone 間的依賴方向是否合理？
-4. **SSOT 清楚度**：若建立 tasks.md，是否明確標示為草稿／待使用者確認？是否只有 User Review Gate 通過後才把狀態更新為已由使用者確認作為本 sprint 任務來源？spec.md 是否仍保留需求與驗收條件，而不是被 tasks.md 取代？
-
-發現問題直接修正。若發現 tasks.md 只是把 spec 機械轉成更長的 checklist，刪除 tasks.md 草稿，維持原本的輕量 Milestones。
+4. **輕量維持**：細化只落在 Milestones，需求與驗收條件不動；若細化只是把 spec 機械轉成更長的 checklist，回退維持原本的輕量 Milestones。
 
 ## 產出
 
-- 不需要 tasks：不新增檔案，直接引導 `/ddd.work`
-- spec 細化：更新 `docs/<編號>-<名稱>/spec.md` 的 Milestones
-- optional tasks：建立 `docs/<編號>-<名稱>/tasks.md`
+- 不需要細化：不新增檔案，直接引導 `/ddd.work`
+- 細化：更新 `docs/<編號>-<名稱>/spec.md` 的 Milestones
 - 拆分：建立 `docs/<編號>.<子編號>-<名稱>/spec.md`
 
 ## 結束條件
 
-使用者確認任務來源後，引導執行 `/ddd.work`。
+呈現更新後的任務來源（該輪最終訊息），等待使用者確認；確認後引導執行 `/ddd.work`。

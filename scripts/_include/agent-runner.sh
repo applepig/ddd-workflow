@@ -131,6 +131,30 @@ cleanup_tmp_file() {
   [[ -n "$tmp_file" && -f "$tmp_file" ]] && rm -f "$tmp_file"
 }
 
+# resolve_spec: alias 短名 → 完整 cli:model。
+# 已含 ":" 的 spec 直接通過；alias miss 時保留原字串交給下游驗證。
+resolve_spec() {
+  local spec="$1"
+  local aliases_json="$2"
+  local resolved=""
+
+  if [[ "$spec" == *:* ]]; then
+    echo "$spec"
+    return
+  fi
+
+  if [[ -n "$aliases_json" ]]; then
+    resolved="$(jq -r --arg alias "$spec" '.[$alias] // empty' <<< "$aliases_json" 2>/dev/null)"
+  fi
+
+  if [[ -n "$resolved" ]]; then
+    echo "$resolved"
+    return
+  fi
+
+  echo "$spec"
+}
+
 cleanup_process_groups() {
   local pid pgid
   local pgids=()
@@ -312,28 +336,6 @@ runid="$(make_run_id)"
 # ADR-6: timeout is enforced here (orchestrator layer) via `timeout --foreground`,
 # NOT inside adapters. Adapters stay pure passthroughs.
 per_reviewer_timeout="$(get_xreview_timeout)"
-
-resolve_spec() {
-  local spec="$1"
-  local aliases_json="$2"
-  local resolved=""
-
-  if [[ "$spec" == *:* ]]; then
-    echo "$spec"
-    return
-  fi
-
-  if [[ -n "$aliases_json" ]]; then
-    resolved="$(jq -r --arg alias "$spec" '.[$alias] // empty' <<< "$aliases_json" 2>/dev/null)"
-  fi
-
-  if [[ -n "$resolved" ]]; then
-    echo "$resolved"
-    return
-  fi
-
-  echo "$spec"
-}
 
 config_needs_parse=false
 aliases_json='{}'

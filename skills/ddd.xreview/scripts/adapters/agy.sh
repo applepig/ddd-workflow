@@ -148,6 +148,7 @@ run_home="$ISO_HOME"
 # gemini config layout. Use awk to strip the YAML frontmatter (do NOT reuse
 # codex's toml extractor). Missing/empty file degrades: warn + forward prompt
 # as-is, exit code still passthrough (AC18).
+#
 xdg_cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
 agent_candidates=(
   "$xdg_cfg/gemini/agents/ddd-reviewer.md"

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ddd-worker-report",
+  "description": "ddd-developer 完成協議的 JSON 載體。與文字協議同構——語意的 SSOT 是 agents/ddd-developer.md 的「完成協議」一節；欄位變更須同 commit 更新兩載體。條件必填依賴 draft-07 的 allOf/if-then；若目標平台的 structured output 僅支援嚴格子集（如 Gemini responseSchema、OpenAI strict mode），移除 allOf 區塊後使用，條件必填改由文字協議（ddd-developer.md 完成協議）承擔。",
+  "type": "object",
+  "required": ["status", "summary"],
+  "properties": {
+    "status": { "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "FAIL"] },
+    "summary": { "type": "string" },
+    "test_results": { "type": "string" },
+    "deliverables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["item", "done", "evidence"],
+        "properties": {
+          "item": { "type": "string" },
+          "done": { "type": "boolean" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "unverified": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["DONE", "DONE_WITH_CONCERNS"] } }, "required": ["status"] },
+      "then": { "required": ["deliverables", "unverified"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DONE" } }, "required": ["status"] },
+      "then": { "required": ["test_results"] }
+    }
+  ]
+}

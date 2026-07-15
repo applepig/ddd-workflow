@@ -1,8 +1,8 @@
 ---
 name: ddd.work
 description: >
-  TDD 開發執行：以 Red → Green → Refactor 循環實作 spec.md Milestones。
-  遇到 🔀 平行工作線時，coordinator 直接派 ddd-developer subagent 分工。
+  TDD 開發執行：coordinator 派 ddd-developer 以 Red → Green → Refactor 循環實作 spec.md Milestones；
+  遇到 🔀 平行工作線時同時派發多個 worker 分工。
   Trigger: "start implementing", "begin development", "let's code", "do TDD",
   "開始實作", "開始寫", "動工", /ddd.work。
   spec.md 已確認後，準備寫程式碼時使用。
@@ -10,129 +10,94 @@ description: >
 
 # ddd.work — 開發執行
 
-開發執行階段。以 TDD 循環逐一完成**任務來源**中的 milestone。任務來源預設為 `spec.md` Milestones。
+開發執行階段。以 TDD 循環逐一完成 `spec.md` Milestones；不指定編號時，從第一個未完成的 milestone 開始。實作一律由 `ddd-developer` 執行——coordinator 不寫 production code（角色分工見 AGENTS.md）；TDD 紀律與測試設計判準由 worker 的 agent definition 自帶，不在派工 prompt 重述。
 
-不指定 milestone 編號時，從第一個未完成的 milestone 開始。
+## 派工 pipeline
 
-> 若 sprint 目錄存在 `tasks.md`（淘汰中的路徑，規則見 `/ddd.tasks`），先確認它已被使用者核可為本次任務來源才改用；未確認則只當歷史參考。
+每個 milestone 走同一條 pipeline，一次一個 milestone、驗收通過才派下一個——小包依序派工，worker context 才不會中途耗盡。唯一的變數是 worker 數量 **N**：milestone 沒有 `🔀 可平行工作線` 時 N=1；有 `🔀` 時 N=工作線數。
 
-## 模式判定
+### 1. 鎖定範圍
 
-讀取當前任務來源的 milestone 時，根據其結構判定執行模式：
+- 讀 `spec.md`，確認當前 milestone 的範圍與驗收條件。
+- N>1 的前置檢查：各工作線互不修改同一檔案、介面契約已在分線前確定。不滿足時併線改 N=1，或先用一個序列 task 確立介面。
+- 工作線之間存在介面契約時，分線前的序列 task 要一併產出**可執行契約測試**（介面簽名＋spec 範例值的雙側斷言）：契約測試檔屬前置 task 的產出，不算入任何一線的檔案範圍，各線上下文卡片的「驗證」欄都含「契約測試綠」——接縫在兩線各自 DONE 之前就有人看守，而不是等匯合點才發現不一致。
 
-- **序列模式**：milestone 內沒有 `🔀 可平行工作線` → 主行程逐一執行 TDD 循環
-- **平行模式**：milestone 內有 `🔀 可平行工作線` → coordinator 直接派發 `ddd-developer` subagent
+### 2. 組 worker prompt
 
-## 序列模式：TDD 開發循環
+每個 worker prompt 要讓 worker 不需自行探索就能理解任務：coordinator 提供摘要與關鍵片段，完整檔案路徑列在「參考檔案」供按需讀取。N=1 時用不到的段落（工作線、介面契約）省略。
 
-適用於一般的線性 milestone。
+```markdown
+## 整體目標
+（從 spec.md 摘要本 milestone 的目標）
 
-1. **鎖定範圍**
-   - 讀取任務來源，確認當前 milestone 的範圍與驗收條件
-   - 驗收條件一律以 `spec.md` 為準；tasks.md（若使用）只承載執行計畫，不取代需求定義
+## 你的工作線：[X] <標題>
+（複製該工作線的完整內容，含所有 task）
 
-2. **TDD 開發循環（Red → Green → Refactor）**
-   - **Red**：根據驗收條件撰寫測試案例（Vitest / Playwright）。動筆前先答「Red 前三問」：這條測試防哪個真實 bug？會因什麼非 bug 原因誤紅？屬於哪一層（純邏輯→unit；元件行為→render；config→讀 resolved 值；視覺→E2E 截圖或人工；文件用字→不測）？第一問答不出來就不寫
-   - 反模式一律禁止：source-grep 字串斷言、寫死 fixture 數量、受測程式輸出貼回當 expected、斷言 CSS 數值、over-mock。AC 寫不成行為測試＝spec 的 bug，暫停回 `/ddd.spec` 改 AC，禁止硬湊測試
-   - **Green**：撰寫程式碼直到測試通過
-   - **Refactor**：最佳化程式碼結構，確保測試維持通過
+## 檔案範圍
+（本工作線涉及的檔案/目錄路徑）
 
-3. **Simplify**
-   - 由 main agent 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff
-   - 它會平行啟動 code reuse / code quality / efficiency 三個 review agent 並直接修正問題
-   - `ddd-developer` worker 沒有 Skill tool，嚴禁把這步交給 worker；host 沒有 `/simplify` 時跳過此步，不要嘗試替代實作
+## 介面契約
+（從工作線上下文卡片複製介面定義）
 
-4. **自我驗收**
-   - 執行所有相關測試，確認全部通過
-   - 執行 E2E 驗證（若任務來源有標註驗證方式，依其步驟執行）
-   - 檢查是否符合 spec 中的驗收條件
+## 關鍵預期值
+（從 spec 的 AC 範例值複製本任務相關的輸入→輸出範例；worker 斷言以此為準，不自行另訂）
 
-5. **更新文件**
-   - 任務來源：勾選已完成的 task（`- [x]`）
-   - `works.md`：記錄本次 milestone 的技術決策與問題解決（格式見下方「works.md 格式」）
+## 關鍵上下文
+（介面定義、函式簽名、型別定義與關鍵邏輯片段；不 raw dump 整個檔案）
 
-6. **回報使用者**
-   - 展示完成的功能與測試結果
-   - 等待使用者確認後才 commit
-   - 嚴禁自動提交，測試通過不等於提交授權
+## 參考檔案
+- `docs/<編號>-<名稱>/spec.md`
+- （其他相關 source files）
 
-## 平行模式：Coordinator 派發
+## 回報協議
+依 ddd-developer 定義的完成協議回報：開工先列 deliverable checklist；完成後首行
+`<STATUS>: <一句話摘要>（測試結果）`，附 Deliverable 對帳與未驗證清單。
+```
 
-適用於 milestone 內包含 `🔀 可平行工作線` 的情境。主行程作為 coordinator，直接派發 `ddd-developer` subagent。
+**工作線上下文卡片（格式 SSOT）**：spec.md 內每條 `🔀` 工作線標題下的 blockquote 是 worker 的上下文卡片，coordinator 直接擷取它組裝 prompt。欄位：**範圍**（檔案／目錄路徑）、**依賴**（前置 task 或外部依賴）、**介面契約**（N>1 時必填）、**驗證**（完成後的驗證方式）。
 
-### Phase 1: 準備派發
+### 3. 派發 1..N
 
-1. **解析工作線**
-   - 從任務來源讀取所有 `[A]`、`[B]`… 工作線
-   - 確認每條線的範圍、依賴、介面契約與驗證方式
-   - 若工作線會修改同一檔案或介面尚未確定，退回序列模式
+- N>1 時，先為每條工作線自當前分支建立專屬分支，worktree 建在 `$PROJECT_ROOT/.worktree/<工作線分支名>/`——git 不允許同一分支同時 checkout 到兩個 worktree。worker 只在自己的 worktree 內工作，完成後以分支保留、由 coordinator 合併。host 不支援平行派發或 worktree 時，改 N=1 依序派發並明講。
+- 派發是例行下一步，不是決策點；只有派發計畫會改變 scope、或存在未決風險時，才用 Question Tool 確認。派發後在**同一輪的最終訊息**回報派發內容（哪些工作線、各自範圍）——工具呼叫前的中間文字使用者看不到，不做「先展示、再派發」的兩段式。
+- host 支援 worker 雙向溝通（如 team SendMessage）時，worker 對介面契約或預期值的提問是例行協作，即時回覆釘值；釘下的值同步回填 spec 的 AC 範例，維持 SSOT。
 
-2. **組裝 worker prompt**
+### 4. 驗收
 
-   每個 worker prompt 必須讓 worker 不需要自行探索就能理解任務。Coordinator 負責提供摘要和關鍵片段；完整檔案路徑列在「參考檔案」供 worker 按需讀取。
+- 檢查首行狀態與 Deliverable 對帳，並**實際重跑該範圍的測試**——沒有測試輸出且未說明 `N/A` 理由的 `DONE` 視為未完成，要求補驗證；隱瞞失敗或跳過環境問題的回報，同樣不收。
+- `DONE_WITH_CONCERNS`：逐項 review 未驗證項與疑慮，決定補做或接受，不當 clean `DONE` 推進。
+- `BLOCKED`／`FAIL`：向使用者提供重試、主行程修復、跳過的決策選項。
+- 測試設計 gate：抽查 worker 產出的測試是否踩反模式（判準見 `ddd-developer` 定義的反模式表）；驗收條件寫不成行為測試＝spec 的 bug，暫停回 `/ddd.spec` 改 AC，不硬湊測試充數。
+- 預期值對帳：斷言值是否對映 spec 的 AC 範例值；回報「未驗證」清單中標註「推導值」的項目逐一核對——推導錯的預期值是自洽但錯的 test+impl 配對，測試重跑抓不到，只有這道對帳抓得到。
+- N>1 匯合（`🔗` 匯合點）：逐線整合，每整合一線跑該線相關測試；全部整合後執行匯合點的整合測試 task。
 
-   Prompt 包含：
+### 5. Simplify
 
-   ```markdown
-   ## 整體目標
-   （從 spec.md 摘要本 milestone 的目標）
+由 main agent 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff；worker 沒有 Skill tool，這步留在主迴圈。host 沒有 `/simplify` 時跳過，不做替代實作。
 
-   ## 你的工作線：[X] <標題>
-   （從任務來源複製該工作線的完整內容，含所有 task）
+### 6. 更新文件
 
-   ## 檔案範圍
-   （列出本工作線涉及的所有檔案/目錄路徑）
+- `spec.md`：勾選已完成的 task（含各工作線與匯合點）。
+- `works.md`：記錄技術決策與問題解決（格式見下）；N>1 時額外記錄派發決策、各 worker 結果、合併過程。
 
-   ## 介面契約
-   （從任務來源的 blockquote 複製介面定義）
+### 7. 回報與 commit gate
 
-   ## 關鍵上下文
-   （貼介面定義、函式簽名、型別定義與關鍵邏輯片段；不要 raw dump 整個檔案）
+- commit 前跑**完整測試套件**（不只本 milestone 範圍）——worker 收工與驗收重跑的都是範圍內測試，跨模組迴歸只有這一步攔得到；全綠才進 commit gate。
+- 展示完成的功能與測試結果，等待使用者確認後才 commit（commit 授權見 AGENTS.md 底線第 3 條）。
+- 開發中發現規格有誤或需要變更：暫停，回 `/ddd.spec` 更新並經使用者確認後再繼續。
 
-   ## 參考檔案
-   - `docs/<編號>-<名稱>/spec.md`
-   - `docs/<編號>-<名稱>/tasks.md`（若本 sprint 使用已核可的 tasks.md）
-   - （其他相關 source files）
+## Workflow 派工（host 條件敘述）
 
-   ## 開工協議
-   動工前，先把每條 deliverable / 驗收條件列成 checklist，作為實作與最終對帳的基準。
+host 具備 workflow orchestration（如 Claude Code 的 Workflow tool）、且 milestone 有多條 `🔀` 工作線時，coordinator 可把第 3 步改為 workflow 派發：
 
-   ## Worker 完成協議
-   完成實作後，依序執行：
-   1. Unit test：執行相關測試並回報完整結果
-   2. E2E 驗證：若工作線有標註驗證方式，依步驟執行
-   3. 回報：首行單行 `<STATUS>: <一句話摘要>（測試結果：X passed, Y failed）`，狀態取 `DONE`（全部完成且驗證）/ `DONE_WITH_CONCERNS`（完成但有未驗證項或疑慮，coordinator 會逐項 review）/ `BLOCKED`（外部阻塞）/ `FAIL`（自己無法解決）；首行後附「Deliverable 對帳」逐條對照開工 checklist 列 deliverable + 證據，與「未驗證」清單。禁止把未完成/未驗證包進 `DONE`
-   4. 不得自行 commit
-   ```
+- 每條線 `agent(prompt, { agentType: 'ddd-developer', isolation: 'worktree', schema })`，schema 讀自本 skill 的 `references/worker-report.schema.json`。
+- worker 以 StructuredOutput 回報 schema 同構欄位（status／summary／test_results／deliverables／unverified），語意與文字協議相同，驗收方式不變。
+- Question Tool gate、驗收（第 4 步起）、commit 授權留在主迴圈——workflow 在背景執行，其中的 agent 無法與使用者對話。
+- host 不具備 workflow orchestration 時，維持第 3 步的逐線派發，行為不變。
 
-3. **確認派發計畫**
-   - 向使用者展示工作線清單與 subagent 數量
-   - 使用 Question Tool 確認是否開始派發
+## Fallback 鏈
 
-### Phase 2: 派發與追蹤
-
-1. **派發 subagent**
-   - 對每條工作線呼叫 `ddd-developer` subagent
-   - 多條工作線可平行派發；派發前必須先在 `$PROJECT_ROOT/.worktree/<branch-name>/` 建立每條工作線的獨立 git worktree，並要求 worker 只在自己的 worktree 內工作
-   - 若 host 不支援平行派發，或無法提供獨立 worktree，退回序列模式並明確告知
-   - Worker 不得 commit；commit 由 coordinator 匯合後、經使用者確認才執行
-
-2. **追蹤結果**
-   - 收到 worker 回報後，檢查狀態（`DONE` / `DONE_WITH_CONCERNS` / `BLOCKED` / `FAIL`）、Deliverable 對帳與測試輸出
-   - 沒有測試執行結果的 `DONE` 視為未完成，要求補驗證
-   - 收到 `DONE_WITH_CONCERNS`：逐項 review 對帳中的未驗證/疑慮，決定補做或接受，不得當 clean `DONE` 推進
-   - Worker `BLOCKED` / `FAIL` 時，向使用者提供重試 / 主行程修復 / 跳過的決策選項
-
-3. **匯合（🔗 匯合點）**
-   - 逐一整合每條工作線的變更
-   - 每整合一條工作線後立即跑該線相關測試
-   - 全部整合後執行 `🔗 匯合點` 中的整合測試 task
-   - 由 main agent 呼叫 `/simplify` 審查合併後的完整變更（host 沒有 `/simplify` 時跳過）
-
-4. **更新文件與回報**
-   - 任務來源：勾選所有已完成的 task（含各工作線 + 匯合點）
-   - `works.md`：記錄平行派發的決策、各 worker 結果、合併過程
-   - 展示最終狀態與測試結果，等待使用者確認後 commit
+workflow 派發 → 逐線 `ddd-developer` 派發 → host 無 subagent 機制時，由主 agent 依 AGENTS.md 教義（底線＋測試品質）自行執行 TDD 循環。每降一級都明確告知使用者。
 
 ## works.md 格式
 
@@ -148,26 +113,12 @@ works.md 的格式以本節為唯一真相來源，其他 skill 只引用、不�
 - **測試結果**：<測試指令與結果摘要>
 ```
 
-平行模式額外記錄：派發決策、各 worker 結果、合併過程。沒有值得記錄的決策或問題時，該欄寫「無」即可，不要硬湊。
-
-## 核心防呆限制 (Agentic Constraints)
-
-* **Red State Check**：寫完測試後必須先執行，確認看到預期的測試失敗，才准進入實作階段。
-* **測試設計 gate**：「Red 前三問」答不出防哪個真實 bug 的測試不得寫；反模式（source-grep、寫死 fixture 數量、snapshot 當 spec、CSS 數值、over-mock）一律禁止；AC 對映不出行為測試時，暫停回 `/ddd.spec` 改 AC，不硬湊測試充數。
-* **No Logic Leaks**：嚴禁在撰寫測試的階段偷寫任何業務邏輯。測試階段只產出測試檔案。
-* **No Test Modification**：在 Green 階段絕對禁止修改測試檔案來讓測試通過。如果測試寫錯了，回到 Red 階段修正。
-* **Refactor Guard**：若重構導致原本通過的測試失敗，必須立即撤回，禁止在錯誤的基礎上疊加修補。
-* **Atomic Validation**：遇到測試報錯時，必須分析錯誤訊息，嚴禁盲目重試或猜測。
-* **規格同步**：若發現規格有誤或需要變更，立即暫停開發，回到 `/ddd.spec` 更新規格。
-* **日誌更新**：`works.md` 必須記錄技術決策，不可事後敷衍。
-* **Worker 自足性**：Worker prompt 必須讓 worker 理解「要做什麼」，並列出可按需讀取的參考檔案。
-* **Worker 測試紀律**：未貼測試輸出、隱瞞失敗、或跳過環境問題，一律視為未完成。
-* **Coordinator 驗收必跑測試**：每條 worker 結果匯合後，coordinator 必須立即執行該工作線的測試套件驗收。
+沒有值得記錄的決策或問題時，該欄寫「無」即可，不硬湊。
 
 ## 產出
 
 - 通過測試的程式碼
-- 更新後的任務來源（勾選進度）
+- 更新後的 `spec.md`（勾選進度）
 - 更新後的 `works.md`（開發日誌）
 - Git commits（使用者確認後）
 
