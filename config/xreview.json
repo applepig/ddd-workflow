@@ -8,7 +8,7 @@
     "haiku": "claude:haiku",
     "sonnet": "claude:sonnet",
     "opus": "claude:opus",
-    "pro": "gemini:pro",
-    "flash": "gemini:flash"
+    "pro": "agy:gemini-3.1-pro",
+    "flash": "agy:gemini-3.5-flash"
   }
 }
