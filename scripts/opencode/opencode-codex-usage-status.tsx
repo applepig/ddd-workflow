@@ -1,17 +1,14 @@
 /** @jsxImportSource @opentui/solid */
-import { readFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import path from "node:path"
-import { createMemo, createSignal } from "solid-js"
-import { limitColumns } from "./opencode-codex-usage-format.js"
+import { createMemo, createSignal, For } from "solid-js"
+import { readCodexUsageRaw } from "../custom-statusline/core/codex-usage-store.ts"
+import { activeLimitRows, limitColumns } from "./opencode-codex-usage-format.js"
 
-const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
-const DATA_DIR = process.env.OPENCODE_CODEX_USAGE_DIR || path.join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage")
-const USAGE_FILE = path.join(DATA_DIR, "codex-usage.json")
-
+// 共用 Codex store（spec 36 AC10、ADR-7）：路徑解析（DDD_CODEX_USAGE_FILE／XDG_CACHE_HOME）
+// 與 schema 驗證交給 core store 模組。用 raw 讀取讓 stale snapshot 仍能顯示 row，
+// 百分比是否 --% 由 format 層的 freshness 判準決定（AC24 stale→unknown）。
 async function readUsage() {
   try {
-    return JSON.parse(await readFile(USAGE_FILE, "utf8"))
+    return (await readCodexUsageRaw()) ?? undefined
   } catch {}
   return undefined
 }
@@ -24,7 +21,7 @@ function colorByUsage(theme, pct) {
 
 function LimitView(props) {
   const theme = () => props.api.theme.current
-  const columns = createMemo(() => limitColumns(props.label, props.limit, props.now))
+  const columns = createMemo(() => limitColumns(props.label, props.limit, props.now, props.observed_at))
 
   return (
     <text fg={theme().textMuted}>
@@ -34,13 +31,21 @@ function LimitView(props) {
 }
 
 function UsageView(props) {
-  const primary = createMemo(() => props.usage()?.primary)
-  const secondary = createMemo(() => props.usage()?.secondary)
+  const rows = createMemo(() => activeLimitRows(props.usage()))
 
   return (
     <box flexDirection="column" flexShrink={0}>
-      <LimitView api={props.api} label="5hr" limit={primary()} now={props.now()} />
-      <LimitView api={props.api} label="week" limit={secondary()} now={props.now()} />
+      <For each={rows()}>
+        {(row) => (
+          <LimitView
+            api={props.api}
+            label={row.label}
+            limit={row.limit}
+            now={props.now()}
+            observed_at={props.usage()?.observed_at}
+          />
+        )}
+      </For>
     </box>
   )
 }
