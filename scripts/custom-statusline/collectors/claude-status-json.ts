@@ -32,6 +32,8 @@ export interface ClaudeStatusJson {
   rate_limits: Record<string, unknown> | null
   cwd: string | null
   project_dir: string | null
+  // context carry-forward 的 per-session key（v5 AC33）；缺少時不啟用 carry-forward。
+  session_id: string | null
 }
 
 const EMPTY_STATUS_JSON: ClaudeStatusJson = {
@@ -41,6 +43,7 @@ const EMPTY_STATUS_JSON: ClaudeStatusJson = {
   rate_limits: null,
   cwd: null,
   project_dir: null,
+  session_id: null,
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -117,5 +120,6 @@ export function parseClaudeStatusJson(input: string): ClaudeStatusJson {
     cwd,
     // statusline.sh parity：Dir 顯示優先 workspace.project_dir，其次 cwd。
     project_dir: (workspace === null ? null : asString(workspace.project_dir)) ?? cwd,
+    session_id: asString(record.session_id),
   }
 }

@@ -111,11 +111,29 @@ export function nbspify(text: string): string {
   return text.replaceAll(" ", NBSP)
 }
 
-// 渲染一行 bar 列：{label 補齊 7}{NBSP}{bar}{NBSP}{pct 補齊 3}{NBSP}|{NBSP}{extra}
-// pct_text 是顯示字串（"43" 或 unknown 的 "--"）；整列 nbspify（bar 內無半形空格）。
-function makeBarRowLine(label: string, bar: string, pct_text: string, extra: string): string {
+// 百分比欄位最小寬度（"NN%"／"--%" 皆 3 欄）；"100%" 為 4 欄時由呼叫端整列升寬（AC34）。
+const MIN_PCT_FIELD_WIDTH = 3
+
+// pct_text → 顯示字串（"43" 或 unknown 的 "--"）。
+function pctText(pct: number | null): string {
+  return pct === null ? "--" : `${pct}`
+}
+
+// 一次 render 內百分比欄位統一寬度：取全列 "{pct}%" 的最大長度、下限 3
+// （只有 "100%" 會逼到 4）；讓 100% 與其他列的 `|` 與 extra 恆對齊（AC34）。
+function resolvePctFieldWidth(bar_rows: StatuslineBarRowView[]): number {
+  let width = MIN_PCT_FIELD_WIDTH
+  for (const row of bar_rows) {
+    width = Math.max(width, `${pctText(row.pct)}%`.length)
+  }
+  return width
+}
+
+// 渲染一行 bar 列：{label 補齊 7}{NBSP}{bar}{NBSP}{pct 補齊 pct_width}{NBSP}|{NBSP}{extra}
+// 整列 nbspify（bar 內無半形空格）。
+function makeBarRowLine(label: string, bar: string, pct_text: string, extra: string, pct_width: number): string {
   const label_padded = label.padEnd(7)
-  const pct_padded = `${pct_text}%`.padEnd(3)
+  const pct_padded = `${pct_text}%`.padEnd(pct_width)
   return nbspify(`${label_padded}${NBSP}${bar}${NBSP}${WHITE}${pct_padded}${RST}${NBSP}|${NBSP}${extra}`)
 }
 
@@ -135,12 +153,12 @@ export function renderStatuslineView(view: StatuslineView): string {
   // 每行前綴 RST：覆蓋 Claude Code 對 statusline 的 dim（bash parity）。
   let output = `${RST}${line1}`
 
+  const pct_width = resolvePctFieldWidth(view.bar_rows)
   for (const row of view.bar_rows) {
     const filled = row.pct === null ? 0 : pctToFilled(row.pct, BAR_WIDTH)
     const color = row.pct === null ? "" : row.scheme === "context" ? colorByPct(row.pct) : quotaColor(row.pct)
     const bar = makeBar(filled, BAR_WIDTH, color)
-    const pct_text = row.pct === null ? "--" : `${row.pct}`
-    output += `\n${RST}${makeBarRowLine(row.label, bar, pct_text, row.extra)}`
+    output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width)}`
   }
 
   // Branch row 僅在 git repo 內（branch 非空）顯示；diff 永遠顯示、含 0。

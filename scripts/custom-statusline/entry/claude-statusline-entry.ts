@@ -14,7 +14,7 @@
 //   `#!/usr/bin/env node` shebang）在 claude-statusline-bin.ts，build 接線另行處理。
 // - reset 時刻（%a %H:%M）的格式化時區使用 options.env.TZ（golden fixtures 以 UTC 擷取）。
 import { execFileSync } from "node:child_process"
-import { appendFile, mkdir, stat, utimes, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { collectAnthropicOauthUsage } from "../collectors/anthropic-oauth-usage.ts"
@@ -86,7 +86,9 @@ export async function renderStatusline(
   const model_id = status.model?.id ?? ""
 
   // Context row（AC14）：一律只用 StatusJSON 的 context_window。
-  const ctx_tokens = computeContextTokens(status.context_window)
+  // v5 AC33：per-session carry-forward 遮蔽 GPT 工具執行期間的暫態歸零（Context row only，
+  // 不觸碰任何 quota 來源）。
+  const ctx_tokens = await resolveContextTokens(computeContextTokens(status.context_window), status.session_id, env)
   const ctx_window_size = status.context_window?.context_window_size ?? 0
   const ctx_max = ctx_window_size > 0 && ctx_window_size < CONTEXT_CAP ? ctx_window_size : CONTEXT_CAP
   const ctx_pct = normalizePct(Math.floor((ctx_tokens * 100) / ctx_max))
@@ -133,12 +135,11 @@ export async function renderStatusline(
 
   session_pct = normalizePct(session_pct)
 
-  // Session 倒數：resets_at 在未來才顯示 {h}h {m}m，否則 --:--。
+  // Session reset（AC35）：resets_at 在未來才顯示 30 小時制時刻，否則 --:--。
   const now_seconds = Math.floor(now_ms / 1000)
   let timer_str = "--:--"
   if (session_resets_at > 0 && session_resets_at > now_seconds) {
-    const remaining = session_resets_at - now_seconds
-    timer_str = `${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m`
+    timer_str = format30HourResetClock(session_resets_at, env.TZ)
   }
 
   const bar_rows: StatuslineBarRowView[] = [
@@ -152,7 +153,7 @@ export async function renderStatusline(
     // callback rate_limits → fresh store → throttled usage API fetch（ADR-4），
     // rows 依 active windows 動態產生（ADR-3、AC18）。
     const windows = await resolveCodexQuotaWindows(status.rate_limits, env, now_ms, options)
-    bar_rows.push(...buildCodexQuotaRows(windows, now_ms))
+    bar_rows.push(...buildCodexQuotaRows(windows, now_ms, env.TZ))
   } else {
     // Case 11：unknown provider 不碰任何 provider quota 來源——連 Codex store／
     // usage API 也不讀，只顯示單列 unknown Quota。
@@ -190,6 +191,9 @@ const CODEX_FETCH_THROTTLE_SECONDS = 60
 
 const SECONDS_PER_DAY = 86400
 const SECONDS_PER_HOUR = 3600
+
+// sub-day（<1 天）window 的 reset 顯示 30 小時制時刻；day+ window 維持倒數（AC35）。
+const MINUTES_PER_DAY = 1440
 
 // throttle 時戳不能進 store schema v2（validator 白名單重建會拒），
 // 用 store 路徑的 sibling marker 檔案 mtime 記錄上次 fetch attempt。
@@ -262,8 +266,8 @@ function activeSnapshotWindows(snapshot: CodexWindowPair, now_ms: number): Codex
 }
 
 // GPT quota 資料流（ADR-4，與 Anthropic 分支同構）：
-// callback rate_limits（合法即最優先，AC15）→ fresh store（Case 3）→
-// throttled usage API fetch（AC16/AC17）→ 全部不可用回空（誠實 unknown，Case 10）。
+// callback rate_limits（合法即最優先，AC15）→ throttled usage API fetch（AC16/AC17）→
+// fresh store fallback → 全部不可用回空（誠實 unknown，Case 10）。
 async function resolveCodexQuotaWindows(
   rate_limits: Record<string, unknown> | null,
   env: EnvMap,
@@ -273,14 +277,15 @@ async function resolveCodexQuotaWindows(
   const callback_windows = parseCodexCallbackWindows(rate_limits, now_ms)
   if (callback_windows.length > 0) return callback_windows
 
-  // fresh store 直接用；fresh 但 windows 全 expired 也不 fetch（AC16 觸發條件只有
-  // missing／invalid／stale），顯示交給 AC18 的 unknown 單列。
+  // Store 先讀取但只作 fallback；不得因 store 尚在 freshness 內就跳過 live fetch，
+  // 否則其他 harness 的舊 observation 會在 CCX 畫面沿用最長 60 分鐘。
   const fresh = await readCodexUsageFresh({ env, now_ms })
-  if (fresh !== null) return activeSnapshotWindows(fresh, now_ms)
 
-  // store missing／invalid／stale → throttled fetch；throttle 內不重打（Case 9）。
+  // throttle 內不重打，沿用 fresh store；沒有合法 fallback 才顯示 unknown（Case 9/10）。
   const throttle_age = await fileAgeSeconds(codexFetchThrottlePath(env), now_ms)
-  if (throttle_age !== null && throttle_age < CODEX_FETCH_THROTTLE_SECONDS) return []
+  if (throttle_age !== null && throttle_age < CODEX_FETCH_THROTTLE_SECONDS) {
+    return fresh !== null ? activeSnapshotWindows(fresh, now_ms) : []
+  }
 
   // 先標記再 fetch：fetch 失敗也不在同 throttle 週期內重打（Anthropic collector parity）。
   await markCodexFetchAttempt(env, now_ms)
@@ -301,13 +306,12 @@ async function resolveCodexQuotaWindows(
     return activeSnapshotWindows(result.observation, now_ms)
   }
 
-  // fetch 失敗：沿用 freshness 內 store（可能有並行 writer 剛寫入），否則 unknown（Case 8/10）。
+  // fetch 失敗：重新讀取 freshness 內 store，納入 fetch 期間並行 writer 的更新；否則 unknown。
   const fallback = await readCodexUsageFresh({ env, now_ms })
   return fallback !== null ? activeSnapshotWindows(fallback, now_ms) : []
 }
 
-// countdown 對齊 spec 預期畫面：≥1 天顯示 Nd Nh（Weekly「6d 4h」），
-// 否則 Nh Nm（Session「1h 12m」，與 Anthropic Session 倒數同形）。
+// day+ window 的倒數：≥1 天顯示 Nd Nh（Weekly「6d 4h」），否則 Nh Nm。
 function formatCodexCountdown(remaining_seconds: number): string {
   if (remaining_seconds >= SECONDS_PER_DAY) {
     const days = Math.floor(remaining_seconds / SECONDS_PER_DAY)
@@ -319,10 +323,25 @@ function formatCodexCountdown(remaining_seconds: number): string {
   return `${hours}h ${minutes}m`
 }
 
+// sub-day（<1 天）window：window_minutes 為有限正數且 < MINUTES_PER_DAY（Codex 300、
+// 或其他小時級窗）；null／day+ 視為非 sub-day，走倒數。
+function isSubDayWindow(window_minutes: number | null): boolean {
+  return typeof window_minutes === "number" && Number.isFinite(window_minutes) && window_minutes > 0 && window_minutes < MINUTES_PER_DAY
+}
+
+// window reset 顯示（AC35）：sub-day → 30 小時制時刻；day+ → 倒數。
+function formatCodexWindowReset(window: CodexQuotaWindow, now_seconds: number, time_zone: string | undefined): string {
+  const reset_at = window.reset_at as number // isWindowActive 已保證合法且未過期。
+  if (isSubDayWindow(window.window_minutes)) {
+    return format30HourResetClock(reset_at, time_zone)
+  }
+  return formatCodexCountdown(reset_at - now_seconds)
+}
+
 // rows 依 active windows 動態產生（ADR-3）：label 由 window_minutes 推導（AC19），
 // 依 window 長度排序（短窗在前，Session→Weekly；ordinal 不可信，Case 5）；
 // 缺 used_percent 顯示 --%（AC22、Case 7）；無 active window 單列 unknown（AC18）。
-function buildCodexQuotaRows(windows: CodexQuotaWindow[], now_ms: number): StatuslineBarRowView[] {
+function buildCodexQuotaRows(windows: CodexQuotaWindow[], now_ms: number, time_zone: string | undefined): StatuslineBarRowView[] {
   if (windows.length === 0) {
     return [{ label: "Quota", pct: null, scheme: "quota", extra: "--" }]
   }
@@ -334,8 +353,7 @@ function buildCodexQuotaRows(windows: CodexQuotaWindow[], now_ms: number): Statu
     label: windowLabel(window.window_minutes, STATUSLINE_WINDOW_LABEL_OVERRIDES) ?? "Quota",
     pct: window.used_percent === null ? null : normalizePct(window.used_percent),
     scheme: "quota" as const,
-    // isWindowActive 已保證 reset_at 合法且未過期。
-    extra: formatCodexCountdown((window.reset_at as number) - now_seconds),
+    extra: formatCodexWindowReset(window, now_seconds, time_zone),
   }))
 }
 
@@ -355,6 +373,55 @@ function computeContextTokens(context_window: StatusJsonContextWindow | null): n
     )
   }
   return (context_window.total_input_tokens ?? 0) + (context_window.total_output_tokens ?? 0)
+}
+
+// ─── Context carry-forward（v5 AC33、Case 12）────────────────────────────────
+
+// per-session context store 預設路徑；env override 供測試隔離（見 spec Store contract）。
+const DEFAULT_CONTEXT_CACHE_DIR = "/tmp/claude/statusline-context"
+
+function resolveContextCacheDir(env: EnvMap): string {
+  const value = env.STATUSLINE_CONTEXT_CACHE_DIR
+  return value === undefined || value === "" ? DEFAULT_CONTEXT_CACHE_DIR : value
+}
+
+// 每個 session 一檔；把路徑分隔字元換掉，避免 session_id 逃逸出 cache 目錄。
+function contextCacheFilePath(env: EnvMap, session_id: string): string {
+  const safe_name = session_id.replaceAll("/", "_").replaceAll("\\", "_")
+  return path.join(resolveContextCacheDir(env), `${safe_name}.json`)
+}
+
+// best-effort：讀不到／parse 失敗／非正數一律回 null（視為無可沿用記錄）。
+async function readCachedContextTokens(file_path: string): Promise<number | null> {
+  try {
+    const parsed = JSON.parse(await readFile(file_path, "utf8")) as { tokens?: unknown }
+    const tokens = parsed.tokens
+    return typeof tokens === "number" && Number.isFinite(tokens) && tokens > 0 ? tokens : null
+  } catch {
+    return null
+  }
+}
+
+// best-effort（silent fail）：cache 是暫態遮蔽最佳化，寫不進去只會讓下次歸零 render 顯示 0。
+async function writeCachedContextTokens(file_path: string, tokens: number): Promise<void> {
+  try {
+    await mkdir(path.dirname(file_path), { recursive: true })
+    await writeFile(file_path, JSON.stringify({ tokens }))
+  } catch {
+    // 吞掉：與 log／throttle marker 相同紀律。
+  }
+}
+
+// tokens 非零 → 更新 cache 並回傳；tokens 為 0 → 有 cache 沿用上次值（＝工具執行中閃動）、
+// 無 cache 顯示 0（＝session 剛開始）。缺 session_id 時不啟用，回傳原值（golden 不受影響）。
+async function resolveContextTokens(raw_tokens: number, session_id: string | null, env: EnvMap): Promise<number> {
+  if (session_id === null || session_id === "") return raw_tokens
+  const file_path = contextCacheFilePath(env, session_id)
+  if (raw_tokens > 0) {
+    await writeCachedContextTokens(file_path, raw_tokens)
+    return raw_tokens
+  }
+  return (await readCachedContextTokens(file_path)) ?? raw_tokens
 }
 
 interface RateLimitWindow {
@@ -395,6 +462,36 @@ function isSameWindowRegression(
   return Math.abs(api_resets_at - status_resets_at) <= 60 && api_pct < status_pct
 }
 
+// reset 本體設計在整分邊界上，來源回報帶 sub-minute 抖動（API ISO 帶小數秒、跨 fetch 落在
+// 整秒邊界兩側）；Intl 只取 hour/minute 等於截斷秒，會讓 23:59:45 顯示 23:59、00:00:15 顯示
+// 00:00，同一 reset 在兩視窗閃成不同分鐘。統一 round 到最近分後兩側都收斂到同一分鐘。
+function roundEpochToMinute(epoch_seconds: number): number {
+  return Math.round(epoch_seconds / 60) * 60
+}
+
+// 30 小時制 reset 時刻（AC35）：以本地時刻計，hour < 6 顯示為 hour+24（24–29），
+// 否則原值；即 05:59 之後接 06:00。時區取 env.TZ（未設定用系統時區）。
+// 解析失敗回 --:--（呼叫端只在 reset 合法且未過期時呼叫）。
+function format30HourResetClock(epoch_seconds: number, time_zone: string | undefined): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: time_zone === undefined || time_zone === "" ? undefined : time_zone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(roundEpochToMinute(epoch_seconds) * 1000))
+    const part = (type: Intl.DateTimeFormatPartTypes): string =>
+      parts.find((candidate) => candidate.type === type)?.value ?? ""
+    const minute = part("minute")
+    let hour = Number.parseInt(part("hour"), 10)
+    if (!Number.isFinite(hour) || minute === "") return "--:--"
+    if (hour < 6) hour += 24
+    return `${String(hour).padStart(2, "0")}:${minute}`
+  } catch {
+    return "--:--"
+  }
+}
+
 // bash date "+%a %H:%M" parity：C locale 縮寫星期＋24 小時制；時區取 env.TZ
 // （未設定時用系統時區，同 bash date 行為）。
 function formatResetClock(epoch_seconds: number, time_zone: string | undefined): string {
@@ -405,7 +502,7 @@ function formatResetClock(epoch_seconds: number, time_zone: string | undefined):
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
-    }).formatToParts(new Date(epoch_seconds * 1000))
+    }).formatToParts(new Date(roundEpochToMinute(epoch_seconds) * 1000))
     const part = (type: Intl.DateTimeFormatPartTypes): string =>
       parts.find((candidate) => candidate.type === type)?.value ?? ""
     return `${part("weekday")} ${part("hour")}:${part("minute")}`
