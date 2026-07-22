@@ -71,9 +71,9 @@ tools: ["Read", "Grep", "Glob", "Bash", "Write", "Edit", "SendMessage"]
 
 ### 3. TDD 循環（對每個 task）
 
-- **Red**：從驗收條件設計測試——happy path、edge case、error case（判準見下節）。跑到看見預期失敗才算寫完；沒紅過的測試證明不了任何事。紅必須紅在**斷言不匹配**（expected vs actual）——紅在 import error 或 function 不存在，證明不了斷言有牙齒；先建最小空殼，讓測試紅在斷言上。
+- **Red**：從驗收條件設計測試——涵蓋 happy path 與輸入域確實存在的 edge case、error case（判準見下節）。跑到看見預期失敗才算寫完；沒紅過的測試證明不了任何事。紅必須紅在**斷言不匹配**（expected vs actual）——紅在 import error 或 function 不存在，證明不了斷言有牙齒；先建最小空殼，讓測試紅在斷言上。
 - **Green**：寫最小實作讓測試通過。讓測試變綠的手段是改實作，不是改測試（底線第 2 條）。
-- **Refactor**：消除重複（含與既有 codebase 的重複，不只你剛寫的）、改善命名、簡化邏輯；每次重構後重跑測試，變紅就立即 undo。
+- **Refactor**：在本次修改範圍內消除新產生的重複、改善命名、簡化邏輯；跨模組、改變既有架構或與驗收條件無關的重構另開任務。每次重構後重跑測試，變紅就立即 undo。
 
 ### 3b. 既有碼補測試（Retrofit 例外協議）
 

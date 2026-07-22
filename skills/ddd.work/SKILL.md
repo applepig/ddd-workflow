@@ -10,7 +10,7 @@ description: >
 
 # ddd.work — 開發執行
 
-開發執行階段。以 TDD 循環逐一完成 `spec.md` Milestones；不指定編號時，從第一個未完成的 milestone 開始。實作一律由 `ddd-developer` 執行——coordinator 不寫 production code（角色分工見 AGENTS.md）；TDD 紀律與測試設計判準由 worker 的 agent definition 自帶，不在派工 prompt 重述。
+開發執行階段。以 TDD 循環逐一完成 `spec.md` Milestones；不指定編號時，從第一個未完成的 milestone 開始。依 AGENTS.md「角色分工」，實作由 `ddd-developer` 執行；TDD 紀律與測試設計判準由 worker 的 agent definition 自帶，不在派工 prompt 重述。
 
 ## 派工 pipeline
 
@@ -60,11 +60,12 @@ description: >
 
 - N>1 時，先為每條工作線自當前分支建立專屬分支，worktree 建在 `$PROJECT_ROOT/.worktree/<工作線分支名>/`——git 不允許同一分支同時 checkout 到兩個 worktree。worker 只在自己的 worktree 內工作，完成後以分支保留、由 coordinator 合併。host 不支援平行派發或 worktree 時，改 N=1 依序派發並明講。
 - 派發是例行下一步，不是決策點；只有派發計畫會改變 scope、或存在未決風險時，才用 Question Tool 確認。派發後在**同一輪的最終訊息**回報派發內容（哪些工作線、各自範圍）——工具呼叫前的中間文字使用者看不到，不做「先展示、再派發」的兩段式。
-- host 支援 worker 雙向溝通（如 team SendMessage）時，worker 對介面契約或預期值的提問是例行協作，即時回覆釘值；釘下的值同步回填 spec 的 AC 範例，維持 SSOT。
+- host 支援 worker 雙向溝通（如 team SendMessage）時，worker 對介面契約或預期值的提問是例行協作，即時回覆釘值；釘下的值同步回填 spec 的 AC 範例，維持 SSOT。釘值若等同新增或改變驗收條件、介面契約的實質決策，依 AGENTS.md「規格變更」暫停並請使用者決策。
 
 ### 4. 驗收
 
 - 檢查首行狀態與 Deliverable 對帳，並**實際重跑該範圍的測試**——沒有測試輸出且未說明 `N/A` 理由的 `DONE` 視為未完成，要求補驗證；隱瞞失敗或跳過環境問題的回報，同樣不收。
+- 驗收發現缺陷時，修正權限依 AGENTS.md「角色分工」；需要 worker 修正時，優先續用原 worker context 並附 findings，host 不支援續用時，重派 worker 並附原始任務摘要與 findings。
 - `DONE_WITH_CONCERNS`：逐項 review 未驗證項與疑慮，決定補做或接受，不當 clean `DONE` 推進。
 - `BLOCKED`／`FAIL`：向使用者提供重試、主行程修復、跳過的決策選項。
 - 測試設計 gate：抽查 worker 產出的測試是否踩反模式（判準見 `ddd-developer` 定義的反模式表）；驗收條件寫不成行為測試＝spec 的 bug，暫停回 `/ddd.spec` 改 AC，不硬湊測試充數。
@@ -73,7 +74,7 @@ description: >
 
 ### 5. Simplify
 
-由 main agent 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff；worker 沒有 Skill tool，這步留在主迴圈。host 沒有 `/simplify` 時跳過，不做替代實作。
+由 main agent 呼叫 `/simplify`（Claude Code 內建 skill，非 DDD skill）審查本次 git diff；worker 沒有 Skill tool，這步留在主迴圈。`/simplify` 會直接套用品質修正，是 AGENTS.md「角色分工」的既定例外——套用後的變更視同待驗收交付：重跑該範圍測試確認不變紅，並在 commit gate 一併展示。host 沒有 `/simplify` 時跳過，不做替代實作。
 
 ### 6. 更新文件
 
@@ -84,7 +85,7 @@ description: >
 
 - commit 前跑**完整測試套件**（不只本 milestone 範圍）——worker 收工與驗收重跑的都是範圍內測試，跨模組迴歸只有這一步攔得到；全綠才進 commit gate。
 - 展示完成的功能與測試結果，等待使用者確認後才 commit（commit 授權見 AGENTS.md 底線第 3 條）。
-- 開發中發現規格有誤或需要變更：暫停，回 `/ddd.spec` 更新並經使用者確認後再繼續。
+- 開發中的規格更新依 AGENTS.md「規格變更」判準；觸及 gate 時暫停，回 `/ddd.spec` 更新並經使用者確認後再繼續。
 
 ## Workflow 派工（host 條件敘述）
 

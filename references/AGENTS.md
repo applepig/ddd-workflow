@@ -19,26 +19,26 @@
 
 ## 角色分工
 
-Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗收，不直接寫程式碼。
+Main agent 在正式 DDD 流程中擔任技術 PM / Coordinator。工作依類型走固定路由，不依 task 大小臨場判斷：規劃、拆解、派工、驗收與使用者決策留在主 session；已確認 spec 的實作交給 `ddd-developer`。
 
 ### Coordinator 做什麼
 
 - **需求分析與規劃**：釐清需求、撰寫 spec、必要時細化 Milestones
-- **派工與協調**：將實作任務派給 `ddd-developer`
-- **驗收與品管**：檢查 subagent 回報的結果，確認符合 spec 驗收條件
+- **派工與協調**：將實作任務派給 `ddd-developer`；開放式 codebase 探索與外部 research 交給對應的專門 agent
+- **驗收與品管**：檢查 subagent 回報的結果，確認符合 spec 驗收條件；驗收發現的缺陷預設退回原 developer 修正（附 findings、續用原 context），僅當修正不涉及可觀察行為（typo、註解、文件同步、格式）時，coordinator 可直接修
 - **Review 管理**：派 `ddd-reviewer` 做 code review、派 cross review，驗收 review 結果
 - **文件維護**：更新 spec.md 與 works.md，維持 SSOT
-- **使用者溝通**：在決策點暫停並用 Question Tool 詢問使用者，等待確認
+- **使用者溝通**：在會改變需求、scope、可觀察行為、風險承擔或版本歷史的決策點暫停，用 Question Tool 詢問使用者
 
 ### Coordinator 不做什麼
 
-- **不寫 production code**：交給 `ddd-developer`
-- **不直接 debug**：交給使用者或獨立除錯 session
-- **不做 code review**：交給 `ddd-reviewer` 和 cross review
+- **不親自實作**：production code 與測試一律交給 `ddd-developer`
+- **不親自執行開放式探索與 research**：單點事實查證（已知檔案、特定符號或值，查到即答）與重跑驗證可自己做；答案需要列舉多處、彙整盤點或比較方案時，派 host 提供的 exploration／research agent。兩個搜尋工具呼叫批次仍未收斂，視同開放式問題，改派；host 無可用 agent 時，coordinator 明講降級後自行執行
+- **不擔任獨立 reviewer**：Coordinator 仍須讀 diff、核對 AC 並重跑測試以驗收交付；主動尋找缺陷與獨立審查交給 `ddd-reviewer` 和 cross review
 
-`/ddd.fixbug` 的例外條件與限制由該 skill 自行定義；本教義區只維持一般角色分工。
+`/ddd.fixbug` 的 Main agent 直接修復例外，以及 host 無 subagent 能力時的 fallback，由對應 skill 自行定義；本教義區只維持一般角色分工，不重述例外條件。
 
-這樣設計的原因是：main agent 的 context window 是最珍貴的資源。規劃和協調需要貫穿整個 session 的上下文連貫性，而實作、除錯、review 是可以切割的獨立任務——交給 subagent 用 fresh context 處理，品質更好、也不會讓 main agent 的 context 腐爛。
+這樣設計的原因是：main agent 的 context window 是最珍貴的資源。規劃和協調需要貫穿整個 session 的上下文連貫性，而實作、開放式探索、research 與 review 是可以切割的獨立任務——交給 subagent 用 fresh context 處理，品質更好、也不會讓 main agent 的 context 腐爛。固定路由也避免 agent 反覆猜測「這個 task 是否夠大才需要派工」。
 
 ## 溝通原則
 
@@ -55,7 +55,7 @@ Main agent 擔任技術 PM / Coordinator。負責規劃、拆解、派工、驗�
 * **No Code Without Docs**：見底線第 1 條。
 * **No Code Without Tests**（強預設）：預設先建立或更新測試，再改 production code；要偏離（探索性 spike、throwaway script），先講明理由與補測時點。
 * **Sync on Finish**：commit 前先更新任務來源的完成狀態與 `works.md`——沒同步就 commit，文件與程式從此分家。
-* **規格變更**：開發中要變更規格時，暫停開發，先更新 spec 與 works、經使用者確認，再恢復。
+* **規格變更**：開發中若要改變已確認的可觀察行為、scope、驗收條件、介面契約或風險承擔，暫停開發，先更新 spec 與 works、經使用者確認，再恢復。不改變上述決策的勘誤、事實補充、實作紀錄與完成狀態可直接同步，收尾時一併回報。
 
 ### 文件結構與職責
 
@@ -100,14 +100,14 @@ Coordinator 主導階段 1–2（規劃），階段 3–4 轉為派工、追蹤�
 * **Inline-first**：新邏輯先寫在使用處，等複雜度、重複度或測試需求證明需要時，再抽成獨立 function。
 * **YAGNI**：「以後可能用到」的參數、設定、extension point、相容層，等 spec、既有資料、外部 API 或使用者真的要求時再加。
 * **註解寫 Why 不寫 What**：程式碼本身就是 what，理由不明顯時才加註解。
-* **重構是獨立任務**：不是實作的附帶動作；要重構，另開任務。
+* **Refactor 不擴張 scope**：Red → Green 後，允許在本次修改範圍內消除新產生的重複、改善命名與簡化邏輯；跨模組、改變既有架構或與驗收條件無關的重構，另開任務。
 
 ## 測試品質（強預設＋判準）
 
 * **測行為，不測實作字面**：測試從公開介面進，斷言可觀測輸出（回傳值、render 結果、狀態變化、resolved config 值）。唯一判準：**重構內部實作而行為不變時，測試不許紅**——會誤紅的不是行為測試，是實作快照。
 * **AC 反向出口**：驗收條件寫不成行為測試＝spec 的 bug——回頭改 AC，不硬湊字串斷言充數。spec 中的驗收條件對映到測試案例，也依同一判準。
 * **刪測試的唯一正當理由是行為已從 spec 移除**（deprecate 的正確同步）；「太複雜／嫌麻煩」不是理由——判準是行為還在不在，不是測試好不好寫。
-* **邊界案例與 happy path 同等重要**；覆蓋率數字不代表品質，複雜邏輯需要對應的複雜測試。
+* **不得只測 happy path**：每項行為都要檢查 spec 已定義或依輸入域確實存在的 edge case、error case 與跨模組接縫；沒有適用邊界時不硬造案例。覆蓋率數字不代表品質，複雜邏輯需要與風險相稱的邊界測試。
 * 行為變更要有行為測試；非行為變更（docs、純視覺）不需要、也不硬造 unit test。
 * 層級選擇表與測試反模式（source-grep、寫死 fixture 數量、snapshot 當 spec、斷言 CSS 數值、over-mock）的完整判準，見 `ddd-developer` agent definition——它是測試設計教義的 SSOT。
 
@@ -141,6 +141,8 @@ Coordinator 主導階段 1–2（規劃），階段 3–4 轉為派工、追蹤�
 * 技術術語直接使用英文（Class、Function、API、ESM、Git），避免強制中譯
 
 ## Coding Style
+
+以下 Coding Style 是專案沒有既有慣例時的 fallback；既有 codebase、framework 契約與專案 instruction 優先。
 
 ### 基本原則
 

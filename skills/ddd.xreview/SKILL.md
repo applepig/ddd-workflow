@@ -160,7 +160,7 @@ orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件�
 
 ### 6. 修正銜接
 
-對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在對話報告中附修法提案與建議優先序。使用者明確要求修正後，彙整要修正的 issues 與對應方向，一次派 `ddd-developer` 執行。
+對步驟 5.3 標記為 ✅ 確認 或 ⚠️ 存疑 的每個 issue，在對話報告中附修法提案與建議優先序。使用者明確要求修正後，依 AGENTS.md「角色分工」路由；需要 `ddd-developer` 的 findings 與對應方向彙整後一次派發。
 
 修正完成並驗收後，由 coordinator 在當前 sprint 的 `works.md` 追加紀錄，不需要獨立開檔（works.md 整體格式見 `/ddd.work`）：
 
