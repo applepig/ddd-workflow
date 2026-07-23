@@ -723,7 +723,8 @@ function renderStatuslineView(view) {
 		output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width)}`;
 	}
 	if (view.git !== null && view.git.branch !== "") {
-		const diff_str = ` (${GREEN}+${view.git.insertions}${RST}, ${RED}-${view.git.deletions}${RST})`;
+		const untracked_str = view.git.untracked > 0 ? `, ${YELLOW}?${view.git.untracked}${RST}` : "";
+		const diff_str = ` (${GREEN}+${view.git.insertions}${RST}, ${RED}-${view.git.deletions}${RST}${untracked_str})`;
 		output += `\n${RST}${nbspify("Branch:")} ${WHITE}${nbspify(view.git.branch)}${RST}${diff_str}`;
 	}
 	return output;
@@ -1056,12 +1057,23 @@ async function collectGitView(project_dir, run_git) {
 		"diff",
 		"--shortstat"
 	]);
+	const untracked_out = tryGit(run_git, [
+		"-C",
+		project_dir,
+		"ls-files",
+		"--others",
+		"--exclude-standard"
+	]);
 	if (branch === "") return null;
 	return {
 		branch,
 		insertions: parseShortstatCount(shortstat, /(\d+) insertion/),
-		deletions: parseShortstatCount(shortstat, /(\d+) deletion/)
+		deletions: parseShortstatCount(shortstat, /(\d+) deletion/),
+		untracked: countLines(untracked_out)
 	};
+}
+function countLines(text) {
+	return text === "" ? 0 : text.split("\n").length;
 }
 async function isDirectory(dir_path) {
 	try {

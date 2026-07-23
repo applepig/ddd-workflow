@@ -33,6 +33,8 @@ export interface StatuslineGitView {
   branch: string
   insertions: number
   deletions: number
+  // untracked 檔案數（單位是「檔案」，非 +/- 的「行」）；0 時不顯示以減少版面雜訊。
+  untracked: number
 }
 
 export interface StatuslineView {
@@ -161,9 +163,11 @@ export function renderStatuslineView(view: StatuslineView): string {
     output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width)}`
   }
 
-  // Branch row 僅在 git repo 內（branch 非空）顯示；diff 永遠顯示、含 0。
+  // Branch row 僅在 git repo 內（branch 非空）顯示；+/- diff 永遠顯示、含 0，
+  // untracked（?N）僅在有未追蹤檔案時附加（單位不同，避免常見的 ?0 佔版面）。
   if (view.git !== null && view.git.branch !== "") {
-    const diff_str = `${NBSP}(${GREEN}+${view.git.insertions}${RST},${NBSP}${RED}-${view.git.deletions}${RST})`
+    const untracked_str = view.git.untracked > 0 ? `,${NBSP}${YELLOW}?${view.git.untracked}${RST}` : ""
+    const diff_str = `${NBSP}(${GREEN}+${view.git.insertions}${RST},${NBSP}${RED}-${view.git.deletions}${RST}${untracked_str})`
     output += `\n${RST}${nbspify("Branch:")}${NBSP}${WHITE}${nbspify(view.git.branch)}${RST}${diff_str}`
   }
 

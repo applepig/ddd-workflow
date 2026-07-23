@@ -535,13 +535,21 @@ async function collectGitView(project_dir: string, run_git: GitRunner): Promise<
 
   const branch = tryGit(run_git, ["-C", project_dir, "branch", "--show-current"])
   const shortstat = tryGit(run_git, ["-C", project_dir, "diff", "--shortstat"])
+  // untracked：ls-files --others --exclude-standard 尊重 .gitignore，一行一檔。
+  const untracked_out = tryGit(run_git, ["-C", project_dir, "ls-files", "--others", "--exclude-standard"])
   if (branch === "") return null
 
   return {
     branch,
     insertions: parseShortstatCount(shortstat, /(\d+) insertion/),
     deletions: parseShortstatCount(shortstat, /(\d+) deletion/),
+    untracked: countLines(untracked_out),
   }
+}
+
+// tryGit 已去尾換行；空字串代表 0 檔，非空則行數即檔數。
+function countLines(text: string): number {
+  return text === "" ? 0 : text.split("\n").length
 }
 
 async function isDirectory(dir_path: string): Promise<boolean> {
