@@ -31,6 +31,18 @@ prompt_file="${1:?Usage: agy.sh <prompt-file> <model> <final-out-file>}"
 model="${2:?Usage: agy.sh <prompt-file> <model> <final-out-file>}"
 final_out="${3:?Usage: agy.sh <prompt-file> <model> <final-out-file>}"
 
+# --- model / effort split (agy 1.1+) -----------------------------------------
+# agy 1.1 split reasoning effort out of the model id: `--model` now takes the
+# base id only and refuses the old combined form (`gemini-3.1-pro-high` →
+# "no longer available"; `gemini-3.1-pro` alone → "requires --effort"). `agy
+# models` still prints the stale combined names, so both source (base) and old
+# deployed (`-high`) configs reach here. Strip a trailing effort suffix if
+# present and always run high-effort review — xreview wants the strongest pass.
+review_effort="high"
+case "$model" in
+  *-low|*-medium|*-high) model="${model%-*}" ;;
+esac
+
 if [[ ! -f "$prompt_file" ]]; then
   echo "XREVIEW_ERROR: prompt file not found: $prompt_file" >&2
   exit 1
@@ -224,6 +236,7 @@ bwrap \
   "$cli_path" \
     --add-dir "$REPO_DIR" \
     --model "$model" \
+    --effort "$review_effort" \
     --print-timeout 60m \
     --print "$effective_prompt" \
   < /dev/null \

@@ -8,7 +8,7 @@
 |-----|---------------|---------|-----------|
 | Claude | `--permission-mode plan` + `--agent ddd-reviewer` | `claude -p --agent ddd-reviewer --model "$model" --permission-mode plan < prompt.md` | `--model` flag |
 | OpenCode | Agent 定義檔中設定 `edit: deny` + `bash` 白名單 | `opencode run --agent ddd-reviewer --model "$model" < prompt.md` | `--model` flag |
-| Antigravity CLI（agy） | `os-write-confinement`：`bwrap --ro-bind / /` 把整個 FS（含真實 repo 與 `.git`）掛唯讀，唯一可寫處是拋棄式 isolated HOME | bwrap 包住 `agy --add-dir "$REPO_DIR" --model "$model" --print "$prompt"`（見下方章節） | `--model` flag |
+| Antigravity CLI（agy） | `os-write-confinement`：`bwrap --ro-bind / /` 把整個 FS（含真實 repo 與 `.git`）掛唯讀，唯一可寫處是拋棄式 isolated HOME | bwrap 包住 `agy --add-dir "$REPO_DIR" --model "$model" --effort high --print "$prompt"`（見下方章節） | `--model` + `--effort` flag |
 | Codex CLI | `--sandbox read-only`（預設值，明確指定更清楚） | `codex exec --sandbox read-only --ephemeral --model "$model" - < prompt.md` | `--model` / `-m` flag |
 | Gemini CLI（DEPRECATED） | `--approval-mode=plan`（Plan Mode，禁止寫入專案檔案） | `gemini --approval-mode=plan -m "$model" < prompt.md` | `-m` / `--model` flag |
 
@@ -43,6 +43,10 @@ ADR-11 雙輸出設計對 adapter 的 stdout / stderr 行為有隱性契約，�
 ## Antigravity CLI
 
 `agy`（Antigravity CLI）是 `/ddd.xreview` 的**預設 `pro` / `flash` reviewer**（ADR-4），取代 runtime-availability 已壞掉的 gemini-cli。adapter 為 `adapters/agy.sh`。
+
+### model / effort 分離（agy 1.1+）
+
+agy 1.1 把 reasoning effort 從 model id 拆出：`--model` 只收 base id（如 `gemini-3.1-pro`），effort 改由獨立 `--effort <low|medium|high>` 指定。舊的合併形式 `gemini-3.1-pro-high` 會回 `"no longer available"`，而只給 base id 又會回 `requires --effort`。`agy models` 目前仍印出過時的合併名稱，故 source config（base 名）與舊部署 config（帶 `-high`）都可能傳進 adapter。adapter 因此在 argv 前防禦性剝除尾端 `-low|-medium|-high` 後綴，並固定帶 `--effort high`——xreview 一律要最強的審查 pass。
 
 ### Enforcement level：`os-write-confinement`（bwrap 唯讀真 repo）
 
