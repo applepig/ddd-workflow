@@ -7,6 +7,12 @@
 # reviewer's extracted final text to that file; verbose trace (CLI debug +
 # envelope echo) flows via stderr and is captured by the orchestrator's log.
 #
+# Read scope: the adapter derives the invoking repo root from the orchestrator
+# cwd, chdirs into it, and grants read access via `--add-dir <repo> --add-dir
+# /tmp [--add-dir <config>]`. Without this the CLI confines the reviewer to the
+# inherited cwd + ambient settings additionalDirectories and it cannot Read the
+# spec/oracle under review (regression 2026-07-23).
+#
 # Dual-output mechanics (ADR-11):
 #   - stdout of claude CLI with `--output-format json` is a JSON array of
 #     event envelopes; the final agent message sits in the last element with
@@ -36,6 +42,19 @@ if [[ ! -f "$prompt_file" ]]; then
   exit 1
 fi
 
+# Resolve the file-path args to absolute NOW, before we chdir into the repo
+# below. After `cd "$repo_dir"` a relative stdin / --debug-file / final-out path
+# would resolve against the wrong directory (the orchestrator already passes
+# absolute paths in production; this keeps direct/CLI callers correct too).
+_abs_path() {
+  local p="$1" dir base
+  dir="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || dir="$(dirname "$p")"
+  base="$(basename "$p")"
+  printf '%s/%s\n' "$dir" "$base"
+}
+prompt_file="$(_abs_path "$prompt_file")"
+final_out="$(_abs_path "$final_out")"
+
 cli_path="$(command -v claude 2>/dev/null)" || true
 if [[ -z "$cli_path" ]]; then
   echo "XREVIEW_ERROR: cli not found: claude (install it first)" >&2
@@ -61,6 +80,38 @@ if [[ "$debug_file" == "$final_out" ]]; then
 fi
 : > "$debug_file"
 
+# --- read scope: grant the reviewer the invoking repo (+ /tmp, config) --------
+# Every other xreview adapter explicitly hands its CLI the target directory
+# (agy --add-dir/--chdir, gemini --include-directories, opencode
+# OPENCODE_PERMISSION). claude.sh historically passed neither, so the reviewer
+# inherited only the orchestrator cwd plus whatever additionalDirectories the
+# ambient settings resolved to. In a multi-root session that set excluded the
+# repo under review, and both Claude reviewers FAILed a Docs-Lens xreview unable
+# to Read the spec/oracle files (regression: 2026-07-23). Derive the repo root
+# from the orchestrator cwd and grant it read access explicitly.
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+repo_dir="$(git -C "$(pwd -P)" rev-parse --show-toplevel 2>/dev/null)" || repo_dir="$(pwd -P)"
+
+# Refuse to hand the reviewer an overly-broad root (/, $HOME): a mis-derived
+# repo_dir there would grant far more than the sprint under review.
+home_real=""
+[[ -n "${HOME:-}" && -d "${HOME:-}" ]] && home_real="$(cd "$HOME" && pwd -P)"
+if [[ "$repo_dir" == "/" || ( -n "$home_real" && "$repo_dir" == "$home_real" ) ]]; then
+  echo "XREVIEW_ERROR: claude repo_dir refuses overly-broad path: $repo_dir" >&2
+  exit 1
+fi
+
+add_dirs=(--add-dir "$repo_dir" --add-dir /tmp)
+[[ -d "$config_dir" && "$config_dir" != /tmp ]] && add_dirs+=(--add-dir "$config_dir")
+
+# chdir into the repo root so ddd-reviewer's Bash `git --no-pager diff` targets
+# the repo under review rather than a nested submodule the orchestrator cwd may
+# have landed in. File-path args were made absolute above, so the redirects hold.
+cd "$repo_dir" || {
+  echo "XREVIEW_ERROR: claude cannot chdir to repo_dir: $repo_dir" >&2
+  exit 1
+}
+
 # Pipefail disabled for this pipeline: we take rc from PIPESTATUS[0] (the CLI),
 # and want jq failures to leave final_out empty rather than mask the CLI rc.
 set +o pipefail
@@ -75,6 +126,7 @@ set +o pipefail
   --permission-mode default \
   --output-format json \
   --debug-file "$debug_file" \
+  "${add_dirs[@]}" \
   < "$prompt_file" \
   | jq -r 'if type=="array" then (map(select(.type=="result")) | last // .[-1]).result else .result end // empty' > "$final_out" 2>/dev/null
 rc="${PIPESTATUS[0]}"
