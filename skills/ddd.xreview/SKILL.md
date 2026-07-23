@@ -84,7 +84,7 @@ Monitor({
 XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_prompt_file"; rc=$?; rm -f "$review_prompt_file"; exit "$rc"
 ```
 
-模型覆蓋、短名等用法見 `references/cli-reference.md`。
+模型覆蓋、短名、**單一 reviewer 冒煙測試**（驗證某 model／adapter 活著，不必組正式 review prompt）等用法見 `references/cli-reference.md`。
 
 ### 4. 收集並讀取結果
 

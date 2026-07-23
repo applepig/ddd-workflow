@@ -148,7 +148,7 @@ Timeout 觸發時：
 - 預設短名 7 個：`5.x`、`5-mini`、`haiku`、`sonnet`、`opus`、`pro`、`flash`；`5.4` 保留給 `opencode:github-copilot/gpt-5.4` 等 Copilot fallback 或 legacy 用法
 - 使用者既有的 config 需自行補 `aliases` 區塊才能用短名
 - Orchestrator 在 CLI 沒指定 spec 時自動讀 config 的 `reviewers` 清單
-- CLI 位置參數可一次性覆蓋：`... $prompt_file opus 5.x pro`（alias 在 orchestrator 內 resolve 成完整 spec）
+- `--models` flag 可一次性覆蓋：`--models opus,5.x,pro $prompt_file`（逗號分隔、可重複；alias 在 orchestrator 內 resolve 成完整 spec，alias key 不得含冒號——`:` 是 `cli:model` 分隔符）。舊的 prompt-file 後接位置 specs 形式仍相容，`--models` 優先
 
 ## 相關 ADR
 
