@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { createMemo, createSignal, For } from "solid-js"
-import { readCodexUsageRaw } from "../custom-statusline/core/codex-usage-store.ts"
+import { readCodexUsageRaw } from "./opencode-codex-usage-format.js"
 import { activeLimitRows, limitColumns } from "./opencode-codex-usage-format.js"
 
 // 共用 Codex store（spec 36 AC10、ADR-7）：路徑解析（DDD_CODEX_USAGE_FILE／XDG_CACHE_HOME）

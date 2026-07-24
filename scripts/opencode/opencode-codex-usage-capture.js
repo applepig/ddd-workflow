@@ -1,21 +1,20 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
+// OpenCode fetch 攔截殼（spec 36 AC26、ADR-7）：只負責攔 Codex responses 請求，
+// header parse 交給 collectors/codex-quota-headers，寫入交給 core/codex-usage-store 共用 store。
+// 舊的手工 parse（?? 0、寫死 label）與 OPENCODE_CODEX_USAGE_DIR 舊路徑已退役（不做 migration）。
+import { appendFile, mkdir } from "node:fs/promises"
 import path from "node:path"
+
+import { collectCodexQuotaHeaders } from "../custom-statusline/collectors/codex-quota-headers.ts"
+import { resolveCodexUsageFilePath, writeCodexUsageSnapshot } from "../custom-statusline/core/codex-usage-store.ts"
 
 const CODEX_USAGE_CAPTURE = Symbol.for("opencode.codexUsageCapture.fetch")
 const CODEX_PATH = "/backend-api/codex/responses"
-const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
-const DATA_DIR = process.env.OPENCODE_CODEX_USAGE_DIR || path.join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage")
-const USAGE_FILE = "codex-usage.json"
 const LOG_FILE = "openai-response-debug.ndjson"
 const DEBUG = process.env.OPENCODE_CODEX_USAGE_DEBUG === "1"
 
-function usagePath() {
-  return path.join(DATA_DIR, USAGE_FILE)
-}
-
+// debug log 跟著共用 store 檔同目錄走，路徑語意（DDD_CODEX_USAGE_FILE／XDG_CACHE_HOME）由 store 模組解析。
 function logPath() {
-  return path.join(DATA_DIR, LOG_FILE)
+  return path.join(path.dirname(resolveCodexUsageFilePath()), LOG_FILE)
 }
 
 function requestUrl(input) {
@@ -31,50 +30,6 @@ function isCodexResponseRequest(input) {
   return url?.host === "chatgpt.com" && url.pathname === CODEX_PATH
 }
 
-function numberHeader(headers, key) {
-  const value = headers.get(key)
-  if (value === null) return undefined
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function booleanHeader(headers, key) {
-  const value = headers.get(key)
-  if (value === null) return undefined
-  return value.toLowerCase() === "true"
-}
-
-function usageFromHeaders(headers) {
-  const primaryResetAt = numberHeader(headers, "x-codex-primary-reset-at")
-  const secondaryResetAt = numberHeader(headers, "x-codex-secondary-reset-at")
-  if (!primaryResetAt && !secondaryResetAt) return undefined
-
-  return {
-    updated_at: new Date().toISOString(),
-    plan_type: headers.get("x-codex-plan-type") ?? undefined,
-    active_limit: headers.get("x-codex-active-limit") ?? undefined,
-    credits: {
-      has_credits: booleanHeader(headers, "x-codex-credits-has-credits"),
-      unlimited: booleanHeader(headers, "x-codex-credits-unlimited"),
-    },
-    primary: {
-      label: "5hr",
-      used_percent: numberHeader(headers, "x-codex-primary-used-percent") ?? 0,
-      reset_at: primaryResetAt,
-      reset_after_seconds: numberHeader(headers, "x-codex-primary-reset-after-seconds"),
-      window_minutes: numberHeader(headers, "x-codex-primary-window-minutes"),
-      over_secondary_limit_percent: numberHeader(headers, "x-codex-primary-over-secondary-limit-percent"),
-    },
-    secondary: {
-      label: "weekly",
-      used_percent: numberHeader(headers, "x-codex-secondary-used-percent") ?? 0,
-      reset_at: secondaryResetAt,
-      reset_after_seconds: numberHeader(headers, "x-codex-secondary-reset-after-seconds"),
-      window_minutes: numberHeader(headers, "x-codex-secondary-window-minutes"),
-    },
-  }
-}
-
 function codexHeadersObject(headers) {
   return Object.fromEntries(
     [...headers.entries()]
@@ -83,13 +38,9 @@ function codexHeadersObject(headers) {
   )
 }
 
-async function writeUsage(usage) {
-  const file = usagePath()
-  await mkdir(path.dirname(file), { recursive: true })
-  await writeFile(file, JSON.stringify(usage, null, 2) + "\n")
-}
-
-async function writeDebug(startedAt, url, response) {
+// store_write 一併記入 NDJSON：靜默丟棄（rejected_invalid／skipped_older）過去只能靠猜，
+// 把 written/skipped/rejected 結果留在同一筆 log，診斷 capture→store 落差時有據可查。
+async function writeDebug(startedAt, url, response, storeWrite) {
   if (!DEBUG) return
 
   const file = logPath()
@@ -105,6 +56,7 @@ async function writeDebug(startedAt, url, response) {
         status_text: response.statusText,
         headers: codexHeadersObject(response.headers),
       },
+      store_write: storeWrite,
     })}\n`,
   )
 }
@@ -113,11 +65,17 @@ function capture(startedAt, requestInput, response) {
   const url = requestUrl(requestInput)
   if (!url || !isCodexResponseRequest(url)) return
 
-  const usage = usageFromHeaders(response.headers)
-  if (!usage) return
+  // Headers 物件 → header getter adapter（AC26：collector 只吃 getter 契約，不耦合 Headers 實作）；
+  // observed_at 是 capture 當下（AC23：觀測時間，updated_at 由 store 寫入時蓋章）。
+  const observation = collectCodexQuotaHeaders((name) => response.headers.get(name), new Date().toISOString())
+  if (!observation) {
+    void writeDebug(startedAt, url, response, "no_observation").catch(() => {})
+    return
+  }
 
-  void writeUsage(usage).catch(() => {})
-  void writeDebug(startedAt, url, response).catch(() => {})
+  void writeCodexUsageSnapshot(observation)
+    .then((result) => writeDebug(startedAt, url, response, result))
+    .catch(() => {})
 }
 
 export default {

@@ -13,7 +13,11 @@ echo "Usage: agent-runner.sh --mode <xreview>"
 
 usage_xreview() {
 cat <<'EOF'
-Usage: xreview-orchestrator.sh <prompt-file|-> [cli:model ...]
+Usage: xreview-orchestrator.sh [--models <spec-list>] [<prompt-file>|-]
+  --models  comma-separated reviewer specs (alias or cli:model), repeatable.
+            e.g. --models g:pro,g:flash   or   --models agy:gemini-3.1-pro
+            Omitted → use reviewers from ~/.config/ddd-workflow/xreview.json
+  prompt    single positional; "-" or omitted → read prompt from stdin.
 EOF
 }
 
@@ -132,7 +136,8 @@ cleanup_tmp_file() {
 }
 
 # resolve_spec: alias 短名 → 完整 cli:model。
-# 已含 ":" 的 spec 直接通過；alias miss 時保留原字串交給下游驗證。
+# 已含 ":" 的 spec 直接通過（":" 是 cli:model 的保留分隔符，故 alias key 不得含
+# 冒號）；alias miss 時保留原字串交給下游驗證。
 resolve_spec() {
   local spec="$1"
   local aliases_json="$2"
@@ -188,7 +193,9 @@ fi
 # xreview-orchestrator.sh — fan out cross-review reviewers in parallel
 #
 # Usage:
-#   xreview-orchestrator.sh <prompt-file> <cli:model> [<cli:model> ...]
+#   xreview-orchestrator.sh [--models <spec-list>] [<prompt-file>|-]
+#   --models g:pro,g:flash   (comma-separated aliases or cli:model specs)
+#   prompt file as sole positional, or "-"/absent to read from stdin
 #
 # Supported CLIs: claude, opencode, gemini, codex, agy
 #
@@ -244,13 +251,44 @@ fi
 #     CLAUDECODE leaks into a child opencode session).
 
 
-# M6.4: stdin mode. When invoked with no positional prompt file (or "-" sentinel),
+# --- arg parse: --models flag + prompt-file/stdin ----------------------------
+# Interface: xreview-orchestrator.sh [--models <spec-list>] [<prompt-file>|-]
+#   --models  comma-separated reviewer specs; repeatable. Each spec is an alias
+#             (g:pro) or a full <cli>:<model> (agy:gemini-3.1-pro). Absent →
+#             fall back to config reviewers.
+#   prompt    single positional; "-" or absent → read prompt from stdin.
+# Trailing bare positionals after the prompt file are still accepted as specs
+# (legacy positional form); --models wins when both are supplied.
+models_from_flag=()
+positionals=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage_xreview; exit 0 ;;
+    --models)
+      if [[ -z "${2:-}" ]]; then
+        echo "FAIL orchestrator missing_value_for_--models"
+        emit_all_done_event
+        exit 2
+      fi
+      IFS=',' read -r -a _chunk <<< "$2"
+      for _m in "${_chunk[@]}"; do [[ -n "$_m" ]] && models_from_flag+=("$_m"); done
+      shift 2 ;;
+    --models=*)
+      IFS=',' read -r -a _chunk <<< "${1#--models=}"
+      for _m in "${_chunk[@]}"; do [[ -n "$_m" ]] && models_from_flag+=("$_m"); done
+      shift ;;
+    --) shift; while [[ $# -gt 0 ]]; do positionals+=("$1"); shift; done ;;
+    *) positionals+=("$1"); shift ;;
+  esac
+done
+
+# M6.4: stdin mode. When no positional prompt file (or "-" sentinel) is given,
 # slurp stdin into a managed tmpfile. This lets coordinator issue a single
 # Monitor call with the prompt piped in (heredoc / echo), no pre/post Bash tool
 # calls for mktemp + rm. The early trap guarantees cleanup even if validation
 # below exits before the main cleanup() function is registered.
 _tmp_prompt_file=""
-if [[ $# -eq 0 || "${1:-}" == "-" ]]; then
+if [[ ${#positionals[@]} -eq 0 || "${positionals[0]}" == "-" ]]; then
   _tmp_prompt_file="$(mktemp /tmp/xreview-prompt-XXXXXX.md)" || {
     echo "FAIL orchestrator mktemp_failed"
     emit_all_done_event
@@ -259,13 +297,21 @@ if [[ $# -eq 0 || "${1:-}" == "-" ]]; then
   trap 'cleanup_tmp_file "$_tmp_prompt_file"' EXIT
   cat > "$_tmp_prompt_file"
   prompt_file="$_tmp_prompt_file"
-  # Drop the "-" sentinel if present so remaining args are all specs.
-  [[ "${1:-}" == "-" ]] && shift
+  # Drop the leading positional (the "-" sentinel); the rest are legacy specs.
+  [[ ${#positionals[@]} -gt 0 ]] && positionals=("${positionals[@]:1}")
 else
-  prompt_file="$1"
-  shift
+  prompt_file="${positionals[0]}"
+  positionals=("${positionals[@]:1}")
 fi
-specs=("$@")
+
+# Reviewer specs: --models flag wins; else legacy trailing positionals; else
+# leave empty so the config fallback below resolves them.
+specs=()
+if [[ ${#models_from_flag[@]} -gt 0 ]]; then
+  specs=("${models_from_flag[@]}")
+elif [[ ${#positionals[@]} -gt 0 ]]; then
+  specs=("${positionals[@]}")
+fi
 
 # Validate prompt file early — fail fast before touching config or env.
 if [[ ! -f "$prompt_file" ]]; then

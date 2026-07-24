@@ -1,3 +1,11 @@
-dist/
+dist/*
+!dist/custom-statusline/
+dist/custom-statusline/*
+!dist/custom-statusline/claude-statusline.mjs
+!dist/opencode-plugins/
+dist/opencode-plugins/*
+!dist/opencode-plugins/opencode-codex-usage-capture.js
+!dist/opencode-plugins/opencode-codex-usage-format.js
+!dist/opencode-plugins/opencode-codex-usage-status.tsx
 node_modules/
 .build-manifest.json

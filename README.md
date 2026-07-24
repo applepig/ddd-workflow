@@ -38,6 +38,8 @@ npx skills add . --skill "*" -g -a claude-code -a opencode -a codex -a gemini-cl
 npm run agents:build
 ```
 
+此命令只重建各平台 agent 檔案；package 內隨版發布的 custom statusline 與 OpenCode plugin runtime bundles 會保留，可接著直接部署。
+
 部署 non-skill 項目到本機 agent 設定目錄：
 
 ```bash
@@ -51,6 +53,8 @@ npm run agents:deploy
 npm run agents:deploy -- claude --dry-run
 npm run agents:deploy -- opencode
 ```
+
+部署會為 session-trigger 建立隔離 HOME，並將一般 OpenCode data home 中可讀的一般 `auth.json`／`account.json` 檔案複製進隔離 data home。第一次 OpenCode 登入仍須由使用者自行完成；若 credential 缺少、不可讀或不是一般檔案，deploy 會清除對應的舊隔離副本、提示來源路徑並繼續，不會代為登入或建立 credential。
 
 ## 工作流總覽
 

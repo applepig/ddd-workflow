@@ -13,13 +13,15 @@ description: >
 
 `/ddd.plan` 是 spec 前的探索與校準流程。它把使用者的 idea / rough plan 對照 `PRD.md`、`TECHSTACK.md`、既有 sprint 文件與 codebase，沿著 decision tree 逐一釐清阻塞決策，防止 domain drift、技術方向漂移與 scope 膨脹。
 
+Docs/code 校準與 Reuse Map 是本 skill 的必要產出；取得這些資訊時依 AGENTS.md「角色分工」路由，本 skill 不重述探索派工判準。
+
 完成後直接 chain 到 `/ddd.spec`。
 
 <HARD-GATE>
 嚴禁撰寫程式碼或修改專案設定檔，直到 spec.md 獲使用者確認。
 嚴禁自行假設商業邏輯，需求模糊時必須提問。
-嚴禁跳過 docs/code 校準直接產 spec；能從 docs/code 查到的答案必須自己查。
-方向涉及新建 function / 元件 / 樣式時，必須先盤點既有可複用資產，帶入 spec 的「既有資產盤點 / Reuse Map」。
+嚴禁跳過 docs/code 校準直接產 spec。
+方向涉及新建 function / 元件 / 樣式時，必須先取得既有可複用資產盤點，帶入 spec 的「既有資產盤點 / Reuse Map」。
 </HARD-GATE>
 
 ## 工作強度
@@ -47,20 +49,19 @@ description: >
 
 ## Checklist
 
-1. **讀取 DDD anchor** — 讀 `docs/PRD.md`、`docs/TECHSTACK.md`、相關 sprint docs、README 與相關 code
+1. **讀取 DDD anchor** — 讀 `docs/PRD.md`、`docs/TECHSTACK.md`、相關 sprint docs、README，並取得相關 code context
 2. **選擇工作強度** — 判斷 Light / Standard / Deep，並向使用者簡短說明目前判斷
 3. **解析 decision tree** — 找出會阻塞設計的 domain、scope、technical、UX、data、migration、testability 決策
-4. **逐一 grill** — 一次只問一個阻塞決策；每題都給推薦答案；能查就查，不問使用者
+4. **逐一 grill** — 一次只問一個阻塞決策；每題都給推薦答案；可查證的事實先查明，不問使用者
 5. **對照 docs/code** — 檢查使用者說法是否與 PRD、TECHSTACK、既有 spec、ADR、code 相衝突
 6. **必要時更新輔助文件** — 依文件職責更新 PRD、TECHSTACK 或 research.md
-7. **需求完整性與可複用資產摘要** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`；並把探索 code 時發現的可複用 utility / 元件 / 樣式 token 整理成清單，帶入 spec 的「既有資產盤點 / Reuse Map」
+7. **需求完整性與可複用資產摘要** — 回溯對話，確認需求、約束、偏好都會帶入 `/ddd.spec`；並把 code 探索結果中的可複用 utility / 元件 / 樣式 token 整理成清單，帶入 spec 的「既有資產盤點 / Reuse Map」
 8. **接續 `/ddd.spec`** — invoke `/ddd.spec`，將規劃結論填入 spec 的背景、驗收條件、ADR 與 Milestones
 
 ## Grilling 規則
 
 - **Decision tree 優先**：不要跑固定問題清單。沿著目前需求的決策樹前進，每次只處理一個會阻塞設計的分支。
 - **推薦答案必填**：每個決策題都要包含已知事實、2-3 個選項、Coordinator 的推薦選項與理由。
-- **Codebase-first**：問題若能由 docs/code 回答，自己查；只有缺少使用者判斷才提問。
 - **Question Tool**：真正需要使用者決策時，用 Question Tool，不用一般文字問句代替。
 - **不設問題上限**：簡單需求可能 1-2 題，Deep Planning 可能很多題。若使用者要求收斂，立即摘要目前決策與剩餘風險，進入 `/ddd.spec`。
 - **避免低價值問題**：不要問命名、路徑、技術棧等可由 docs/code 推得的細節；不要重複問已決定的分支。

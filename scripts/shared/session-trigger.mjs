@@ -16,6 +16,12 @@
 //   mkdir -p ~/.session-trigger/.claude
 //   ln -s ~/.claude/.credentials.json ~/.session-trigger/.claude/.credentials.json
 //
+//   # opencode: isolated XDG_DATA_HOME so trigger pings don't pollute
+//   # `opencode session list`. The isolated dir only needs auth symlinks:
+//   mkdir -p ~/.session-trigger/opencode-data/opencode
+//   ln -s ~/.local/share/opencode/auth.json ~/.session-trigger/opencode-data/opencode/auth.json
+//   ln -s ~/.local/share/opencode/account.json ~/.session-trigger/opencode-data/opencode/account.json
+//
 //   Logs are written to ~/.session-trigger/session-trigger.log
 //
 // ## How the 5-hour rolling window works
@@ -36,7 +42,7 @@
 //   2. Verifies each trigger succeeded by parsing the rate-limit response:
 //      - Claude: `rate_limit_event` in --output-format stream-json --verbose stdout
 //      - Codex: `token_count` event in ~/.codex/sessions/ file
-//      - opencode: captured `x-codex-*` headers in ~/.config/ddd-workflow/opencode-codex-usage/codex-usage.json
+//      - opencode: captured `x-codex-*` headers in ~/.cache/ddd-workflow/custom-statusline/codex-usage.json
 //   3. On failure, applies retry logic based on the window expiry time:
 //      - Expires within TOLERANCE (45min) → wait, then retry once
 //      - Expires beyond TOLERANCE → skip, wait for the next cron tick
@@ -74,12 +80,25 @@ const RETRY_DELAY_MS = 30 * 1000      // 30 seconds (fallback when no resetsAt)
 const EXEC_TIMEOUT_MS = 60 * 1000     // 60 seconds
 const TZ = "Asia/Taipei"
 const TRIGGER_HOME = join(homedir(), ".session-trigger")
+const OPENCODE_TRIGGER_DATA = join(TRIGGER_HOME, "opencode-data")
 const LOG_FILE = join(TRIGGER_HOME, "session-trigger.log")
-const CONFIG_HOME = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
-const OPENCODE_USAGE_FILE = join(CONFIG_HOME, "ddd-workflow", "opencode-codex-usage", "codex-usage.json")
+const OPENCODE_USAGE_FILE = resolveOpencodeUsageFile()
 const USER_BIN_PATHS = [join(homedir(), ".opencode", "bin"), join(homedir(), ".local", "bin")]
 const TRIGGER_PATH = [...USER_BIN_PATHS, process.env.PATH ?? ""].filter(Boolean).join(":")
 const ENABLE_CODEX_TRIGGER = false
+
+// AC27（spec 36）：與 custom-statusline/core/codex-usage-store 的
+// resolveCodexUsageFilePath 同值——OpenCode capture plugin 寫進的 store，
+// 就是這裡讀來驗證 ping 的檔案。解析語意是 shell 的 ${VAR:-fallback}：
+// 空字串視同未設定，優先序 DDD_CODEX_USAGE_FILE > XDG_CACHE_HOME > ~/.cache。
+export function resolveOpencodeUsageFile(env = process.env) {
+  const override = env.DDD_CODEX_USAGE_FILE
+  if (typeof override === "string" && override !== "") return override
+  const cache_home = env.XDG_CACHE_HOME && env.XDG_CACHE_HOME !== ""
+    ? env.XDG_CACHE_HOME
+    : join(homedir(), ".cache")
+  return join(cache_home, "ddd-workflow", "custom-statusline", "codex-usage.json")
+}
 
 const AGENTS = [
   {
@@ -124,6 +143,7 @@ const AGENTS = [
     name: "opencode",
     cwd: "/tmp",
     env: {
+      XDG_DATA_HOME: OPENCODE_TRIGGER_DATA,
       OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
       OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
       OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
