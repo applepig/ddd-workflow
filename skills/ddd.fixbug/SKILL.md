@@ -1,11 +1,10 @@
 ---
 name: ddd.fixbug
 description: >
-  Bug 修復：系統性診斷與修復 bug，產出三合一 works.md。
-  獨立觸發的 hotfix 快速解，main agent 直接修，不派 ddd-developer。
+  Bug 修復：四階段根因診斷與修復，main agent 直接修（不派 ddd-developer），產出三合一或 sprint works.md 紀錄。
+  獨立觸發的 hotfix 快速解時使用；xreview findings 的修正走 /ddd.xreview 流程，不用本 skill。
   Trigger: "fix bug", "fix this", "bugfix", "hotfix", "修 bug", "修這個",
   "這裡壞了", "有 bug", /ddd.fixbug。
-  發現 bug 需要快速修復時使用；xreview findings 的修正走 /ddd.xreview 流程，不用本 skill。
 ---
 
 # ddd.fixbug — Bug 修復

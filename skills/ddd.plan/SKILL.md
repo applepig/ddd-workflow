@@ -1,9 +1,9 @@
 ---
 name: ddd.plan
 description: >
-  前置規劃：DDD 版 grill-with-docs。用 PRD、TECHSTACK、既有 sprint 文件與 codebase
-  stress-test 使用者的 idea / rough plan，沿 decision tree 逐一釐清阻塞決策，最後直接 chain 到 /ddd.spec。
-  適用於 brownfield extension、greenfield brainstorming、需求模糊、需要 domain language / 技術方向校準的情境。
+  前置規劃：寫 spec 前，用 PRD、TECHSTACK、既有 sprint 文件與 codebase stress-test
+  使用者的 idea / rough plan，沿 decision tree 逐一釐清阻塞決策。
+  需求模糊、方向未定、或需要 domain language / 技術方向校準時使用；需求已明確直接走 /ddd.spec；完成後 chain 到 /ddd.spec。
   Trigger: "plan a feature", "plan an extension", "clarify requirements",
   "brainstorm", "explore ideas", "from scratch", "greenfield",
   "規劃擴充", "規劃改動", "規劃功能", "釐清需求", "腦力激盪", "從頭開始", /ddd.plan。
@@ -94,7 +94,7 @@ Docs/code 校準與 Reuse Map 是本 skill 的必要產出；取得這些資訊�
 
 ## 文件更新規則
 
-`/ddd.plan` 可以在規劃過程中更新輔助文件：`PRD.md`、`TECHSTACK.md` 只放跨 sprint 長期事實，技術調研細節進 `research.md`。Sprint-specific implementation detail 應進入該 sprint 的 `spec.md`。
+`/ddd.plan` 可以在規劃過程中更新輔助文件，取捨依 AGENTS.md「文件結構與職責」；技術調研細節進 `research.md`，sprint-specific implementation detail 進該 sprint 的 `spec.md`。
 
 ## ADR 判斷
 
