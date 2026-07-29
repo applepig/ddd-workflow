@@ -61,14 +61,14 @@ Main agent 在正式 DDD 流程中擔任技術 PM / Coordinator。工作依類�
 
 ```
 docs/
-├── PRD.md                    # project-level product truth：產品目標、使用者角色、核心場景、domain language、長期 scope boundary 與非目標
+├── PRD.md                    # project-level product truth：目標、角色、場景、domain language、長期 scope boundary
 ├── README.md                 # 專案說明
-├── TECHSTACK.md              # project-level technical truth：技術棧、版本限制、外部服務、runtime constraints、project-level ADR 連結
+├── TECHSTACK.md              # project-level technical truth：技術棧、限制、外部服務、project-level ADR 連結
 └── <編號>-<名稱>/            # Sprint 文件包
-    ├── plan.md               # (optional) 探索筆記、初步想法、靈感，或 long sprint 拆分草稿
-    ├── research.md           # (optional) 技術方案探討筆記：外部文件摘要、比較、實驗結果與未進入 ADR 的技術細節
-    ├── spec.md               # sprint-level SSOT：目標/非目標、User Story、驗收條件、邊界案例、ADR、Milestones
-    └── works.md              # 工作紀錄：work / xreview / fixbug 後建立或更新
+    ├── plan.md               # (optional) 探索筆記與拆分草稿
+    ├── research.md           # (optional) 技術調研筆記
+    ├── spec.md               # sprint-level SSOT（內容結構見 /ddd.spec 模板）
+    └── works.md              # 工作紀錄（格式見 /ddd.work）
 ```
 
 `PRD.md` 和 `TECHSTACK.md` 只放跨 sprint 長期事實。`works.md` 是工作紀錄，開工前沒有是正常狀態。
@@ -77,16 +77,9 @@ Instruction file（`CLAUDE.md`、`AGENTS.md` 等）只放耐久事實（架構�
 
 ### 執行流程概述
 
-1. **Plan/Research** (optional)：需求不明確時，先規劃方向、進行技術調研
-2. **Spec**：撰寫 spec.md（含輕量 Milestones）→ 使用者確認
-3. **Execute**：依 `spec.md` Milestones 派 `ddd-developer` 以 TDD 循環實作 → 驗收結果 → 更新文件 → 使用者確認後 commit
-4. **Review**：派 cross review（多模型獨立審查）→ 驗收 review 結果 → 修正
+Plan/Research（optional，需求不明時）→ Spec（使用者確認）→ Execute（TDD 派工實作）→ Review（cross review）。Coordinator 主導規劃階段，執行與審查階段轉為派工、追蹤、驗收。
 
-Milestones 需要細化、或 scope 過大需要拆分 sprint 時，在進入 Execute 前用 /ddd.tasks 更新 spec.md → 使用者確認。
-
-Coordinator 主導階段 1–2（規劃），階段 3–4 轉為派工、追蹤、驗收。
-
-> 各階段的詳細步驟請參考對應的 skill：
+> 各階段的詳細步驟與階段轉換條件見對應 skill：
 > `/ddd.plan`、`/ddd.spec`、`/ddd.tasks`、`/ddd.work`、`/ddd.xreview`。
 > Bug 快速修復用 `/ddd.fixbug`，E2E 除錯用 `/ddd.agent-browser`。
 
@@ -121,11 +114,7 @@ Coordinator 主導階段 1–2（規劃），階段 3–4 轉為派工、追蹤�
 
 * 遵循 Conventional Commits：`<type>[scope]: <description>`
 * 提交授權見底線第 3 條；每個 milestone 完成後隨即準備 commit，方便獨立 review。
-
-### Worktree 路徑約定
-
-- `git worktree add` 預設路徑放在 `$PROJECT_ROOT/.worktree/<branch-name>/`，並把 `.worktree` 加進 `.gitignore`
-- Claude Code `Agent({ isolation: "worktree" })` 可能建立在 `.claude/worktree/*`，視為可接受例外
+* Worktree 路徑約定見 `/ddd.work`「派工 pipeline」派發步驟。
 
 ---
 

@@ -1,11 +1,11 @@
 ---
 name: ddd.agent-browser
 description: >
-  E2E 除錯指南：用 agent-browser CLI 在 DDD 工作流中系統性除錯前端問題。
+  E2E 除錯：用 agent-browser CLI 重現場景、觀察狀態、定位前端問題根因。
+  E2E 測試失敗、需要視覺驗證 UI 行為、或追蹤前端問題時使用，通常在 /ddd.work 中觸發。
   Trigger: "debug E2E", "check the page", "why is the test failing",
   "open the browser", "take a screenshot", "inspect the DOM",
   "E2E 失敗", "測試壞了", "檢查頁面", /ddd.agent-browser。
-  E2E 測試失敗、需要視覺驗證 UI 行為、或追蹤前端問題時使用。
 ---
 
 # ddd.agent-browser — E2E 除錯說明書

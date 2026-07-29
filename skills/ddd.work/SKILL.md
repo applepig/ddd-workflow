@@ -1,11 +1,11 @@
 ---
 name: ddd.work
 description: >
-  TDD 開發執行：coordinator 派 ddd-developer 以 Red → Green → Refactor 循環實作 spec.md Milestones；
+  TDD 開發執行：coordinator 逐 milestone 派 ddd-developer 以 Red → Green → Refactor 循環實作並驗收；
   遇到 🔀 平行工作線時同時派發多個 worker 分工。
+  spec.md 已確認、準備寫程式碼時使用。
   Trigger: "start implementing", "begin development", "let's code", "do TDD",
   "開始實作", "開始寫", "動工", /ddd.work。
-  spec.md 已確認後，準備寫程式碼時使用。
 ---
 
 # ddd.work — 開發執行
@@ -58,7 +58,7 @@ description: >
 
 ### 3. 派發 1..N
 
-- N>1 時，先為每條工作線自當前分支建立專屬分支，worktree 建在 `$PROJECT_ROOT/.worktree/<工作線分支名>/`——git 不允許同一分支同時 checkout 到兩個 worktree。worker 只在自己的 worktree 內工作，完成後以分支保留、由 coordinator 合併。host 不支援平行派發或 worktree 時，改 N=1 依序派發並明講。
+- N>1 時，先為每條工作線自當前分支建立專屬分支，worktree 建在 `$PROJECT_ROOT/.worktree/<工作線分支名>/`（`.worktree` 加進 `.gitignore`；host 以 `Agent({ isolation: "worktree" })` 自建在 `.claude/worktree/*` 時視為可接受例外）——git 不允許同一分支同時 checkout 到兩個 worktree。worker 只在自己的 worktree 內工作，完成後以分支保留、由 coordinator 合併。host 不支援平行派發或 worktree 時，改 N=1 依序派發並明講。
 - 派發是例行下一步，不是決策點；只有派發計畫會改變 scope、或存在未決風險時，才用 Question Tool 確認。派發後在**同一輪的最終訊息**回報派發內容（哪些工作線、各自範圍）——工具呼叫前的中間文字使用者看不到，不做「先展示、再派發」的兩段式。
 - host 支援 worker 雙向溝通（如 team SendMessage）時，worker 對介面契約或預期值的提問是例行協作，即時回覆釘值；釘下的值同步回填 spec 的 AC 範例，維持 SSOT。釘值若等同新增或改變驗收條件、介面契約的實質決策，依 AGENTS.md「規格變更」暫停並請使用者決策。
 
@@ -102,7 +102,7 @@ workflow 派發 → 逐線 `ddd-developer` 派發 → host 無 subagent 機制�
 
 ## works.md 格式
 
-works.md 的格式以本節為唯一真相來源，其他 skill 只引用、不重述。每完成一個 milestone（或一次修正批次）追加一筆：
+Sprint works.md 的格式以本節為唯一真相來源，其他 skill 只引用、不重述（`/ddd.fixbug` 的三合一 works.md 是獨立 hotfix 格式，由該 skill 自定）。每完成一個 milestone（或一次修正批次）追加一筆：
 
 ```markdown
 # Works: <sprint 名稱>

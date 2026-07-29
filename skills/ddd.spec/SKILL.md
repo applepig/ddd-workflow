@@ -1,10 +1,10 @@
 ---
 name: ddd.spec
 description: >
-  撰寫規格書：產出包含 User Story、驗收條件、API 契約、ADR、輕量 Milestones 的 spec.md。
+  撰寫規格書：產出包含 User Story、驗收條件、Reuse Map、API 契約、ADR、輕量 Milestones 的 spec.md。
+  需求已明確、可直接定義驗收條件時使用；需求模糊先走 /ddd.plan。
   Trigger: "write a spec", "define requirements", "draft acceptance criteria",
   "寫規格", "定義需求", "驗收條件", /ddd.spec。
-  功能需要正式規格才能開始實作時使用。
 ---
 
 # ddd.spec — 規格制定
@@ -26,7 +26,7 @@ description: >
 2. **探索現有 codebase 並盤點可複用資產** — 了解現有架構、pattern、相關模組；產出「既有資產盤點 / Reuse Map」，列出可複用的 utility / 元件 / 樣式 token / pattern
 3. **需求分析** — 釐清 User Story、驗收條件、邊界案例
 4. **撰寫 spec.md** — 按模板填寫
-5. **Spec self-review** — 5 項檢查（見下方）
+5. **Spec self-review** — 8 項檢查（見下方）
 6. **使用者審閱** — 呈現 spec、等待確認、根據回饋修改
 
 ## 設計指引
@@ -114,7 +114,7 @@ description: >
 寫完 spec.md 後，用新鮮的眼光檢查：
 
 0. **需求完整性比對**：回溯本次對話紀錄，逐一比對使用者提出的需求、約束、偏好，確認全部已記錄在 spec.md 中。遺漏的立即補上
-1. **Placeholder 掃描**：有沒有「TBD」、「待確認」、空白段落？補完或移至 Open Questions
+1. **Placeholder 掃描**：有沒有「TBD」、「待確認」、空白段落？補完，或改寫成明確的待決問題向使用者呈報裁決
 2. **內部一致性**：目標、User Story、驗收條件、Milestones 之間有沒有矛盾？介面設計是否支撐所有驗收條件？
 3. **Scope 檢查**：這個範圍適合一個 sprint 嗎？還是需要再拆？
 4. **歧義檢查**：有沒有哪個驗收條件能被兩種方式解讀？挑一個寫明確
