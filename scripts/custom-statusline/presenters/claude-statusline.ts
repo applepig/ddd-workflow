@@ -47,10 +47,11 @@ export interface StatuslineView {
 
 // model id → 短名：claude-opus-4-8[1m] → Opus 4.8[1M]、claude-fable-5 → Fable 5、
 // 無法辨識（GPT／unknown）原樣 passthrough。
+// 1M context 兩種標記寫法（id 的 [1m]、display_name 的 "(1M context)"）都收斂成 [1M]。
 export function formatModel(raw_id: string): string {
-  const suffix = /\[1[mM]\]/.test(raw_id) ? "[1M]" : ""
+  const suffix = /\[1[mM]\]|\(1M context\)/.test(raw_id) ? "[1M]" : ""
   // bash ${raw%%\[*} parity：從第一個 [ 起截斷。
-  const raw = raw_id.replace(/\[[\s\S]*$/, "")
+  const raw = raw_id.replace(/\[[\s\S]*$/, "").replace(/\s*\(1M context\)\s*$/, "")
 
   const with_minor = raw.match(/^claude-([a-z]+)-([0-9]+)-([0-9]+)/)
   if (with_minor !== null) {

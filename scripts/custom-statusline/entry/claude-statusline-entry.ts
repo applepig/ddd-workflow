@@ -537,14 +537,23 @@ async function collectGitView(project_dir: string, run_git: GitRunner): Promise<
   const shortstat = tryGit(run_git, ["-C", project_dir, "diff", "--shortstat"])
   // untracked：ls-files --others --exclude-standard 尊重 .gitignore，一行一檔。
   const untracked_out = tryGit(run_git, ["-C", project_dir, "ls-files", "--others", "--exclude-standard"])
-  if (branch === "") return null
+  // detached HEAD 時 --show-current 成功但回空字串；退回短 SHA，避免整行連同 diff 統計一起消失。
+  // 空 repo（無 commit）的 rev-parse 會失敗 → 仍視為無可顯示的 ref。
+  const detached_sha = branch === "" ? tryGit(run_git, ["-C", project_dir, "rev-parse", "--short", "HEAD"]) : ""
+  const ref = branch === "" ? formatDetachedRef(detached_sha) : branch
+  if (ref === "") return null
 
   return {
-    branch,
+    branch: ref,
     insertions: parseShortstatCount(shortstat, /(\d+) insertion/),
     deletions: parseShortstatCount(shortstat, /(\d+) deletion/),
     untracked: countLines(untracked_out),
   }
+}
+
+// detached ref 加 @ 前綴，與 branch 名稱在視覺上區隔。
+function formatDetachedRef(short_sha: string): string {
+  return short_sha === "" ? "" : `@${short_sha}`
 }
 
 // tryGit 已去尾換行；空字串代表 0 檔，非空則行數即檔數。
