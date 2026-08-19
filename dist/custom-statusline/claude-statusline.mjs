@@ -656,8 +656,8 @@ var YELLOW = "\x1B[33m";
 var RED = "\x1B[31m";
 var CYAN = "\x1B[36m";
 function formatModel(raw_id) {
-	const suffix = /\[1[mM]\]/.test(raw_id) ? "[1M]" : "";
-	const raw = raw_id.replace(/\[[\s\S]*$/, "");
+	const suffix = /\[1[mM]\]|\(1M context\)/.test(raw_id) ? "[1M]" : "";
+	const raw = raw_id.replace(/\[[\s\S]*$/, "").replace(/\s*\(1M context\)\s*$/, "");
 	const with_minor = raw.match(/^claude-([a-z]+)-([0-9]+)-([0-9]+)/);
 	if (with_minor !== null) return `${capitalize(with_minor[1])} ${with_minor[2]}.${with_minor[3]}${suffix}`;
 	const major_only = raw.match(/^claude-([a-z]+)-([0-9]+)$/);
@@ -1064,13 +1064,24 @@ async function collectGitView(project_dir, run_git) {
 		"--others",
 		"--exclude-standard"
 	]);
-	if (branch === "") return null;
+	const detached_sha = branch === "" ? tryGit(run_git, [
+		"-C",
+		project_dir,
+		"rev-parse",
+		"--short",
+		"HEAD"
+	]) : "";
+	const ref = branch === "" ? formatDetachedRef(detached_sha) : branch;
+	if (ref === "") return null;
 	return {
-		branch,
+		branch: ref,
 		insertions: parseShortstatCount(shortstat, /(\d+) insertion/),
 		deletions: parseShortstatCount(shortstat, /(\d+) deletion/),
 		untracked: countLines(untracked_out)
 	};
+}
+function formatDetachedRef(short_sha) {
+	return short_sha === "" ? "" : `@${short_sha}`;
 }
 function countLines(text) {
 	return text === "" ? 0 : text.split("\n").length;
