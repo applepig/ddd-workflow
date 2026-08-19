@@ -225,8 +225,29 @@ function parseUsageResponse(response) {
 		}
 	};
 }
+async function readLastResortUsageCache(options = {}) {
+	return readUsableUsageCache(Number.POSITIVE_INFINITY, options);
+}
 async function collectAnthropicOauthUsage(options = {}) {
-	return parseUsageResponse(await fetchAnthropicUsage(await getOAuthToken(options), options));
+	const token = await getOAuthToken(options);
+	const response = await fetchAnthropicUsage(token, options);
+	if (response !== null) return {
+		...parseUsageResponse(response),
+		is_stale: false
+	};
+	if (token === null || token === "") return {
+		...parseUsageResponse(null),
+		is_stale: false
+	};
+	const stale = await readLastResortUsageCache(options);
+	if (stale === null) return {
+		...parseUsageResponse(null),
+		is_stale: false
+	};
+	return {
+		...parseUsageResponse(stale),
+		is_stale: true
+	};
 }
 //#endregion
 //#region .publish/ddd-workflow/scripts/custom-statusline/collectors/claude-status-json.ts
@@ -710,8 +731,8 @@ function resolvePctFieldWidth(bar_rows) {
 	for (const row of bar_rows) width = Math.max(width, `${pctText(row.pct)}%`.length);
 	return width;
 }
-function makeBarRowLine(label, bar, pct_text, extra, pct_width) {
-	return nbspify(`${label.padEnd(7)} ${bar} ${WHITE}${`${pct_text}%`.padEnd(pct_width)}${RST} | ${extra}`);
+function makeBarRowLine(label, bar, pct_text, extra, pct_width, pct_color) {
+	return nbspify(`${label.padEnd(7)} ${bar} ${pct_color}${`${pct_text}%`.padEnd(pct_width)}${RST} | ${extra}`);
 }
 var SEP = ` | `;
 function renderStatuslineView(view) {
@@ -719,8 +740,10 @@ function renderStatuslineView(view) {
 	let output = `${RST}${`${nbspify("Model:")} ${WHITE}${nbspify(model_display)}${RST}${SEP}${nbspify("Dir:")} ${WHITE}${nbspify(view.dir_name)}${RST}`}`;
 	const pct_width = resolvePctFieldWidth(view.bar_rows);
 	for (const row of view.bar_rows) {
-		const bar = makeBar(row.pct === null ? 0 : pctToFilled(row.pct, 25), 25, row.pct === null ? "" : row.scheme === "context" ? colorByPct(row.pct) : quotaColor(row.pct));
-		output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width)}`;
+		const filled = row.pct === null ? 0 : pctToFilled(row.pct, 25);
+		const stale = row.stale === true;
+		const bar = makeBar(filled, 25, row.pct === null ? "" : stale ? DIM : row.scheme === "context" ? colorByPct(row.pct) : quotaColor(row.pct));
+		output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width, stale ? DIM : WHITE)}`;
 	}
 	if (view.git !== null && view.git.branch !== "") {
 		const untracked_str = view.git.untracked > 0 ? `, ${YELLOW}?${view.git.untracked}${RST}` : "";
@@ -752,24 +775,30 @@ async function renderStatusline(stdin_input, options = {}) {
 	let session_resets_at = five_hour.resets_at;
 	let weekly_pct = 0;
 	let weekly_reset = "--";
+	let session_stale = false;
+	let weekly_stale = false;
 	if (provider === "anthropic") {
 		const usage = await collectAnthropicOauthUsage({
 			env,
 			now_ms,
 			fetch_fn: options.fetch_fn
 		});
-		if (usage.five_hour.resets_at !== null) {
+		if (usage.five_hour.resets_at !== null && isUsableUsageWindow(usage.five_hour.resets_at, usage.is_stale, now_ms)) {
 			const status_pct = normalizePct(session_pct);
 			const api_pct = normalizePct(usage.five_hour.utilization);
 			const api_resets_at = isoToEpochSeconds(usage.five_hour.resets_at);
-			session_pct = isSameWindowRegression(session_resets_at, api_resets_at, status_pct, api_pct) ? status_pct : api_pct;
+			const keep_status = isSameWindowRegression(session_resets_at, api_resets_at, status_pct, api_pct);
+			session_pct = keep_status ? status_pct : api_pct;
 			session_resets_at = api_resets_at;
+			session_stale = usage.is_stale && !keep_status;
 		}
-		if (usage.seven_day.resets_at !== null) {
+		if (usage.seven_day.resets_at !== null && isUsableUsageWindow(usage.seven_day.resets_at, usage.is_stale, now_ms)) {
 			const api_weekly_pct = normalizePct(usage.seven_day.utilization);
 			const api_weekly_resets_at = isoToEpochSeconds(usage.seven_day.resets_at);
-			weekly_pct = isSameWindowRegression(seven_day.resets_at, api_weekly_resets_at, status_weekly_pct, api_weekly_pct) ? status_weekly_pct : api_weekly_pct;
+			const keep_status = isSameWindowRegression(seven_day.resets_at, api_weekly_resets_at, status_weekly_pct, api_weekly_pct);
+			weekly_pct = keep_status ? status_weekly_pct : api_weekly_pct;
 			weekly_reset = api_weekly_resets_at > 0 ? formatResetClock(api_weekly_resets_at, env.TZ) : "--";
+			weekly_stale = usage.is_stale && !keep_status;
 		} else if (seven_day.resets_at > 0 || status_weekly_pct > 0) {
 			weekly_pct = status_weekly_pct;
 			if (seven_day.resets_at > 0) weekly_reset = formatResetClock(seven_day.resets_at, env.TZ);
@@ -790,17 +819,19 @@ async function renderStatusline(stdin_input, options = {}) {
 			label: "Session",
 			pct: session_pct,
 			scheme: "quota",
-			extra: timer_str
+			extra: timer_str,
+			stale: session_stale
 		});
 		bar_rows.push({
 			label: "Weekly",
 			pct: weekly_pct,
 			scheme: "quota",
-			extra: weekly_reset
+			extra: weekly_reset,
+			stale: weekly_stale
 		});
 	} else if (provider === "openai-codex") {
-		const windows = await resolveCodexQuotaWindows(status.rate_limits, env, now_ms, options);
-		bar_rows.push(...buildCodexQuotaRows(windows, now_ms, env.TZ));
+		const codex_quota = await resolveCodexQuotaWindows(status.rate_limits, env, now_ms, options);
+		bar_rows.push(...buildCodexQuotaRows(codex_quota.windows, now_ms, env.TZ, codex_quota.stale));
 	} else bar_rows.push({
 		label: "Quota",
 		pct: null,
@@ -875,15 +906,37 @@ function parseCodexCallbackWindows(rate_limits, now_ms) {
 function activeSnapshotWindows(snapshot, now_ms) {
 	return [snapshot.primary, snapshot.secondary].filter((window) => isWindowActive(window, now_ms));
 }
+async function readStaleCodexWindows(env, now_ms) {
+	const snapshot = await readCodexUsageRaw({
+		env,
+		now_ms
+	});
+	if (snapshot === null) return [];
+	if (!isObservedAtPlausible(snapshot.observed_at, now_ms)) return [];
+	if (isObservationFresh(snapshot.observed_at, now_ms, resolveMaxAgeSeconds(env))) return [];
+	return activeSnapshotWindows(snapshot, now_ms);
+}
 async function resolveCodexQuotaWindows(rate_limits, env, now_ms, options) {
 	const callback_windows = parseCodexCallbackWindows(rate_limits, now_ms);
-	if (callback_windows.length > 0) return callback_windows;
+	if (callback_windows.length > 0) return {
+		windows: callback_windows,
+		stale: false
+	};
 	const fresh = await readCodexUsageFresh({
 		env,
 		now_ms
 	});
 	const throttle_age = await fileAgeSeconds(codexFetchThrottlePath(env), now_ms);
-	if (throttle_age !== null && throttle_age < CODEX_FETCH_THROTTLE_SECONDS) return fresh !== null ? activeSnapshotWindows(fresh, now_ms) : [];
+	if (throttle_age !== null && throttle_age < CODEX_FETCH_THROTTLE_SECONDS) {
+		if (fresh !== null) return {
+			windows: activeSnapshotWindows(fresh, now_ms),
+			stale: false
+		};
+		return {
+			windows: await readStaleCodexWindows(env, now_ms),
+			stale: true
+		};
+	}
 	await markCodexFetchAttempt(env, now_ms);
 	const result = await fetchCodexUsage({
 		fetch_fn: options.codex_fetch_fn,
@@ -897,13 +950,23 @@ async function resolveCodexQuotaWindows(rate_limits, env, now_ms, options) {
 				now_ms
 			});
 		} catch {}
-		return activeSnapshotWindows(result.observation, now_ms);
+		return {
+			windows: activeSnapshotWindows(result.observation, now_ms),
+			stale: false
+		};
 	}
 	const fallback = await readCodexUsageFresh({
 		env,
 		now_ms
 	});
-	return fallback !== null ? activeSnapshotWindows(fallback, now_ms) : [];
+	if (fallback !== null) return {
+		windows: activeSnapshotWindows(fallback, now_ms),
+		stale: false
+	};
+	return {
+		windows: await readStaleCodexWindows(env, now_ms),
+		stale: true
+	};
 }
 function formatCodexCountdown(remaining_seconds) {
 	if (remaining_seconds >= SECONDS_PER_DAY) return `${Math.floor(remaining_seconds / SECONDS_PER_DAY)}d ${Math.floor(remaining_seconds % SECONDS_PER_DAY / SECONDS_PER_HOUR)}h`;
@@ -917,7 +980,7 @@ function formatCodexWindowReset(window, now_seconds, time_zone) {
 	if (isSubDayWindow(window.window_minutes)) return format30HourResetClock(reset_at, time_zone);
 	return formatCodexCountdown(reset_at - now_seconds);
 }
-function buildCodexQuotaRows(windows, now_ms, time_zone) {
+function buildCodexQuotaRows(windows, now_ms, time_zone, stale) {
 	if (windows.length === 0) return [{
 		label: "Quota",
 		pct: null,
@@ -929,7 +992,8 @@ function buildCodexQuotaRows(windows, now_ms, time_zone) {
 		label: windowLabel(window.window_minutes, STATUSLINE_WINDOW_LABEL_OVERRIDES) ?? "Quota",
 		pct: window.used_percent === null ? null : normalizePct(window.used_percent),
 		scheme: "quota",
-		extra: formatCodexWindowReset(window, now_seconds, time_zone)
+		extra: formatCodexWindowReset(window, now_seconds, time_zone),
+		stale
 	}));
 }
 function computeContextTokens(context_window) {
@@ -984,6 +1048,11 @@ function readRateLimitWindow(rate_limits, key) {
 function isoToEpochSeconds(value) {
 	const ms = Date.parse(value);
 	return Number.isFinite(ms) ? Math.floor(ms / 1e3) : 0;
+}
+function isUsableUsageWindow(resets_at, is_stale, now_ms) {
+	if (!is_stale) return true;
+	const reset_seconds = isoToEpochSeconds(resets_at);
+	return reset_seconds > 0 && !isWindowElapsed(reset_seconds, now_ms);
 }
 function isSameWindowRegression(status_resets_at, api_resets_at, status_pct, api_pct) {
 	if (status_resets_at <= 0 || api_resets_at <= 0) return false;

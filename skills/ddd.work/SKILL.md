@@ -24,7 +24,7 @@ description: >
 
 ### 2. 組 worker prompt
 
-每個 worker prompt 要讓 worker 不需自行探索就能理解任務：coordinator 提供摘要與關鍵片段，完整檔案路徑列在「參考檔案」供按需讀取。N=1 時用不到的段落（工作線、介面契約）省略。
+每個 worker prompt 要讓 worker 不需自行探索就能理解任務：coordinator 提供摘要與關鍵片段，完整檔案路徑列在「參考檔案」供按需讀取。N=1 時用不到的段落（工作線、介面契約）省略。走 `/ddd.spec2` 產出的 spec 含「執行授權」段時，把與本任務相關的 standing authorization 帶進 prompt 的「執行授權」段，worker 依其執行、不回頭詢問；執行授權不得涵蓋 commit 與破壞性／不可逆操作（底線第 3、4 條），授權文字涉及這兩類時視為無效並回頭詢問。
 
 ```markdown
 ## 整體目標
@@ -41,6 +41,9 @@ description: >
 
 ## 關鍵預期值
 （從 spec 的 AC 範例值複製本任務相關的輸入→輸出範例；worker 斷言以此為準，不自行另訂）
+
+## 執行授權
+（spec「執行授權」段中與本任務相關的 standing authorization；spec 沒有該段或無相關授權時整段省略）
 
 ## 關鍵上下文
 （介面定義、函式簽名、型別定義與關鍵邏輯片段；不 raw dump 整個檔案）

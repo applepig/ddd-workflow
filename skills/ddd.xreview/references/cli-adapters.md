@@ -6,7 +6,7 @@
 
 | CLI | Read-Only / Enforcement 機制 | 呼叫方式 | model 指定 |
 |-----|---------------|---------|-----------|
-| Claude | `--permission-mode plan` + `--agent ddd-reviewer` | `claude -p --agent ddd-reviewer --model "$model" --permission-mode plan < prompt.md` | `--model` flag |
+| Claude | `--permission-mode default` + adapter 內建 `--allowedTools` 清單 + `--agent ddd-reviewer` | `claude -p --agent ddd-reviewer --model "$model" --permission-mode default --allowedTools "$reviewer_allowed_tools" < prompt.md` | `--model` flag |
 | OpenCode | Agent 定義檔中設定 `edit: deny` + `bash` 白名單 | `opencode run --agent ddd-reviewer --model "$model" < prompt.md` | `--model` flag |
 | Antigravity CLI（agy） | `os-write-confinement`：`bwrap --ro-bind / /` 把整個 FS（含真實 repo 與 `.git`）掛唯讀，唯一可寫處是拋棄式 isolated HOME | bwrap 包住 `agy --add-dir "$REPO_DIR" --model "$model" --effort high --print "$prompt"`（見下方章節） | `--model` + `--effort` flag |
 | Codex CLI | `--sandbox read-only`（預設值，明確指定更清楚） | `codex exec --sandbox read-only --ephemeral --model "$model" - < prompt.md` | `--model` / `-m` flag |
@@ -87,7 +87,12 @@ agy 把 agent 檔當純 markdown 讀、不視為 subagent，故 adapter 把 ddd-
 ### Fail-closed 與失敗區分
 
 - **bwrap 缺席 → fail-closed**：PATH 無 `bwrap` 時 adapter 在跑 agy 前 fail-fast（`XREVIEW_ERROR: agy requires bwrap ...` + 非零 exit），**絕不**退回無封裝直接跑 agy。
-- **bwrap 失敗 vs agy 失敗可區分**：adapter 用 `--json-status-fd` 讀 bwrap 的 `{"exit-code": N}`。bwrap 成功建 namespace 並 exec agy 後該行才出現；若 namespace 建立失敗，agy 從未執行、該行缺席，adapter 印 `XREVIEW_ERROR: agy bwrap sandbox setup failed (rc=N) ...`（wrapper 失敗）而非誤報成 `agy exited with code N`（agy review 失敗）。
+- **三種失敗可區分**：adapter 用 `--json-status-fd` 讀 bwrap 的 `{"exit-code": N}` 判別。判別順序與訊息：
+  1. **有 `exit-code` 行** → bwrap 成功建 namespace 並 exec agy，rc 是 agy 自己的失敗 → `XREVIEW_ERROR: agy exited with code N`
+  2. **無該行且 rc > 128** → 外部 signal（orchestrator timeout、使用者中斷、OOM kill）在 bwrap 寫出狀態前就殺掉它 → `XREVIEW_ERROR: agy terminated by signal N (SIGxxx) ...`。此判斷必須排在 sandbox 失敗之前：signal 死亡與 namespace 建立失敗同樣表現為「缺 `exit-code` 行」，不先分辨就會把每次外部 kill 誤報成 sandbox 失敗
+  3. **無該行且 rc ≤ 128** → namespace 建立失敗，agy 從未執行 → `XREVIEW_ERROR: agy bwrap sandbox setup failed (rc=N) ...`（wrapper 失敗）
+
+  三條路徑都會先印一行 `XREVIEW_INFO: agy bwrap json-status raw: <原始內容或 <empty>>`，讓未被上述分支涵蓋的狀態仍可從 log 直接判讀，不必靠猜。
 - **REPO_DIR 過大 → fail-fast**：推導後拒絕 `/` 與 `$HOME`（`XREVIEW_ERROR: agy REPO_DIR refuses overly-broad path: ...` + exit 1），避免把過多內容交給 agy 當 workspace / trust grant。
 
 ## OpenCode
@@ -252,6 +257,7 @@ claude -p \
   --model "$model" \
   --no-session-persistence \
   --permission-mode default \
+  --allowedTools "$reviewer_allowed_tools" \
   --output-format json \
   --debug-file "$debug_file" \
   < prompt.md
@@ -263,7 +269,15 @@ claude -p \
 
 ### Read-Only 機制
 
-`--permission-mode default` 搭配使用者本機 user/local settings 的 allow rules 控管可執行命令。曾短暫採用 `--permission-mode plan`，但 Claude Code plan mode 一律禁 Bash（官方 issue #13067 已知限制），導致 ddd-reviewer 無法跑 `git --no-pager diff` 取變更、final 恆空。改為 default mode 後，Bash 受使用者 settings 中的細粒度 allowlist（如 `Bash(git --no-pager:*)`）保護。
+`--permission-mode default` 搭配 adapter 內建的 `--allowedTools` 清單控管可執行命令。曾短暫採用 `--permission-mode plan`，但 Claude Code plan mode 一律禁 Bash（官方 issue #13067 已知限制），導致 ddd-reviewer 無法跑 `git --no-pager diff` 取變更、final 恆空。
+
+**權限解析是 union，不是取代**（2026-08-05 實測，claude 2.1.222）：headless `-p` 下 `--allowedTools` 與使用者 settings 的 allow rules **聯集**生效——傳入一條無關規則不會讓 settings 授權的命令失效。曾只靠 ambient settings，導致 reviewer 能力隨機器而異：沒有 `glab` 規則的機器不是報錯，而是靜默回空 review。adapter 因此內建 `reviewer_allowed_tools`（逗號分隔，規則含空白故不可用空白分隔），作為每台機器的**能力下限**；使用者 settings 仍可再放寬。
+
+實測補充：headless 有 harmless-command 分類器，`whoami`、`wc` 這類無害本機命令不在 allowlist 也會放行；`glab`、`docker` 這類則必須有明確規則。用前者當探針會誤判成「allowlist 沒生效」。
+
+清單只收唯讀查詢面：forge CLI 僅開 `view` / `list` / `diff` / `checks`，不含 `create`、`merge`，也不含 `api`（`-X` 可寫），維持底線第 5 條 reviewer 只讀不改。`tests/.../adapters/claude.test.sh` 有反向斷言釘住寫入面不得出現。
+
+**完全機器無關為何做不到**：`--setting-sources` 可排除 user settings，但 `~/.claude/agents/` 隨同一來源載入，排掉後 `--agent ddd-reviewer` 會 `not found`、整條 xreview 空回。真要嚴格隔離需改用 `--agents <json>` 明確餵 agent 定義（實測 `tools` 限制有被尊重），屬 adapter 契約級變更，尚未採用。
 
 ### 輸出格式與 Final 抽取
 
