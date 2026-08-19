@@ -104,6 +104,37 @@ fi
 add_dirs=(--add-dir "$repo_dir" --add-dir /tmp)
 [[ -d "$config_dir" && "$config_dir" != /tmp ]] && add_dirs+=(--add-dir "$config_dir")
 
+# Reviewer Bash allowlist — repo-controlled floor, comma-separated for
+# --allowedTools (rules contain spaces, so space-separation would split them).
+#
+# Why this exists: --permission-mode default resolves Bash against the UNION of
+# the user's settings allowlist and --allowedTools (verified: passing an
+# unrelated --allowedTools rule does not suppress a settings-granted command).
+# Relying on ambient settings alone made reviewer capability machine-dependent —
+# a host without `glab` rules produced an empty review instead of a failure.
+# This list guarantees a floor on every machine; user settings may widen it.
+# Full isolation would need --setting-sources to drop user settings, but that
+# also unloads ~/.claude/agents, so `--agent ddd-reviewer` stops resolving.
+#
+# Read-only by construction (底線第 5 條 reviewer 只讀不改): forge CLIs expose
+# only their query verbs — no create/merge, and no `api` (it writes with -X).
+reviewer_allowed_tools="Bash(git --no-pager:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+reviewer_allowed_tools+=",Bash(git status:*),Bash(git branch:*),Bash(git rev-parse:*)"
+reviewer_allowed_tools+=",Bash(git merge-base:*),Bash(git ls-files:*),Bash(git blame:*)"
+reviewer_allowed_tools+=",Bash(git shortlog:*),Bash(git for-each-ref:*),Bash(git describe:*)"
+reviewer_allowed_tools+=",Bash(git fetch:*)"
+reviewer_allowed_tools+=",Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*)"
+reviewer_allowed_tools+=",Bash(sort:*),Bash(uniq:*),Bash(cut:*)"
+reviewer_allowed_tools+=",Bash(rg:*),Bash(fd:*),Bash(jq:*),Bash(command -v:*)"
+reviewer_allowed_tools+=",Bash(glab mr view:*),Bash(glab mr list:*),Bash(glab mr diff:*)"
+reviewer_allowed_tools+=",Bash(glab issue view:*),Bash(glab issue list:*)"
+reviewer_allowed_tools+=",Bash(glab repo view:*),Bash(glab ci list:*),Bash(glab ci view:*)"
+reviewer_allowed_tools+=",Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*)"
+reviewer_allowed_tools+=",Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh issue list:*)"
+reviewer_allowed_tools+=",Bash(gh repo view:*),Bash(gh run list:*),Bash(gh run view:*)"
+reviewer_allowed_tools+=",Bash(npm test:*),Bash(npm run test:*),Bash(pnpm test:*)"
+reviewer_allowed_tools+=",Bash(pnpm run test:*),Bash(vitest:*)"
+
 # chdir into the repo root so ddd-reviewer's Bash `git --no-pager diff` targets
 # the repo under review rather than a nested submodule the orchestrator cwd may
 # have landed in. File-path args were made absolute above, so the redirects hold.
@@ -117,13 +148,14 @@ cd "$repo_dir" || {
 set +o pipefail
 # --permission-mode default (not plan): plan mode denies Bash unconditionally
 # (Issue #13067, Issue #2058 — no per-mode allowlist) and ddd-reviewer needs
-# Bash for `git --no-pager diff`. Safety relies on user/local settings
-# allowlist; CI environments must supply --allowedTools explicitly.
+# Bash for `git --no-pager diff`. --allowedTools pins the reviewer's floor so
+# capability no longer varies with the host's settings (see list above).
 "$cli_path" -p \
   --agent ddd-reviewer \
   --model "$model" \
   --no-session-persistence \
   --permission-mode default \
+  --allowedTools "$reviewer_allowed_tools" \
   --output-format json \
   --debug-file "$debug_file" \
   "${add_dirs[@]}" \

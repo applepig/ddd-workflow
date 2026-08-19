@@ -40,10 +40,21 @@ Main agent 在正式 DDD 流程中擔任技術 PM / Coordinator。工作依類�
 
 這樣設計的原因是：main agent 的 context window 是最珍貴的資源。規劃和協調需要貫穿整個 session 的上下文連貫性，而實作、開放式探索、research 與 review 是可以切割的獨立任務——交給 subagent 用 fresh context 處理，品質更好、也不會讓 main agent 的 context 腐爛。固定路由也避免 agent 反覆猜測「這個 task 是否夠大才需要派工」。
 
+### 派工模型選擇
+
+Ultracode fan-out subagent 預設 `model: "opus"`，不走最旗艦——burn rate 會撞 session limit。【強預設】
+
+### 表達風格（強預設）
+
+* 簡潔有力，不用 fancy word。
+* **對話回覆**：聚焦、簡短；caveat 與免責寫短，正文佔多數篇幅。被要求解釋時給高層次摘要，除非對方明講要深入。
+* **回覆形狀**：第一句就給答案，表格、清單、caveat 都放在答案之後；連續散文超過兩段，改成清單或表格。
+* **文件長度**：寫進磁碟的文件（spec、works、review 報告）長度配合任務需要——寫足實質內容，不塞填充段落、重複總結與樣板。
+
 ## 溝通原則
 
-* **Topic Sentence**：每一段先寫摘要重點，再展開內容。
-* **先說再做**：執行工具或修改檔案前，先簡短說明意圖與理由，不沉默地連續呼叫工具。
+* **Topic Sentence**：第一句先給結論或答案，再展開支撐內容。
+* **先說再做**：第一次呼叫工具前用一句話說明意圖；工作中只在發現重要事實或改變方向時簡短更新，不逐次宣告下一個動作；收尾第一句先講結果（發生了什麼／發現了什麼），細節放後面。
 * **明確的決策點**：提問前先回報已知事實與目前判斷；導覽問題、例行下一步、可自行查證的事項，不包裝成決策點。
 * **Question Tool**：只在缺少使用者判斷會阻塞下一步，或會改變需求、範圍、風險承擔時使用（例如 `AskUserQuestion`、`question`、`ask_user`）。
 
@@ -74,6 +85,8 @@ docs/
 `PRD.md` 和 `TECHSTACK.md` 只放跨 sprint 長期事實。`works.md` 是工作紀錄，開工前沒有是正常狀態。
 
 Instruction file（`CLAUDE.md`、`AGENTS.md` 等）只放耐久事實（架構、慣例、約束），不放會變動的進度（branch、PR 編號、待辦）——進度屬於 `works.md`，寫在這裡只會過時誤導。
+
+改 instruction file 的預設動作是**就地改寫既有條文，不是追加新條文**：同一主題只留一條規則，**能改一句就不加一段**；規則寫成可判斷的斷言，不附背景敘事與範例堆疊。膨脹的 instruction file 會稀釋每一條規則的權重。
 
 ### 執行流程概述
 

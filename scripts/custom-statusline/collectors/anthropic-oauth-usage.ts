@@ -265,10 +265,33 @@ export function parseUsageResponse(response: AnthropicUsageResponse | null): Ant
   }
 }
 
-// collector 入口：token → live-first fetch → parse。
+export interface AnthropicUsageResult extends AnthropicUsage {
+  // true = 值取自超過 300 秒 stale 容忍的舊 cache（AC39）；顯示層據此標示 DIM。
+  is_stale: boolean
+}
+
+// AC39 的最後手段：live fetch 與 300 秒 cache 都拿不到時，讀「payload 合法」的最後一次
+// cache，不設時間上限。值是否仍有意義由 window 是否過 reset 決定——那是顯示層的判斷。
+export async function readLastResortUsageCache(
+  options: AnthropicOauthUsageOptions = {},
+): Promise<AnthropicUsageResponse | null> {
+  return readUsableUsageCache(Number.POSITIVE_INFINITY, options)
+}
+
+// collector 入口：token → live-first fetch → parse；全失敗才退到 stale cache（AC39）。
 // 同 reset window「較新／較高 observation」的 merge 規則屬 render 層（M2），不在本 collector。
-export async function collectAnthropicOauthUsage(options: AnthropicOauthUsageOptions = {}): Promise<AnthropicUsage> {
+export async function collectAnthropicOauthUsage(
+  options: AnthropicOauthUsageOptions = {},
+): Promise<AnthropicUsageResult> {
   const token = await getOAuthToken(options)
   const response = await fetchAnthropicUsage(token, options)
-  return parseUsageResponse(response)
+  if (response !== null) return { ...parseUsageResponse(response), is_stale: false }
+
+  // 無 token 時 fetchAnthropicUsage 根本沒打 API（Bash parity：直接回空、不碰 cache），
+  // 因此也不進 stale fallback——否則「沒登入」會顯示上一個帳號的舊數字。
+  if (token === null || token === "") return { ...parseUsageResponse(null), is_stale: false }
+
+  const stale = await readLastResortUsageCache(options)
+  if (stale === null) return { ...parseUsageResponse(null), is_stale: false }
+  return { ...parseUsageResponse(stale), is_stale: true }
 }

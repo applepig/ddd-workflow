@@ -4,6 +4,7 @@
 import {
   OPENCODE_WINDOW_LABEL_OVERRIDES,
   isObservationFresh,
+  isObservedAtPlausible,
   isValidUsedPercent,
   isWindowElapsed,
   windowLabel as deriveWindowLabel,
@@ -34,24 +35,42 @@ export function activeLimitRows(usage) {
   return active.map((slot) => ({ label: windowLabel(slot.window_minutes) ?? "wk", limit: slot }))
 }
 
-// stale→unknown（AC24）：observed_at 超過 freshness 的 snapshot，percent 一律 unknown；
-// 缺 used_percent 是 null 不是 0（Case 7 同族判準），同樣以 unknown 呈現。
-// observed_at 未提供時跳過 freshness gate（單 window 層級的呼叫；snapshot 層一律傳入）。
-export function usedPercent(limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
+// freshness 以外的有效值判準共用於 public unknown 判斷與 TUI stale display fallback。
+function validLimitPercent(limit, now) {
   if (!limit) return undefined
-  if (observed_at !== undefined && !isObservationFresh(observed_at, now, max_age_seconds)) return undefined
   if (limit.reset_at && isWindowElapsed(limit.reset_at, now)) return undefined
   if (!isValidUsedPercent(limit.used_percent)) return undefined
   return Math.round(limit.used_percent)
 }
 
+// 保留 public contract：stale／invalid observation 不能作為有效 quota 判斷。
+export function usedPercent(limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
+  if (observed_at !== undefined && !isObservationFresh(observed_at, now, max_age_seconds)) return undefined
+  return validLimitPercent(limit, now)
+}
+
+// AC24 v7 僅允許 structurally valid、超過 freshness 的 local snapshot 作 TUI muted fallback。
+function hasStaleObservation(observed_at, now, max_age_seconds) {
+  return (
+    observed_at !== undefined &&
+    isObservedAtPlausible(observed_at, now) &&
+    !isObservationFresh(observed_at, now, max_age_seconds)
+  )
+}
+
 export function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
-  const percent_value = usedPercent(limit, now, observed_at, max_age_seconds)
+  const fresh_percent = usedPercent(limit, now, observed_at, max_age_seconds)
+  const stale_percent =
+    fresh_percent === undefined && hasStaleObservation(observed_at, now, max_age_seconds)
+      ? validLimitPercent(limit, now)
+      : undefined
+  const percent_value = stale_percent ?? fresh_percent
 
   return {
     label: (windowLabel(limit?.window_minutes) ?? label).padStart(4),
     percent: (percent_value === undefined ? "--%" : `${percent_value}%`).padStart(4),
     percent_value,
+    ...(stale_percent !== undefined ? { percent_is_stale: true } : {}),
     reset: formatRemaining(limit?.reset_at, now).padStart(5),
   }
 }

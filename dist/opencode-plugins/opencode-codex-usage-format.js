@@ -189,19 +189,28 @@ function activeLimitRows(usage) {
 		limit: slot
 	}));
 }
-function usedPercent(limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
+function validLimitPercent(limit, now) {
 	if (!limit) return void 0;
-	if (observed_at !== void 0 && !isObservationFresh(observed_at, now, max_age_seconds)) return void 0;
 	if (limit.reset_at && isWindowElapsed(limit.reset_at, now)) return void 0;
 	if (!isValidUsedPercent(limit.used_percent)) return void 0;
 	return Math.round(limit.used_percent);
 }
+function usedPercent(limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
+	if (observed_at !== void 0 && !isObservationFresh(observed_at, now, max_age_seconds)) return void 0;
+	return validLimitPercent(limit, now);
+}
+function hasStaleObservation(observed_at, now, max_age_seconds) {
+	return observed_at !== void 0 && isObservedAtPlausible(observed_at, now) && !isObservationFresh(observed_at, now, max_age_seconds);
+}
 function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
-	const percent_value = usedPercent(limit, now, observed_at, max_age_seconds);
+	const fresh_percent = usedPercent(limit, now, observed_at, max_age_seconds);
+	const stale_percent = fresh_percent === void 0 && hasStaleObservation(observed_at, now, max_age_seconds) ? validLimitPercent(limit, now) : void 0;
+	const percent_value = stale_percent ?? fresh_percent;
 	return {
 		label: (windowLabel(limit?.window_minutes) ?? label).padStart(4),
 		percent: (percent_value === void 0 ? "--%" : `${percent_value}%`).padStart(4),
 		percent_value,
+		...stale_percent !== void 0 ? { percent_is_stale: true } : {},
 		reset: formatRemaining(limit?.reset_at, now).padStart(5)
 	};
 }
