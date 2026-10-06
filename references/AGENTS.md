@@ -107,6 +107,7 @@ Plan/Research（optional，需求不明時）→ Spec（使用者確認）→ Ex
 * **YAGNI**：「以後可能用到」的參數、設定、extension point、相容層，等 spec、既有資料、外部 API 或使用者真的要求時再加。
 * **註解寫 Why 不寫 What**：程式碼本身就是 what，理由不明顯時才加註解。
 * **Refactor 不擴張 scope**：Red → Green 後，允許在本次修改範圍內消除新產生的重複、改善命名與簡化邏輯；跨模組、改變既有架構或與驗收條件無關的重構，另開任務。
+* **改既有檔案用 Edit／Write**：不用 `sed -i` 或 python／perl heredoc 做字串替換——diff 不可見，且配不到字串時會靜默略過而非報錯。python 用於資料處理、產生新檔案不在此限。
 
 ## 測試品質（強預設＋判準）
 
@@ -196,4 +197,4 @@ Plan/Research（optional，需求不明時）→ Spec（使用者確認）→ Ex
 | 反向代理 | Traefik（Docker label 路由） | nginx |
 | 平台操作 | `gh`（GitHub）、`glab`（GitLab） | 手動開網頁 |
 | 瀏覽器自動化 | `agent-browser --cdp 9222` | 手動 CDP connection |
-| 查外部 GitHub repo | `uvx ask-deepwiki {structure\|contents\|ask} <owner/repo>` | 手動翻 GitHub / 逐檔讀 |
+| 查外部 GitHub repo | `npx -y deepwiki-cli {rws\|rwc\|aq} -r <owner/repo> [-q "問題"]` | 手動翻 GitHub / 逐檔讀 |
