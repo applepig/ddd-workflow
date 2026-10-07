@@ -16,11 +16,11 @@
 //   mkdir -p ~/.session-trigger/.claude
 //   ln -s ~/.claude/.credentials.json ~/.session-trigger/.claude/.credentials.json
 //
-//   # opencode: isolated XDG_DATA_HOME so trigger pings don't pollute
-//   # `opencode session list`. The isolated dir only needs auth symlinks:
+//   # opencode: OPENCODE_DB isolates the session DB so trigger pings don't
+//   # pollute `opencode session list`. Auth deliberately stays shared with the
+//   # main data home — a second auth.json copy would be a second owner of the
+//   # same rotating refresh token, and each refresh invalidates the other side.
 //   mkdir -p ~/.session-trigger/opencode-data/opencode
-//   ln -s ~/.local/share/opencode/auth.json ~/.session-trigger/opencode-data/opencode/auth.json
-//   ln -s ~/.local/share/opencode/account.json ~/.session-trigger/opencode-data/opencode/account.json
 //
 //   Logs are written to ~/.session-trigger/session-trigger.log
 //
@@ -66,9 +66,9 @@
 
 import { execFile, spawn } from "node:child_process"
 import { realpathSync } from "node:fs"
-import { appendFile, readdir, readFile } from "node:fs/promises"
+import { appendFile, mkdir, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 // ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ const RETRY_DELAY_MS = 30 * 1000      // 30 seconds (fallback when no resetsAt)
 const EXEC_TIMEOUT_MS = 60 * 1000     // 60 seconds
 const TZ = "Asia/Taipei"
 const TRIGGER_HOME = join(homedir(), ".session-trigger")
-const OPENCODE_TRIGGER_DATA = join(TRIGGER_HOME, "opencode-data")
+const OPENCODE_TRIGGER_DB = join(TRIGGER_HOME, "opencode-data", "opencode", "opencode.db")
 const LOG_FILE = join(TRIGGER_HOME, "session-trigger.log")
 const OPENCODE_USAGE_FILE = resolveOpencodeUsageFile()
 const USER_BIN_PATHS = [join(homedir(), ".opencode", "bin"), join(homedir(), ".local", "bin")]
@@ -143,7 +143,7 @@ const AGENTS = [
     name: "opencode",
     cwd: "/tmp",
     env: {
-      XDG_DATA_HOME: OPENCODE_TRIGGER_DATA,
+      OPENCODE_DB: OPENCODE_TRIGGER_DB,
       OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
       OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
       OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
@@ -352,12 +352,19 @@ async function readFreshOpencodeUsage(started_at) {
   return null
 }
 
+export function findOpencodeResetAt(usage) {
+  for (const window of [usage.primary, usage.secondary]) {
+    if (typeof window?.reset_at === "number") return window.reset_at * 1000
+  }
+
+  return null
+}
+
 async function parseOpencodeResult(stdout, { started_at } = {}) {
   const usage = await readFreshOpencodeUsage(started_at ?? 0)
   if (!usage) return { ok: false, resets_at: null, reply: parseOpencodeReply(stdout) }
 
-  const resets_at_raw = usage.primary?.reset_at
-  const resets_at = typeof resets_at_raw === "number" ? resets_at_raw * 1000 : null
+  const resets_at = findOpencodeResetAt(usage)
   const ok = resets_at !== null
 
   return { ok, resets_at, reply: parseOpencodeReply(stdout) }
@@ -463,6 +470,9 @@ async function retryTrigger(agent) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  // opencode will not create OPENCODE_DB's parent directory itself — it exits
+  // with "unable to open database file" — so make sure it exists first.
+  await mkdir(dirname(OPENCODE_TRIGGER_DB), { recursive: true })
   await Promise.all(AGENTS.map((agent) => triggerAgent(agent)))
 }
 

@@ -245,9 +245,22 @@ bwrap \
 rc=$?
 
 if [[ $rc -ne 0 ]]; then
+  # Always echo the raw bwrap status line: a shape none of the branches below
+  # recognise stays diagnosable from the log instead of being guessed at.
+  bwrap_status_raw="$(tr -d '\n' < "$BWRAP_STATUS_FILE" 2>/dev/null)"
+  echo "XREVIEW_INFO: agy bwrap json-status raw: ${bwrap_status_raw:-<empty>}" >&2
+
   if grep -q '"exit-code"' "$BWRAP_STATUS_FILE" 2>/dev/null; then
     # bwrap created the sandbox and agy ran: rc is agy's review failure.
     echo "XREVIEW_ERROR: agy exited with code $rc (model: $model)" >&2
+  elif (( rc > 128 )); then
+    # Signal death (orchestrator timeout, user interrupt, OOM kill) reaches
+    # bwrap before it can write the exit-code line. The line is missing for the
+    # same reason as a setup failure, so rc>128 must be disambiguated FIRST —
+    # otherwise every external kill is misreported as a sandbox failure.
+    sig=$((rc - 128))
+    sig_name="$(kill -l "$sig" 2>/dev/null)" || sig_name=""
+    echo "XREVIEW_ERROR: agy terminated by signal $sig${sig_name:+ (SIG$sig_name)} before bwrap reported status; external kill or timeout, not a sandbox setup failure and not an agy review failure (model: $model)" >&2
   else
     # bwrap never exec'd agy: the sandbox setup itself failed.
     echo "XREVIEW_ERROR: agy bwrap sandbox setup failed (rc=$rc); this is a wrapper failure, not an agy review failure (model: $model)" >&2

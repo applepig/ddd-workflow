@@ -23,10 +23,13 @@ export type BarColorScheme = "context" | "quota"
 
 export interface StatuslineBarRowView {
   label: string
-  // null = unknown：--%、bar 全空（spec 36 預期畫面 §GPT 無資料／invalid／stale）。
+  // null = unknown：--%、bar 全空（spec 36 預期畫面 §GPT 無資料／invalid／已過期）。
   pct: number | null
   scheme: BarColorScheme
   extra: string
+  // true = 數字取自 stale 來源（AC38／AC39）：值可讀但不是當前觀測，
+  // 整列改用 DIM 呈現，與 OpenCode TUI 的 textMuted 同一意圖（AC40）。
+  stale?: boolean
 }
 
 export interface StatuslineGitView {
@@ -133,11 +136,18 @@ function resolvePctFieldWidth(bar_rows: StatuslineBarRowView[]): number {
 }
 
 // 渲染一行 bar 列：{label 補齊 7}{NBSP}{bar}{NBSP}{pct 補齊 pct_width}{NBSP}|{NBSP}{extra}
-// 整列 nbspify（bar 內無半形空格）。
-function makeBarRowLine(label: string, bar: string, pct_text: string, extra: string, pct_width: number): string {
+// 整列 nbspify（bar 內無半形空格）。pct_color 只影響色碼，padding 與欄寬不變（AC40）。
+function makeBarRowLine(
+  label: string,
+  bar: string,
+  pct_text: string,
+  extra: string,
+  pct_width: number,
+  pct_color: string,
+): string {
   const label_padded = label.padEnd(7)
   const pct_padded = `${pct_text}%`.padEnd(pct_width)
-  return nbspify(`${label_padded}${NBSP}${bar}${NBSP}${WHITE}${pct_padded}${RST}${NBSP}|${NBSP}${extra}`)
+  return nbspify(`${label_padded}${NBSP}${bar}${NBSP}${pct_color}${pct_padded}${RST}${NBSP}|${NBSP}${extra}`)
 }
 
 const SEP = `${NBSP}|${NBSP}`
@@ -159,9 +169,12 @@ export function renderStatuslineView(view: StatuslineView): string {
   const pct_width = resolvePctFieldWidth(view.bar_rows)
   for (const row of view.bar_rows) {
     const filled = row.pct === null ? 0 : pctToFilled(row.pct, BAR_WIDTH)
-    const color = row.pct === null ? "" : row.scheme === "context" ? colorByPct(row.pct) : quotaColor(row.pct)
+    // stale row 不套 fresh 色階：填格與百分比一律 DIM，讓「可讀但不是當前值」一眼可分（AC40）。
+    const stale = row.stale === true
+    const color =
+      row.pct === null ? "" : stale ? DIM : row.scheme === "context" ? colorByPct(row.pct) : quotaColor(row.pct)
     const bar = makeBar(filled, BAR_WIDTH, color)
-    output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width)}`
+    output += `\n${RST}${makeBarRowLine(row.label, bar, pctText(row.pct), row.extra, pct_width, stale ? DIM : WHITE)}`
   }
 
   // Branch row 僅在 git repo 內（branch 非空）顯示；+/- diff 永遠顯示、含 0，

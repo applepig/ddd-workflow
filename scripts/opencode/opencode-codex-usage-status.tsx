@@ -5,7 +5,7 @@ import { activeLimitRows, limitColumns } from "./opencode-codex-usage-format.js"
 
 // 共用 Codex store（spec 36 AC10、ADR-7）：路徑解析（DDD_CODEX_USAGE_FILE／XDG_CACHE_HOME）
 // 與 schema 驗證交給 core store 模組。用 raw 讀取讓 stale snapshot 仍能顯示 row，
-// 百分比是否 --% 由 format 層的 freshness 判準決定（AC24 stale→unknown）。
+// format 層只將最後合法 stale 百分比標記為 muted fallback（AC24 v7）。
 async function readUsage() {
   try {
     return (await readCodexUsageRaw()) ?? undefined
@@ -25,7 +25,7 @@ function LimitView(props) {
 
   return (
     <text fg={theme().textMuted}>
-      {columns().label} <span style={{ fg: colorByUsage(theme(), columns().percent_value) }}>{columns().percent}</span> reset {columns().reset}
+      {columns().label} <span style={{ fg: columns().percent_is_stale === true ? theme().textMuted : colorByUsage(theme(), columns().percent_value) }}>{columns().percent}</span> reset {columns().reset}
     </text>
   )
 }

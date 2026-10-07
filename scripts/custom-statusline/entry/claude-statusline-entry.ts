@@ -24,13 +24,18 @@ import { fetchCodexUsage } from "../collectors/codex-usage-api.ts"
 import type { FetchLike } from "../collectors/codex-usage-api.ts"
 import {
   readCodexUsageFresh,
+  readCodexUsageRaw,
   resolveCodexUsageFilePath,
+  resolveMaxAgeSeconds,
   writeCodexUsageSnapshot,
 } from "../core/codex-usage-store.ts"
 import {
   STATUSLINE_WINDOW_LABEL_OVERRIDES,
+  isObservationFresh,
+  isObservedAtPlausible,
   isValidUsedPercent,
   isWindowActive,
+  isWindowElapsed,
   windowLabel,
 } from "../core/quota-window.ts"
 import { resolveModelDisplayName, resolveProvider } from "../core/resolve-provider.ts"
@@ -101,6 +106,9 @@ export async function renderStatusline(
   let session_resets_at = five_hour.resets_at
   let weekly_pct = 0
   let weekly_reset = "--"
+  // 值最終取自 stale cache 時才標記；被 same-window regression 換回 StatusJSON 的值不算（AC39）。
+  let session_stale = false
+  let weekly_stale = false
 
   if (provider === "anthropic") {
     // AC5／AC12：只有 Anthropic 分支讀 Anthropic OAuth Usage API 與 cache；
@@ -108,23 +116,28 @@ export async function renderStatusline(
     const usage = await collectAnthropicOauthUsage({ env, now_ms, fetch_fn: options.fetch_fn })
 
     // 若 API 有資料，用 API 的 five_hour 覆蓋 StatusJSON（同 window 不回退）。
-    if (usage.five_hour.resets_at !== null) {
+    if (usage.five_hour.resets_at !== null && isUsableUsageWindow(usage.five_hour.resets_at, usage.is_stale, now_ms)) {
       const status_pct = normalizePct(session_pct)
       const api_pct = normalizePct(usage.five_hour.utilization)
       const api_resets_at = isoToEpochSeconds(usage.five_hour.resets_at)
-      session_pct = isSameWindowRegression(session_resets_at, api_resets_at, status_pct, api_pct)
-        ? status_pct
-        : api_pct
+      const keep_status = isSameWindowRegression(session_resets_at, api_resets_at, status_pct, api_pct)
+      session_pct = keep_status ? status_pct : api_pct
       session_resets_at = api_resets_at
+      session_stale = usage.is_stale && !keep_status
     }
 
-    if (usage.seven_day.resets_at !== null) {
+    if (usage.seven_day.resets_at !== null && isUsableUsageWindow(usage.seven_day.resets_at, usage.is_stale, now_ms)) {
       const api_weekly_pct = normalizePct(usage.seven_day.utilization)
       const api_weekly_resets_at = isoToEpochSeconds(usage.seven_day.resets_at)
-      weekly_pct = isSameWindowRegression(seven_day.resets_at, api_weekly_resets_at, status_weekly_pct, api_weekly_pct)
-        ? status_weekly_pct
-        : api_weekly_pct
+      const keep_status = isSameWindowRegression(
+        seven_day.resets_at,
+        api_weekly_resets_at,
+        status_weekly_pct,
+        api_weekly_pct,
+      )
+      weekly_pct = keep_status ? status_weekly_pct : api_weekly_pct
       weekly_reset = api_weekly_resets_at > 0 ? formatResetClock(api_weekly_resets_at, env.TZ) : "--"
+      weekly_stale = usage.is_stale && !keep_status
     } else if (seven_day.resets_at > 0 || status_weekly_pct > 0) {
       weekly_pct = status_weekly_pct
       if (seven_day.resets_at > 0) {
@@ -146,14 +159,14 @@ export async function renderStatusline(
     { label: "Context", pct: ctx_pct, scheme: "context", extra: formatTokens(ctx_tokens) },
   ]
   if (provider === "anthropic") {
-    bar_rows.push({ label: "Session", pct: session_pct, scheme: "quota", extra: timer_str })
-    bar_rows.push({ label: "Weekly", pct: weekly_pct, scheme: "quota", extra: weekly_reset })
+    bar_rows.push({ label: "Session", pct: session_pct, scheme: "quota", extra: timer_str, stale: session_stale })
+    bar_rows.push({ label: "Weekly", pct: weekly_pct, scheme: "quota", extra: weekly_reset, stale: weekly_stale })
   } else if (provider === "openai-codex") {
     // AC11／AC13：GPT 分支絕不碰 Anthropic collector／cache；quota 來源依序為
     // callback rate_limits → fresh store → throttled usage API fetch（ADR-4），
     // rows 依 active windows 動態產生（ADR-3、AC18）。
-    const windows = await resolveCodexQuotaWindows(status.rate_limits, env, now_ms, options)
-    bar_rows.push(...buildCodexQuotaRows(windows, now_ms, env.TZ))
+    const codex_quota = await resolveCodexQuotaWindows(status.rate_limits, env, now_ms, options)
+    bar_rows.push(...buildCodexQuotaRows(codex_quota.windows, now_ms, env.TZ, codex_quota.stale))
   } else {
     // Case 11：unknown provider 不碰任何 provider quota 來源——連 Codex store／
     // usage API 也不讀，只顯示單列 unknown Quota。
@@ -265,26 +278,45 @@ function activeSnapshotWindows(snapshot: CodexWindowPair, now_ms: number): Codex
   )
 }
 
+interface CodexQuotaResult {
+  windows: CodexQuotaWindow[]
+  // true = windows 取自超過 freshness 的 snapshot，presenter 以 DIM 標示（AC38、AC40）。
+  stale: boolean
+}
+
+// stale fallback（AC38）：fresh store 與 live fetch 都不可用時，改用 raw snapshot 的最後一次
+// 觀測——observed_at 必須可解析且未超前現在（只是過了 freshness），window 仍須未 elapsed。
+// schema invalid 的 snapshot 在 readCodexUsageRaw 就被擋掉，不會走到這裡。
+async function readStaleCodexWindows(env: EnvMap, now_ms: number): Promise<CodexQuotaWindow[]> {
+  const snapshot = await readCodexUsageRaw({ env, now_ms })
+  if (snapshot === null) return []
+  if (!isObservedAtPlausible(snapshot.observed_at, now_ms)) return []
+  if (isObservationFresh(snapshot.observed_at, now_ms, resolveMaxAgeSeconds(env))) return []
+  return activeSnapshotWindows(snapshot, now_ms)
+}
+
 // GPT quota 資料流（ADR-4，與 Anthropic 分支同構）：
 // callback rate_limits（合法即最優先，AC15）→ throttled usage API fetch（AC16/AC17）→
-// fresh store fallback → 全部不可用回空（誠實 unknown，Case 10）。
+// fresh store fallback → stale store fallback（AC38，標記 stale）→ 全部不可用回空
+//（誠實 unknown，Case 10）。stale fallback 不改變 live-first 與 throttle 判準。
 async function resolveCodexQuotaWindows(
   rate_limits: Record<string, unknown> | null,
   env: EnvMap,
   now_ms: number,
   options: StatuslineRenderOptions,
-): Promise<CodexQuotaWindow[]> {
+): Promise<CodexQuotaResult> {
   const callback_windows = parseCodexCallbackWindows(rate_limits, now_ms)
-  if (callback_windows.length > 0) return callback_windows
+  if (callback_windows.length > 0) return { windows: callback_windows, stale: false }
 
   // Store 先讀取但只作 fallback；不得因 store 尚在 freshness 內就跳過 live fetch，
   // 否則其他 harness 的舊 observation 會在 CCX 畫面沿用最長 60 分鐘。
   const fresh = await readCodexUsageFresh({ env, now_ms })
 
-  // throttle 內不重打，沿用 fresh store；沒有合法 fallback 才顯示 unknown（Case 9/10）。
+  // throttle 內不重打，沿用 fresh store；fresh 不可用時退到 stale 值（Case 9/10、AC38）。
   const throttle_age = await fileAgeSeconds(codexFetchThrottlePath(env), now_ms)
   if (throttle_age !== null && throttle_age < CODEX_FETCH_THROTTLE_SECONDS) {
-    return fresh !== null ? activeSnapshotWindows(fresh, now_ms) : []
+    if (fresh !== null) return { windows: activeSnapshotWindows(fresh, now_ms), stale: false }
+    return { windows: await readStaleCodexWindows(env, now_ms), stale: true }
   }
 
   // 先標記再 fetch：fetch 失敗也不在同 throttle 週期內重打（Anthropic collector parity）。
@@ -303,12 +335,14 @@ async function resolveCodexQuotaWindows(
     } catch {
       // 吞掉：寫入 shared store 失敗不影響本次 render。
     }
-    return activeSnapshotWindows(result.observation, now_ms)
+    return { windows: activeSnapshotWindows(result.observation, now_ms), stale: false }
   }
 
-  // fetch 失敗：重新讀取 freshness 內 store，納入 fetch 期間並行 writer 的更新；否則 unknown。
+  // fetch 失敗：重新讀取 freshness 內 store，納入 fetch 期間並行 writer 的更新；
+  // 仍沒有 fresh 值時退到 stale 值（AC38），完全沒有可用 observation 才 unknown。
   const fallback = await readCodexUsageFresh({ env, now_ms })
-  return fallback !== null ? activeSnapshotWindows(fallback, now_ms) : []
+  if (fallback !== null) return { windows: activeSnapshotWindows(fallback, now_ms), stale: false }
+  return { windows: await readStaleCodexWindows(env, now_ms), stale: true }
 }
 
 // day+ window 的倒數：≥1 天顯示 Nd Nh（Weekly「6d 4h」），否則 Nh Nm。
@@ -341,8 +375,14 @@ function formatCodexWindowReset(window: CodexQuotaWindow, now_seconds: number, t
 // rows 依 active windows 動態產生（ADR-3）：label 由 window_minutes 推導（AC19），
 // 依 window 長度排序（短窗在前，Session→Weekly；ordinal 不可信，Case 5）；
 // 缺 used_percent 顯示 --%（AC22、Case 7）；無 active window 單列 unknown（AC18）。
-function buildCodexQuotaRows(windows: CodexQuotaWindow[], now_ms: number, time_zone: string | undefined): StatuslineBarRowView[] {
+function buildCodexQuotaRows(
+  windows: CodexQuotaWindow[],
+  now_ms: number,
+  time_zone: string | undefined,
+  stale: boolean,
+): StatuslineBarRowView[] {
   if (windows.length === 0) {
+    // unknown 單列不帶 stale：沒有數字可標示，維持既有 --% 呈現。
     return [{ label: "Quota", pct: null, scheme: "quota", extra: "--" }]
   }
   const now_seconds = Math.floor(now_ms / 1000)
@@ -354,6 +394,7 @@ function buildCodexQuotaRows(windows: CodexQuotaWindow[], now_ms: number, time_z
     pct: window.used_percent === null ? null : normalizePct(window.used_percent),
     scheme: "quota" as const,
     extra: formatCodexWindowReset(window, now_seconds, time_zone),
+    stale,
   }))
 }
 
@@ -448,6 +489,14 @@ function readRateLimitWindow(rate_limits: Record<string, unknown> | null, key: s
 function isoToEpochSeconds(value: string): number {
   const ms = Date.parse(value)
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0
+}
+
+// stale cache 的 window 一旦過了 reset，該百分比就沒有意義（新 window 已從 0 起算）——
+// 回到既有 StatusJSON fallback，而不是復活過期數字（AC39）。fresh 值不受此限。
+function isUsableUsageWindow(resets_at: string, is_stale: boolean, now_ms: number): boolean {
+  if (!is_stale) return true
+  const reset_seconds = isoToEpochSeconds(resets_at)
+  return reset_seconds > 0 && !isWindowElapsed(reset_seconds, now_ms)
 }
 
 // 同一個 reset window（差 ≤60s）內，較低的 API/cache 值通常是 stale cache，
