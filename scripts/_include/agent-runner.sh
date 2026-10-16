@@ -15,7 +15,7 @@ usage_xreview() {
 cat <<'EOF'
 Usage: xreview-orchestrator.sh [--models <spec-list>] [<prompt-file>|-]
   --models  comma-separated reviewer specs (alias or cli:model), repeatable.
-            e.g. --models g:pro,g:flash   or   --models agy:gemini-3.1-pro
+            e.g. --models g:pro,g:flash   or   --models agy:gemini-4-argon
             Omitted → use reviewers from ~/.config/ddd-workflow/xreview.json
   prompt    single positional; "-" or omitted → read prompt from stdin.
 EOF
@@ -254,7 +254,7 @@ fi
 # --- arg parse: --models flag + prompt-file/stdin ----------------------------
 # Interface: xreview-orchestrator.sh [--models <spec-list>] [<prompt-file>|-]
 #   --models  comma-separated reviewer specs; repeatable. Each spec is an alias
-#             (g:pro) or a full <cli>:<model> (agy:gemini-3.1-pro). Absent →
+#             (g:pro) or a full <cli>:<model> (agy:gemini-4-argon). Absent →
 #             fall back to config reviewers.
 #   prompt    single positional; "-" or absent → read prompt from stdin.
 # Trailing bare positionals after the prompt file are still accepted as specs
@@ -494,12 +494,14 @@ for spec in "${specs[@]}"; do
 
   cli="${spec%%:*}"
   model="${spec#*:}"
-  if [[ ! "$cli" =~ ^[a-z0-9_-]+$ ]] || [[ ! "$model" =~ ^[A-Za-z0-9._/:-]+$ ]]; then
+  # `#` carries an OpenCode 2.x variant (`openai/gpt-5.6-luna#low`); it is
+  # mid-word in every path built from the slug, so it never starts a comment.
+  if [[ ! "$cli" =~ ^[a-z0-9_-]+$ ]] || [[ ! "$model" =~ ^[A-Za-z0-9._/:#-]+$ ]]; then
     # Pre-create log file so FAIL log=$log is Readable for invalid specs too.
     cat > "$log" << EOF
 [xreview] XREVIEW_ERROR: invalid spec format: $spec
 [xreview] cli must match ^[a-z0-9_-]+\$
-[xreview] model must match ^[A-Za-z0-9._/:-]+\$
+[xreview] model must match ^[A-Za-z0-9._/:#-]+\$
 EOF
     # Empty final.txt so coordinator's Read protocol (step 7.1) sees the
     # content-layer-failure signal (empty → fail).

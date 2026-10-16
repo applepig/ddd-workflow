@@ -19,11 +19,14 @@
 //   # Claude Code rewrites credentials atomically (tmp + rename), which replaces
 //   # the symlink with a private file and silently forks the refresh chain.
 //
-//   # opencode: OPENCODE_DB isolates the session DB so trigger pings don't
-//   # pollute `opencode session list`. Auth deliberately stays shared with the
-//   # main data home — a second auth.json copy would be a second owner of the
-//   # same rotating refresh token, and each refresh invalidates the other side.
-//   mkdir -p ~/.session-trigger/opencode-data/opencode
+//   # opencode: the command depends on `opencode --version`.
+//   # 1.x — OPENCODE_DB isolates the session DB so trigger pings don't pollute
+//   #   `opencode session list` (the parent dir is created by main()). Auth
+//   #   deliberately stays shared with the main data home — a second auth.json
+//   #   copy would be a second owner of the same rotating refresh token.
+//   # 2.x — provider state (auth included) lives in the DB, so an isolated DB
+//   #   has no provider (`provider.no-route`). The ping runs `--standalone`
+//   #   against the default DB and deletes its own session afterwards.
 //
 //   # agy: each attempt runs in a throwaway HOME (os tmpdir) that symlinks ONLY
 //   # ~/.gemini/antigravity-cli/antigravity-oauth-token, then is deleted. agy
@@ -51,7 +54,8 @@
 //   2. Verifies each trigger succeeded by parsing the rate-limit response:
 //      - Claude: `rate_limit_event` in --output-format stream-json --verbose stdout
 //      - Codex: `token_count` event in ~/.codex/sessions/ file
-//      - opencode: captured `x-codex-*` headers in ~/.cache/ddd-workflow/custom-statusline/codex-usage.json
+//      - opencode: ~/.cache/ddd-workflow/custom-statusline/codex-usage.json, written by the
+//        capture plugin (1.x: `x-codex-*` response headers; 2.x: `codex.rate_limits` WebSocket frame)
 //      - agy: `gemini-5h` bucket of the "Gemini Models" group in `agy -p /usage`
 //        (free, run in the same throwaway HOME); ok needs remaining_fraction < 1
 //   3. On failure, applies retry logic based on the window expiry time:
@@ -72,7 +76,8 @@
 //   - AGENTS[]       — add/remove CLIs here; each entry needs:
 //       name, cmd (argv array), parseResult (returns {ok, resets_at, reply}),
 //       and optionally cwd / env overrides, or a per-attempt setup/teardown
-//       pair whose session supplies cwd / env (agy's throwaway HOME)
+//       pair whose session supplies cmd / cwd / env (agy's throwaway HOME,
+//       opencode's version-dependent command)
 //
 // ==========================================================================
 
@@ -150,7 +155,7 @@ const AGENTS = [
       "--ignore-user-config",
       "--ignore-rules",
       "-C", "/tmp",
-      "-m", "gpt-5.5",
+      "-m", "gpt-5.6-luna",
       "-c", `model_reasoning_effort="low"`,
       "--disable", "shell_tool",
       "--disable", "browser_use",
@@ -165,23 +170,18 @@ const AGENTS = [
     parseResult: parseCodexResult,
   }] : []),
   {
+    // 實際 argv 與 OPENCODE_DB 依 `opencode --version` 在 setup 決定（spec 47）；
+    // 這裡的 cmd 只供 commandExists 檢查 cmd[0]。
     name: "opencode",
     cwd: "/tmp",
     env: {
-      OPENCODE_DB: OPENCODE_TRIGGER_DB,
       OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
       OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
       OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
     },
-    cmd: [
-      "opencode", "run", "hi",
-      "--format", "json",
-      "--model", "openai/gpt-5.5",
-      "--variant", "low",
-      "--agent", "title",
-      "--title", "session-trigger",
-      "--dir", "/tmp",
-    ],
+    cmd: ["opencode"],
+    setup: setupOpencodeSession,
+    teardown: teardownOpencodeSession,
     parseResult: parseOpencodeResult,
   },
   {
@@ -421,6 +421,65 @@ async function parseOpencodeResult(stdout, { started_at } = {}) {
   return { ok, resets_at, reply: parseOpencodeReply(stdout) }
 }
 
+// `1.19.1` → 1、`opencode v2.0.30` → 2。解析不出來時當 2：V1 是要淘汰的一側，
+// 未知版本照新介面跑，失敗也會落在一般的 fail／retry 分支。
+export function parseOpencodeMajor(version_stdout) {
+  const match = /(\d+)\.\d+/.exec(version_stdout ?? "")
+  return match && Number(match[1]) === 1 ? 1 : 2
+}
+
+// V1：--variant／--dir 仍在，OPENCODE_DB 把 ping session 隔離在 trigger 專用 DB。
+// V2：provider 狀態（含 auth）存在 DB，隔離 DB 會回 provider.no-route，所以改共用預設 DB、
+// ping 完用 session delete 收掉；--standalone 讓 run 在本 process 起 server，不連背景 service。
+function buildOpencodeCommand(major) {
+  if (major === 1) {
+    return {
+      cmd: [
+        "opencode", "run", "hi",
+        "--format", "json",
+        "--model", "openai/gpt-5.6-luna",
+        "--variant", "low",
+        "--agent", "title",
+        "--title", "session-trigger",
+        "--dir", "/tmp",
+      ],
+      env: { OPENCODE_DB: OPENCODE_TRIGGER_DB },
+    }
+  }
+
+  return {
+    cmd: [
+      "opencode", "run", "hi",
+      "--standalone",
+      "--format", "json",
+      "--model", "openai/gpt-5.6-luna#low",
+      "--agent", "title",
+      "--title", "session-trigger",
+    ],
+    env: {},
+  }
+}
+
+async function setupOpencodeSession() {
+  const { stdout } = await run(["opencode", "--version"], { timeout_ms: 10_000 })
+  const major = parseOpencodeMajor(stdout)
+  return { major, ...buildOpencodeCommand(major) }
+}
+
+// 刪除失敗只記 warn：ping 是否成功只由 usage snapshot 決定（spec 47 AC3）。
+async function teardownOpencodeSession(session, { stdout } = {}) {
+  if (session.major === 1) return
+
+  const session_id = parseJsonl(stdout ?? "").find((e) => typeof e.sessionID === "string")?.sessionID
+  if (!session_id) return
+
+  const { exit_code, stderr } = await run(["opencode", "session", "delete", session_id, "--standalone"], { cwd: "/tmp" })
+  if (exit_code !== 0) {
+    const hint = stderr ? stderr.split("\n")[0].slice(0, 200) : ""
+    log("opencode", "warn:", `session delete ${session_id} failed (exit ${exit_code})${hint ? " — " + hint : ""}`)
+  }
+}
+
 function parseOpencodeReply(stdout) {
   const events = parseJsonl(stdout)
   const texts = events
@@ -568,12 +627,14 @@ async function triggerAgent(agent) {
 }
 
 // agent.setup (optional) runs per attempt, retries included, and returns a
-// session whose cwd/env override the static ones; agent.teardown always runs.
-// Neither may throw out of here: an escaping error reaches main()'s
+// session whose cmd/cwd/env override the static ones; agent.teardown always
+// runs and also receives the attempt's stdout (opencode V2 reads the session id
+// from it). Neither may throw out of here: an escaping error reaches main()'s
 // process.exit(1) and kills the other agents' triggers running in parallel.
 async function attemptTrigger(agent) {
   const started_at = Date.now()
   let session = null
+  let stdout = ""
 
   if (agent.setup) {
     try {
@@ -587,7 +648,9 @@ async function attemptTrigger(agent) {
   try {
     const cwd = session?.cwd ?? agent.cwd
     const env = { ...agent.env, ...session?.env }
-    const { stdout, stderr, exit_code } = await run(agent.cmd, { cwd, env })
+    const result = await run(session?.cmd ?? agent.cmd, { cwd, env })
+    const { stderr, exit_code } = result
+    stdout = result.stdout
 
     if (exit_code === "TIMEOUT") {
       log(agent.name, "fail:", "command timed out")
@@ -604,7 +667,7 @@ async function attemptTrigger(agent) {
   } finally {
     if (session) {
       try {
-        await agent.teardown(session)
+        await agent.teardown(session, { stdout })
       } catch (err) {
         log(agent.name, "warn:", `teardown failed — ${err.message}`)
       }

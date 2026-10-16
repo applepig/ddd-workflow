@@ -103,20 +103,22 @@ Agent 定義來自 `agents/ddd-reviewer.md`（共用 SSOT）。authoring repo �
 
 ```bash
 # 透過 adapter 呼叫（推薦，含 raw error passthrough；timeout 由 orchestrator 外層 `timeout --foreground` 負責）
-bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md openai/gpt-5.5 /tmp/xreview-demo.final.txt
+bash ~/.claude/skills/ddd.xreview/scripts/adapters/opencode.sh /tmp/prompt.md openai/gpt-5.6-luna /tmp/xreview-demo.final.txt
 
-# 直接呼叫（不含 adapter error wrapping）
-echo "$prompt" | opencode run --agent ddd-reviewer --model openai/gpt-5.5
+# 直接呼叫（不含 adapter error wrapping）；OpenCode 2.x 需加 --standalone
+echo "$prompt" | opencode run --agent ddd-reviewer --model openai/gpt-5.6-luna
 ```
 
-OpenCode adapter 仍可用完整 spec（例如 `opencode:openai/gpt-5.5`）明確指定；預設 GPT 5 系列 reviewer alias 則由 `xreview.json` 決定，可能指向 Codex 或其他 CLI。
+OpenCode adapter 仍可用完整 spec（例如 `opencode:openai/gpt-5.6-luna`）明確指定；預設 GPT 5 系列 reviewer alias 則由 `xreview.json` 決定，可能指向 Codex 或其他 CLI。
 
 `adapters/opencode.sh` 是刻意保持精簡的 proxy shell：
 
 - 不對 reviewer 輸出做內容／品質判斷
 - timeout 不在這一層——orchestrator 外層已用 `timeout --foreground` 負責（ADR-6 單層制）
-- 使用 `--print-logs --log-level ERROR`，讓 OpenCode 自己的錯誤訊息直接出現在 stderr
-- 用 `--format json` 吐 ndjson，以 `tee /dev/stderr` 把原始 ndjson 複製到 stderr 供除錯，同時用 `jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")'` 抽出 text part 寫進 `<final-out>`
+- 先跑 `opencode --version` 判斷主版本（`1.19.1` → 1、`opencode v2.0.30` → 2，解析不出視為 2），兩版旗標不相容：2.x 加 `--standalone`（`run` 自己起 server，不連背景 service），1.x 沒有這個旗標
+- CLI log 預設不印；`XREVIEW_OPENCODE_PRINT_LOGS=1` 時加 `--print-logs` 與 `--log-level`（2.x 只吃小寫 `error`、1.x 只吃大寫 `ERROR`）。關閉時錯誤仍會進 orchestrator log：2.x 在 JSON stream 送 `type:"error"` 事件（經 tee 進 stderr），非零 exit 另有 `XREVIEW_ERROR` 行
+- 唯讀範圍完全由 `ddd-reviewer` agent 自己的 permission 決定（見下方「Permission 完整性」）：agent 層規則優先於 config 層，adapter 端注入（`OPENCODE_CONFIG_CONTENT`／`OPENCODE_PERMISSION`）對它無效，所以 adapter 不注入任何 permission；反而會以 `env -u OPENCODE_PERMISSION` 清掉呼叫端殘留的值——1.x 仍會合併它，寬鬆值會放大 reviewer 權限
+- 用 `--format json` 吐 ndjson，以 `tee -a /dev/stderr` 把原始 ndjson 複製到 stderr 供除錯（`-a`：stderr 通常就是 orchestrator 的 log 檔，不加會以 O_TRUNC 重開、抹掉 log 開頭的 meta header 與 CLI 自己的 stderr），同時用 `jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")'` 抽出 text part 寫進 `<final-out>`
 - 在非零 exit code 時補一行 `XREVIEW_ERROR` summary，方便上層流程辨識失敗
 
 ### 設計說明
@@ -127,7 +129,7 @@ OpenCode `run` 模式下，未列入的 permission 預設為 `"ask"`。但 headl
 
 因此 **每一個 permission key 都必須明確設定為 `allow` 或 `deny`**，絕對不能遺漏。特別是：
 
-- `external_directory`：預設 `"ask"`，reviewer 嘗試存取工作目錄外的路徑時會掛住。設為 `"*": deny` + `/tmp/*: allow`，只允許讀取 `/tmp/` 下的暫存檔（某些模型會先 `git diff > /tmp/xxx` 再用 Read 讀回）。
+- `external_directory`：預設 `"ask"`，reviewer 嘗試存取工作目錄外的路徑時會掛住。設為 `"*": deny` 後接 `/tmp/*`、`/tmp/**`、`~/.config/ddd-workflow/**` 的 allow（last-match-wins，deny 必須排第一），只允許讀取 `/tmp/` 下的暫存檔（某些模型會先 `git diff > /tmp/xxx` 再用 Read 讀回）與 xreview 設定。寫入仍由 `edit: deny` 擋下，與讀取放行無關。
 - `question: deny`：防止 reviewer 暫停等待使用者回答。
 
 #### 其他設計

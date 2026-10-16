@@ -6,7 +6,9 @@
 #   - stdout: must be empty; orchestrator merges stdout+stderr into log
 #   - stderr: raw ndjson via tee for orchestrator log
 #   - final-out: extracted text events written via jq -rs
-#   - sandbox: read-only via OPENCODE_PERMISSION env
+#   - sandbox: read-only via the ddd-reviewer agent's own permission block
+#     (agent-level rules outrank config-level ones, so nothing is injected here)
+#   - env: XREVIEW_OPENCODE_PRINT_LOGS=1 adds --print-logs + --log-level
 #
 # stdout contract: must be empty (final flows to $3 via jq -rs). The CLI's
 # ndjson is teed to stderr for the orchestrator log; stdout carries nothing.
@@ -24,7 +26,7 @@ if [[ -z "$cli_path" ]]; then
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "XREVIEW_ERROR: jq not found (required for opencode adapter permission JSON build and final extraction)" >&2
+  echo "XREVIEW_ERROR: jq not found (required for opencode adapter final extraction)" >&2
   exit 1
 fi
 
@@ -35,28 +37,47 @@ fi
 
 : > "$final_out"
 
-# Build inline permission JSON via jq so the config glob can interpolate the
-# resolved $XDG_CONFIG_HOME (or $HOME/.config fallback) without quoting hazards.
-# Last-match-wins in OpenCode's permission resolver, so this only adds to (not
-# replaces) the user's global permissions.
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
-permission_json="$(jq -nc \
-  --arg cfg_glob "${config_dir}/ddd-workflow/**" \
-  '{external_directory: ({"/tmp/**":"allow"} + {($cfg_glob):"allow"})}')"
+# OpenCode 2.x changed the run flags: --standalone makes `run` host its own
+# server instead of attaching to the background service, and --log-level takes
+# lower case where 1.x only accepts upper case. `1.19.1` → 1,
+# `opencode v2.0.30` → 2; anything unparseable is treated as 2. stdin is
+# closed so a CLI that reads stdin cannot swallow the prompt or hang here.
+version_out="$("$cli_path" --version < /dev/null 2>/dev/null)" || true
+major=""
+if [[ "$version_out" =~ ([0-9]+)\.[0-9]+ ]]; then
+  major="${BASH_REMATCH[1]}"
+fi
+
+run_flags=()
+[[ "$major" != "1" ]] && run_flags+=(--standalone)
+
+# CLI logs are noise in the orchestrator log, so they are off by default.
+# Failures still surface: 2.x emits a `type:"error"` event on the JSON stream
+# (teed to stderr below), and the non-zero rc gets an XREVIEW_ERROR line.
+if [[ "${XREVIEW_OPENCODE_PRINT_LOGS:-}" == "1" ]]; then
+  if [[ "$major" == "1" ]]; then
+    run_flags+=(--print-logs --log-level ERROR)
+  else
+    run_flags+=(--print-logs --log-level error)
+  fi
+fi
 
 # ndjson stdout → tee to stderr (verbose side) → jq to final-out.
+# tee -a: /dev/stderr is usually the orchestrator log file, and a plain tee
+# reopens it with O_TRUNC, wiping the meta header and the CLI's own stderr.
 # jq -rs slurps the whole stream into an array, selects text events, and joins
 # their .part.text. PIPESTATUS[0] preserves the CLI's rc regardless of jq.
+# OPENCODE_PERMISSION is stripped: 1.x still merges it, so a permissive value
+# inherited from the caller would widen the reviewer's read-only sandbox.
 set +o pipefail
-OPENCODE_PERMISSION="$permission_json" \
+env -u OPENCODE_PERMISSION \
   "$cli_path" run \
-  --print-logs \
-  --log-level ERROR \
+  "${run_flags[@]}" \
   --agent ddd-reviewer \
   --model "$model" \
   --format json \
   < "$prompt_file" \
-  | tee /dev/stderr \
+  | tee -a /dev/stderr \
   | jq -rs 'map(select(.type=="text")) | map(.part.text) | join("")' \
     > "$final_out" 2>/dev/null
 rc="${PIPESTATUS[0]}"
