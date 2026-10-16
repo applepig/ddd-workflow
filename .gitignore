@@ -5,7 +5,9 @@ dist/custom-statusline/*
 !dist/opencode-plugins/
 dist/opencode-plugins/*
 !dist/opencode-plugins/opencode-codex-usage-capture.js
-!dist/opencode-plugins/opencode-codex-usage-format.js
-!dist/opencode-plugins/opencode-codex-usage-status.tsx
+!dist/opencode-codex-usage-status/
+dist/opencode-codex-usage-status/*
+!dist/opencode-codex-usage-status/tui.tsx
+!dist/opencode-codex-usage-status/opencode-codex-usage-format.js
 node_modules/
 .build-manifest.json
