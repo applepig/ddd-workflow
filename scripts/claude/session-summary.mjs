@@ -2,10 +2,12 @@
 // Stop hook：長輪次結束時輸出結束時刻、session 累計 token 用量與 quota 剩餘，
 // 補上內建 "Sautéed for 4m 18s" 缺的絕對時間。
 // 走 exit 0 + systemMessage，不進 model context。
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 
 const QUOTA_CACHE = process.env.STATUSLINE_CACHE_FILE ?? "/tmp/claude/statusline-usage-cache.json";
+// 對齊 statusline anthropic-oauth-usage collector 的 CACHE_STALE_MAX_AGE（300 秒）。
+const QUOTA_CACHE_MAX_AGE_MS = 300_000;
 const MIN_TURN_MINUTES = Number(process.env.SESSION_SUMMARY_MIN_TURN_MINUTES ?? 20);
 
 async function readStdin() {
@@ -54,6 +56,9 @@ async function scanTranscript(transcript_path, prompt_id) {
 
 async function readQuota() {
   try {
+    // spec 49 AC8：statusline 停掉後 cache 不再更新，過舊的數字比沒有更誤導——整份不用。
+    const { mtimeMs } = await stat(QUOTA_CACHE);
+    if (Date.now() - mtimeMs > QUOTA_CACHE_MAX_AGE_MS) return null;
     return JSON.parse(await readFile(QUOTA_CACHE, "utf8"));
   } catch {
     return null;
@@ -82,19 +87,19 @@ function fmtDuration(ms) {
   return `${sec}s`;
 }
 
-function fmtResetAt(resets_at) {
-  const ms = Date.parse(resets_at ?? "");
-  if (!Number.isFinite(ms)) return null;
-  const mins = Math.round((ms - Date.now()) / 60000);
-  if (mins <= 0) return "已重置";
+function fmtResetAt(reset_ms) {
+  const mins = Math.round((reset_ms - Date.now()) / 60000);
   if (mins < 60) return `${mins}m 後重置`;
   return `${Math.floor(mins / 60)}h${mins % 60}m 後重置`;
 }
 
 function quotaText(label, window) {
   if (!window || typeof window.utilization !== "number") return null;
-  const reset = fmtResetAt(window.resets_at);
-  return `${label} ${Math.round(window.utilization)}%${reset === null ? "" : `（${reset}）`}`;
+  const reset_ms = Date.parse(window.resets_at ?? "");
+  if (!Number.isFinite(reset_ms)) return `${label} ${Math.round(window.utilization)}%`;
+  // spec 49 AC8：window 已重置，cache 裡的 utilization 屬於上一輪，不顯示。
+  if (reset_ms <= Date.now()) return null;
+  return `${label} ${Math.round(window.utilization)}%（${fmtResetAt(reset_ms)}）`;
 }
 
 let payload = {};
