@@ -118,7 +118,10 @@ const quota_parts = [quotaText("5h", quota?.five_hour), quotaText("7d", quota?.s
   .filter((part) => part !== null);
 const lines = [
   `⏱ stopped at ${fmtClock(now)}${turn_ms === null ? "" : `（本輪 ${fmtDuration(turn_ms)}）`}`,
-  `🔢 session 累計 in ${fmtTokens(input)} / out ${fmtTokens(output)} / cache r${fmtTokens(cache_read)} w${fmtTokens(cache_write)}`,
+  // spec 49 AC10：transcript 讀不到或沒有 usage 時全是 0，印出來只會誤導。
+  input + output + cache_read + cache_write === 0
+    ? null
+    : `🔢 session 累計 in ${fmtTokens(input)} / out ${fmtTokens(output)} / cache r${fmtTokens(cache_read)} w${fmtTokens(cache_write)}`,
   quota_parts.length === 0 ? null : `📊 ${quota_parts.join("　")}`,
 ].filter((line) => line !== null);
 
