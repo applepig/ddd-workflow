@@ -84,7 +84,7 @@ docs/
 
 `PRD.md` 和 `TECHSTACK.md` 只放跨 sprint 長期事實。`works.md` 是工作紀錄，開工前沒有是正常狀態。
 
-Instruction file（`CLAUDE.md`、`AGENTS.md` 等）只放耐久事實（架構、慣例、約束），不放會變動的進度（branch、PR 編號、待辦）——進度屬於 `works.md`，寫在這裡只會過時誤導。
+專案 instruction file 優先使用 `AGENTS.md`，不另建 `CLAUDE.md`、`GEMINI.md` 或 symlink 副本——各家 agent 都讀 `AGENTS.md`，而 Claude Code 只要 cwd 或任一上層有 `CLAUDE.md` 就不讀 `AGENTS.md`。Instruction file 只放耐久事實（架構、慣例、約束），不放會變動的進度（branch、PR 編號、待辦）——進度屬於 `works.md`，寫在這裡只會過時誤導。
 
 改 instruction file 的預設動作是**就地改寫既有條文，不是追加新條文**：同一主題只留一條規則，**能改一句就不加一段**；規則寫成可判斷的斷言，不附背景敘事與範例堆疊。膨脹的 instruction file 會稀釋每一條規則的權重。
 
@@ -188,7 +188,8 @@ Plan/Research（optional，需求不明時）→ Spec（使用者確認）→ Ex
 
 | 用途 | 優先使用 | 避免 |
 |------|---------|------|
-| 套件管理 | `brew`、`pnpm`、`uv` | npm, yarn, pip |
+| 套件管理 | `brew`、`pnpm` | npm, yarn |
+| Python（一律經 `uv`） | 執行：`uv run python`（含 one-off `-c`），缺套件加 `--with <pkg>`；專案依賴：`uv add`；一次性 CLI：`uvx <tool>` | 直接 `python3`、`pip install`、`python -m venv`、`pipx` |
 | 檢查 CLI 可用性 | `command -v <cmd>` | `which` |
 | 搜尋 | `rg`（程式碼）、`fd`（檔案） | grep, find |
 | JSON 處理 | `jq` | 手動 parse |
