@@ -54,7 +54,7 @@ npm run agents:deploy -- claude --dry-run
 npm run agents:deploy -- opencode
 ```
 
-部署會為 session-trigger 建立隔離 HOME，並將一般 OpenCode data home 中可讀的一般 `auth.json`／`account.json` 檔案複製進隔離 data home。第一次 OpenCode 登入仍須由使用者自行完成；若 credential 缺少、不可讀或不是一般檔案，deploy 會清除對應的舊隔離副本、提示來源路徑並繼續，不會代為登入或建立 credential。
+session-trigger 的 OpenCode ping 一律使用一般登入狀態，deploy 不複製 credential，只清除舊版留下的隔離 `auth.json`／`account.json` 副本；第一次 OpenCode 登入須由使用者自行完成。OpenCode 1.x 以 `OPENCODE_DB` 把 ping session 隔離在 `~/.session-trigger/opencode-data/`；2.x 的 provider 狀態存在預設 DB，改以 `--standalone` 共用預設 DB，ping 完再 `opencode session delete` 刪掉該 session。
 
 ## 工作流總覽
 

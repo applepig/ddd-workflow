@@ -83,7 +83,7 @@ fi
 # --- read scope: grant the reviewer the invoking repo (+ /tmp, config) --------
 # Every other xreview adapter explicitly hands its CLI the target directory
 # (agy --add-dir/--chdir, gemini --include-directories, opencode
-# OPENCODE_PERMISSION). claude.sh historically passed neither, so the reviewer
+# ddd-reviewer agent external_directory). claude.sh historically passed neither, so the reviewer
 # inherited only the orchestrator cwd plus whatever additionalDirectories the
 # ambient settings resolved to. In a multi-root session that set excluded the
 # repo under review, and both Claude reviewers FAILed a Docs-Lens xreview unable

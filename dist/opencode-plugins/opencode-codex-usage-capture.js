@@ -253,37 +253,103 @@ function isCodexResponseRequest(input) {
 	const url = requestUrl(input);
 	return url?.host === "chatgpt.com" && url.pathname === CODEX_PATH;
 }
+function headerGetter(headers) {
+	return typeof headers?.get === "function" ? (name) => headers.get(name) : null;
+}
 function codexHeadersObject(headers) {
+	if (typeof headers?.entries !== "function") return {};
 	return Object.fromEntries([...headers.entries()].filter(([key]) => key.startsWith("x-codex-")).sort(([a], [b]) => a.localeCompare(b)));
 }
-async function writeDebug(startedAt, url, response, storeWrite) {
+async function writeDebug(entry, storeWrite) {
 	if (!DEBUG) return;
 	const file = logPath();
 	await mkdir(path.dirname(file), { recursive: true });
 	await appendFile(file, `${JSON.stringify({
 		time: (/* @__PURE__ */ new Date()).toISOString(),
+		...entry,
+		store_write: storeWrite
+	})}\n`);
+}
+function recordQuota(getHeader, debugEntry) {
+	const observation = collectCodexQuotaHeaders(getHeader, (/* @__PURE__ */ new Date()).toISOString());
+	if (!observation) {
+		writeDebug(debugEntry, "no_observation").catch(() => {});
+		return;
+	}
+	writeCodexUsageSnapshot(observation).then((result) => writeDebug(debugEntry, result)).catch(() => {});
+}
+function httpDebugEntry(startedAt, url, response) {
+	return {
 		duration_ms: Date.now() - startedAt,
-		request: {
+		request: url ? {
 			host: url.host,
 			pathname: url.pathname
-		},
+		} : null,
 		response: {
 			status: response.status,
 			status_text: response.statusText,
 			headers: codexHeadersObject(response.headers)
-		},
-		store_write: storeWrite
-	})}\n`);
+		}
+	};
 }
 function capture(startedAt, requestInput, response) {
 	const url = requestUrl(requestInput);
 	if (!url || !isCodexResponseRequest(url)) return;
-	const observation = collectCodexQuotaHeaders((name) => response.headers.get(name), (/* @__PURE__ */ new Date()).toISOString());
-	if (!observation) {
-		writeDebug(startedAt, url, response, "no_observation").catch(() => {});
+	const getHeader = headerGetter(response?.headers);
+	if (!getHeader) return;
+	recordQuota(getHeader, httpDebugEntry(startedAt, url, response));
+}
+function rateLimitsFrameGetter(frame) {
+	const limits = frame.rate_limits ?? {};
+	const values = {
+		"x-codex-plan-type": frame.plan_type,
+		"x-codex-credits-has-credits": frame.credits?.has_credits,
+		"x-codex-credits-unlimited": frame.credits?.unlimited
+	};
+	for (const ordinal of ["primary", "secondary"]) {
+		values[`x-codex-${ordinal}-used-percent`] = limits[ordinal]?.used_percent;
+		values[`x-codex-${ordinal}-reset-at`] = limits[ordinal]?.reset_at;
+		values[`x-codex-${ordinal}-window-minutes`] = limits[ordinal]?.window_minutes;
+	}
+	return (name) => {
+		const value = values[name];
+		return value === null || value === void 0 ? null : String(value);
+	};
+}
+function captureRateLimitsFrame(event) {
+	if (event.model?.providerID !== "openai") return;
+	if (typeof event.frame !== "string" || !event.frame.includes("\"codex.rate_limits\"")) return;
+	let frame;
+	try {
+		frame = JSON.parse(event.frame);
+	} catch {
 		return;
 	}
-	writeCodexUsageSnapshot(observation).then((result) => writeDebug(startedAt, url, response, result)).catch(() => {});
+	if (frame?.type !== "codex.rate_limits") return;
+	recordQuota(rateLimitsFrameGetter(frame), { websocket: {
+		type: frame.type,
+		kind: event.kind,
+		model: event.model?.id ?? null
+	} });
+}
+function captureHttpResponse(event) {
+	if (event.model?.providerID !== "openai") return;
+	const response = event.response;
+	const getHeader = headerGetter(response?.headers);
+	if (!getHeader) return;
+	recordQuota(getHeader, httpDebugEntry(Date.now(), requestUrl(event.request ?? response), response));
+}
+function swallow(fn) {
+	return (...args) => {
+		try {
+			fn(...args);
+		} catch {}
+	};
+}
+async function registerHook(ctx, name, callback) {
+	try {
+		await ctx.session.hook(name, swallow(callback), { providerID: "openai" });
+	} catch {}
 }
 var opencode_codex_usage_capture_default = {
 	id: "ddd:opencode-codex-usage-capture",
@@ -294,10 +360,14 @@ var opencode_codex_usage_capture_default = {
 		globalThis.fetch = async (requestInput, init) => {
 			const startedAt = Date.now();
 			const response = await originalFetch(requestInput, init);
-			capture(startedAt, requestInput, response);
+			swallow(capture)(startedAt, requestInput, response);
 			return response;
 		};
 		return {};
+	},
+	setup: async (ctx) => {
+		await registerHook(ctx, "experimental.ws.receive", captureRateLimitsFrame);
+		await registerHook(ctx, "http.response", captureHttpResponse);
 	}
 };
 //#endregion
