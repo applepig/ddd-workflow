@@ -6,10 +6,11 @@ import {
   isObservationFresh,
   isObservedAtPlausible,
   isValidUsedPercent,
+  isWindowActive,
   isWindowElapsed,
   windowLabel as deriveWindowLabel,
 } from "../custom-statusline/core/quota-window.ts"
-import { resolveMaxAgeSeconds } from "../custom-statusline/core/codex-usage-store.ts"
+import { readCodexUsageRaw, resolveMaxAgeSeconds } from "../custom-statusline/core/codex-usage-store.ts"
 
 export function formatRemaining(reset_at, now) {
   if (!reset_at) return "--:--"
@@ -29,10 +30,34 @@ function windowLabel(window_minutes) {
   return deriveWindowLabel(window_minutes, OPENCODE_WINDOW_LABEL_OVERRIDES) ?? undefined
 }
 
-export function activeLimitRows(usage) {
-  const active = [usage?.primary, usage?.secondary].filter((slot) => slot?.reset_at)
-  if (active.length === 0) return [{ label: "wk", limit: undefined }]
-  return active.map((slot) => ({ label: windowLabel(slot.window_minutes) ?? "wk", limit: slot }))
+// openai reader：codex snapshot → 正規化 usage（observed_at＋rows）。snapshot 是一次完整觀測，
+// 缺的 window 就是沒有，不從別處補（spec 50 ADR-2）。
+function openaiUsage(snapshot) {
+  if (!snapshot) return undefined
+  return {
+    observed_at: snapshot.observed_at,
+    rows: [snapshot.primary, snapshot.secondary].filter(Boolean).map((window) => ({
+      label: windowLabel(window.window_minutes) ?? "wk",
+      used_percent: window.used_percent,
+      reset_at: window.reset_at,
+    })),
+  }
+}
+
+// spec 50 ADR-3：providerID → reader。新 provider＝capture hook＋自己的 store 檔＋這裡一行，
+// 不擴充 codex store schema。沒註冊的 provider 一律沒有 usage，不跨 provider fallback。
+const USAGE_READERS = new Map([
+  ["openai", async (options) => openaiUsage(await readCodexUsageRaw(options))],
+])
+
+export async function readProviderUsage(providerID, options) {
+  const reader = USAGE_READERS.get(providerID)
+  return reader ? reader(options) : undefined
+}
+
+// 只留 active window（reset_at 合法且未過）；沒有就回空陣列，由 TUI 決定整個不 render。
+export function activeLimitRows(usage, now) {
+  return (usage?.rows ?? []).filter((row) => isWindowActive(row, now))
 }
 
 // freshness 以外的有效值判準共用於 public unknown 判斷與 TUI stale display fallback。
