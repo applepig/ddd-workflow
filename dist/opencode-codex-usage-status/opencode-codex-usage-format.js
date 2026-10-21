@@ -38,8 +38,16 @@ function windowLabel$1(window_minutes, overrides = {}) {
 	if (kind === null) return null;
 	return overrides[window_minutes] ?? genericWindowLabel(kind);
 }
+function isValidResetAt(reset_at) {
+	return typeof reset_at === "number" && Number.isFinite(reset_at) && reset_at > 0;
+}
 function isWindowElapsed(reset_at, now_ms) {
 	return reset_at <= Math.floor(now_ms / 1e3);
+}
+function isWindowActive(window, now_ms) {
+	if (!window) return false;
+	if (!isValidResetAt(window.reset_at)) return false;
+	return !isWindowElapsed(window.reset_at, now_ms);
 }
 function isObservedAtPlausible(observed_at, now_ms) {
 	if (typeof observed_at !== "string") return false;
@@ -178,16 +186,24 @@ function formatRemaining(reset_at, now) {
 function windowLabel(window_minutes) {
 	return windowLabel$1(window_minutes, OPENCODE_WINDOW_LABEL_OVERRIDES) ?? void 0;
 }
-function activeLimitRows(usage) {
-	const active = [usage?.primary, usage?.secondary].filter((slot) => slot?.reset_at);
-	if (active.length === 0) return [{
-		label: "wk",
-		limit: void 0
-	}];
-	return active.map((slot) => ({
-		label: windowLabel(slot.window_minutes) ?? "wk",
-		limit: slot
-	}));
+function openaiUsage(snapshot) {
+	if (!snapshot) return void 0;
+	return {
+		observed_at: snapshot.observed_at,
+		rows: [snapshot.primary, snapshot.secondary].filter(Boolean).map((window) => ({
+			label: windowLabel(window.window_minutes) ?? "wk",
+			used_percent: window.used_percent,
+			reset_at: window.reset_at
+		}))
+	};
+}
+var USAGE_READERS = new Map([["openai", async (options) => openaiUsage(await readCodexUsageRaw(options))]]);
+async function readProviderUsage(providerID, options) {
+	const reader = USAGE_READERS.get(providerID);
+	return reader ? reader(options) : void 0;
+}
+function activeLimitRows(usage, now) {
+	return (usage?.rows ?? []).filter((row) => isWindowActive(row, now));
 }
 function validLimitPercent(limit, now) {
 	if (!limit) return void 0;
@@ -215,4 +231,4 @@ function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveM
 	};
 }
 //#endregion
-export { activeLimitRows, formatRemaining, limitColumns, readCodexUsageRaw, usedPercent };
+export { activeLimitRows, formatRemaining, limitColumns, readProviderUsage, usedPercent };
