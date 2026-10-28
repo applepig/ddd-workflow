@@ -222,8 +222,9 @@ fi
 # Both are emitted in events so callers can tail the log during review and
 # Read the final after RETURN/FAIL.
 #
-# Designed to run under Claude Code's Monitor tool (timeout_ms up to 3600000ms)
-# to bypass the Bash tool's 10-minute hard cap.
+# On Claude Code this runs as a background Bash task with timeout 3600000ms:
+# foreground Bash caps at 10 minutes and Monitor at 30, both shorter than a
+# deep review.
 #
 # Signal handling:
 #   - Each reviewer is spawned under `setsid` so the CLI subprocess tree
@@ -233,14 +234,15 @@ fi
 #   - INT/TERM triggers cleanup + immediate exit, so ALL_DONE is NOT emitted.
 #   - Normal completion emits ALL_DONE then exit 0; EXIT trap's cleanup is a
 #     guarded no-op (re-entry guard avoids double-run + spurious 2s sleep).
-#   - SIGKILL (e.g. Monitor's hard kill) cannot be trapped — in that case the
-#     OS reclaims the orchestrator but reviewer PGIDs may linger briefly until
-#     their own `timeout` safety net fires or they finish naturally.
+#   - SIGKILL (e.g. a host hard kill: background Bash deadline or Monitor
+#     expiry) cannot be trapped — in that case the OS reclaims the
+#     orchestrator but reviewer PGIDs may linger briefly until their own
+#     `timeout` safety net fires or they finish naturally.
 #
 # Output modes:
 #   - streaming (default when CLAUDECODE=1): pure event stream — START / RETURN /
-#     FAIL / ALL_DONE only. Designed for Claude Code's Monitor tool which
-#     turns each line into a notification.
+#     FAIL / ALL_DONE only. Read by Claude Code from the background task output,
+#     or line by line if run under Monitor.
 #   - blocking (default for everything else): same event stream, but after
 #     ALL_DONE appends a human-readable footer listing each reviewer's
 #     status + log path. Designed for callers (opencode, gemini-cli, plain
@@ -283,10 +285,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # M6.4: stdin mode. When no positional prompt file (or "-" sentinel) is given,
-# slurp stdin into a managed tmpfile. This lets coordinator issue a single
-# Monitor call with the prompt piped in (heredoc / echo), no pre/post Bash tool
-# calls for mktemp + rm. The early trap guarantees cleanup even if validation
-# below exits before the main cleanup() function is registered.
+# slurp stdin into a managed tmpfile. Only for manual shell invocations or
+# runners with their own stdin pipe — do not pass the prompt via heredoc inside
+# a host tool call (background Bash / Monitor), or the prompt ends up in the
+# argv of a long-running command. The early trap guarantees cleanup even if
+# validation below exits before the main cleanup() function is registered.
 _tmp_prompt_file=""
 if [[ ${#positionals[@]} -eq 0 || "${positionals[0]}" == "-" ]]; then
   _tmp_prompt_file="$(mktemp /tmp/xreview-prompt-XXXXXX.md)" || {
@@ -320,10 +323,17 @@ if [[ ! -f "$prompt_file" ]]; then
   exit 1
 fi
 
+# Empty prompt (e.g. stdin wired to /dev/null) must not fan out paid reviewers.
+if [[ ! -s "$prompt_file" ]]; then
+  echo "FAIL orchestrator prompt_file_empty:$prompt_file"
+  emit_all_done_event
+  exit 1
+fi
+
 # Mode detection — explicit override wins, else CLAUDECODE → streaming, else
 # blocking. Blocking is the safe default: a streaming consumer reading a
 # blocking-mode stream still gets all events; the footer is just extra trailing
-# text after ALL_DONE that Monitor will ignore (Monitor stops at process exit).
+# text after ALL_DONE that the host reading stdout can ignore.
 mode="${XREVIEW_MODE:-}"
 if [[ -z "$mode" ]]; then
   if [[ -n "${CLAUDECODE:-}" ]]; then
@@ -376,7 +386,7 @@ adapter_dir="$(get_xreview_adapter_dir "$script_dir")"
 # after a reboot cycle with low PID reuse).
 runid="$(make_run_id)"
 
-# Per-reviewer hard timeout: 50 minutes. Well within Monitor's 1hr cap but
+# Per-reviewer hard timeout: 50 minutes. Within the 1hr host timeout but
 # long enough for deep-reasoning models (opus, gemini-pro). Overridable via
 # XREVIEW_TIMEOUT_SEC for tests; production always uses the default.
 # ADR-6: timeout is enforced here (orchestrator layer) via `timeout --foreground`,
@@ -423,7 +433,7 @@ specs=("${resolved_specs[@]}")
 # + full "claude:claude-opus-4-6") share the same slug → same .log / .final.txt
 # paths → race-overwrite. Keep first occurrence, warn on stderr for each
 # subsequent duplicate. stderr (not stdout) because stdout is the event stream
-# consumed by Monitor; mixing in non-event lines breaks deterministic parsing.
+# read by the host; mixing in non-event lines breaks deterministic parsing.
 deduped_specs=()
 # Requires bash 4.0+ (associative arrays). macOS's stock bash 3.2 would error
 # at parse time here; this file is intentionally bash 4+ throughout.
@@ -611,7 +621,7 @@ done
 
 # Wait for every reviewer. We don't propagate individual failures — they're
 # already reported via the event stream. Orchestrator itself exits 0 unless
-# the Monitor kills us.
+# the host hard-kills us (background Bash deadline or Monitor expiry).
 for pid in "${pids[@]}"; do
   wait "$pid" || true
 done
@@ -619,9 +629,9 @@ done
 emit_all_done_event
 
 # Blocking-mode footer: emit a human-readable summary pointing to log files.
-# Streaming consumers (Monitor) will have already reacted to per-reviewer
-# events and don't need this; emitting it would just be noise after the
-# stream-end notification.
+# Streaming consumers (the host reading stdout) will have already reacted to
+# per-reviewer events and don't need this; emitting it would just be noise
+# after the stream-end notification.
 if [[ "$mode" == "blocking" ]]; then
   done_count=0
   fail_count=0

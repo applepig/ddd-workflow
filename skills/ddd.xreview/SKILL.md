@@ -67,13 +67,15 @@ echo "$review_prompt_file"
 
 公開入口維持 skill-local script：`scripts/xreview-orchestrator.sh`。此檔案是 shared `agent-runner.sh` 的 symlink entrypoint；runner 會依 invocation basename 進入 `xreview` mode。Coordinator 不需也不應直接呼叫 shared runner 實體路徑。
 
-**Claude Code**（Monitor 可用）：
+`<prompt-file>` 填步驟 2 印出的實際路徑——各次 tool call 不共用 shell 變數。
+
+**Claude Code**（背景 Bash；`timeout` 必須明寫，`claude -p` 模式背景預設只有 10 分鐘）：
 
 ```
-Monitor({
-  command: "bash ~/.claude/skills/ddd.xreview/scripts/xreview-orchestrator.sh $review_prompt_file; rc=$?; rm -f $review_prompt_file; exit $rc",
-  timeout_ms: 3600000,
-  persistent: false,
+Bash({
+  command: "bash ~/.claude/skills/ddd.xreview/scripts/xreview-orchestrator.sh <prompt-file>; rc=$?; rm -f <prompt-file>; exit $rc",
+  run_in_background: true,
+  timeout: 3600000,
   description: "xreview 平行派 N 個 reviewer"
 })
 ```
@@ -81,14 +83,14 @@ Monitor({
 **其他 host**（Gemini / Codex / OpenCode，走 blocking mode）：
 
 ```bash
-XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh "$review_prompt_file"; rc=$?; rm -f "$review_prompt_file"; exit "$rc"
+XREVIEW_MODE=blocking bash <skill-dir>/scripts/xreview-orchestrator.sh <prompt-file>; rc=$?; rm -f <prompt-file>; exit "$rc"
 ```
 
 模型覆蓋、短名、**單一 reviewer 冒煙測試**（驗證某 model／adapter 活著，不必組正式 review prompt）等用法見 `references/cli-reference.md`。
 
 ### 4. 收集並讀取結果
 
-orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾。Coordinator 必須先讀取各 RETURN 的 `<final-path>`，確認 reviewer report 內容後才進入整合；空檔標失敗。
+orchestrator 輸出 `RETURN <spec> <log> <final>` 和 `FAIL <spec> ...` 事件，以 `ALL_DONE` 收尾；Claude Code 在背景 task 完成通知後讀其輸出，沒有 `ALL_DONE` 代表被強制終止。Coordinator 必須先讀取各 RETURN 的 `<final-path>`，確認 reviewer report 內容後才進入整合；空檔標失敗。
 
 事件格式與邊界案例見 `references/orchestrator-internals.md`。
 

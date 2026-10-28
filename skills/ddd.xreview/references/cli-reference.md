@@ -9,7 +9,7 @@
 用 `--models` flag 覆蓋 config 的 reviewer 清單——逗號分隔、可重複，每個 spec 是短名或完整 `<cli>:<model>`：
 
 ```
---models opus,sol,pro $review_prompt_file
+--models opus,sol,pro <prompt-file>
 --models g:pro,g:flash -            # prompt 從 stdin
 ```
 
@@ -54,7 +54,7 @@
 任何短名都可用 `<cli>:<model>` 完整 spec 明確指定並繞過 alias，例如：
 
 ```
---models agy:gemini-4-argon,claude:opus,codex:gpt-6.1-sol $review_prompt_file
+--models agy:gemini-4-argon,claude:opus,codex:gpt-6.1-sol <prompt-file>
 ```
 
 `agy:<model>` 為 pass-through（`resolve_spec` 原樣回傳），model id 用無空白形式（如 `agy:gemini-4-argon`、`agy:gemini-3.8-flash`；含空白的人類可讀名稱會 fail regex）。adapter 機制見 `cli-adapters.md` ## Antigravity CLI。
@@ -77,4 +77,4 @@ echo "回覆恰好一行：SMOKE_OK" | XREVIEW_MODE=blocking \
 
 ## 雙模式
 
-Monitor mode（Claude Code）與 blocking mode（其他 host）走同一份 event schema、同一批 `.log`／`.final.txt` sidecar。差別只在 caller 是逐行收事件還是結束後一次拿完整 stdout。
+streaming mode（Claude Code，背景 Bash 或 Monitor）與 blocking mode（其他 host）走同一份 event schema、同一批 `.log`／`.final.txt` sidecar。差別只在 blocking mode 於 `ALL_DONE` 後多一段 human-readable summary footer。
