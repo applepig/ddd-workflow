@@ -83,6 +83,25 @@ function hasStaleObservation(observed_at, now, max_age_seconds) {
   )
 }
 
+// V2 footer 單列的字串；只含單欄寬字元（ASCII 與 U+00B7），字寬即 length。
+function compactUsageText(columns_list, tier) {
+  return columns_list
+    .map((columns) => {
+      const parts = [columns.label.trim(), columns.percent.trim()]
+      if (tier === "full") parts.push(columns.reset.trim())
+      return parts.join(" ")
+    })
+    .join(" · ")
+}
+
+// spec 52 AC2：依 footer 預算選最寬放得下的一階 full → percent → hidden；預算尚未量到（undefined）也是 hidden。
+export function compactUsageTier(columns_list, budget) {
+  if (columns_list.length === 0) return "hidden"
+  if (compactUsageText(columns_list, "full").length <= budget) return "full"
+  if (compactUsageText(columns_list, "percent").length <= budget) return "percent"
+  return "hidden"
+}
+
 export function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
   const fresh_percent = usedPercent(limit, now, observed_at, max_age_seconds)
   const stale_percent =
