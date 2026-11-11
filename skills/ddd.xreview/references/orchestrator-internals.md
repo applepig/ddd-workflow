@@ -13,7 +13,7 @@ FAIL <spec> exit_code=<n> log=<log-path> final=<final-path>
 ALL_DONE
 ```
 
-- **Monitor host**：事件以 task notification 逐行送達
+- **Claude Code**（`CLAUDECODE=1` → streaming mode）：背景 Bash 下事件寫進 task 輸出，orchestrator 結束時一次收到完成通知；改用 Monitor 則逐行送達（限制見「Timeout 單層制」）
 - **Blocking host**（`XREVIEW_MODE=blocking`）：事件在 shell 結束後一次出現在 stdout；`ALL_DONE` 後會附 human-readable summary footer，event parser 只吃 `ALL_DONE` 之前的行
 
 ## Runner Mode 與 Symlink Layout
@@ -58,11 +58,11 @@ for each notification line:
 
 ### 沒收到 ALL_DONE 的兜底
 
-- Monitor `timeout_ms` 達到（1 小時）→ orchestrator 被 SIGKILL、cleanup trap 來不及執行
+- 背景 Bash deadline（有啟用時）或 Monitor `timeout_ms`（最多 30 分鐘）到期 → orchestrator 被 host 強制終止，cleanup trap 未必執行
 - Blocking shell 被 host timeout / 使用者中斷 / shell crash 提前終止
-- 系統異常（OOM、shell crash）
+- 系統異常（OOM、shell crash、host 記憶體吃緊回收背景 shell）
 
-以 stream-end notification 收斂，不阻塞流程：
+以 stream-end notification 收斂，不阻塞流程。背景 Bash 的事件邊跑邊寫進 task output 檔，被終止後讀該檔取已送出的事件；連 `START` 都沒有時，直接看 `/tmp/xreview-<runid>-*.final.txt`（runid 不明就找時間最新的一組）：
 
 - 沒收到 START 的 reviewer → status = `unknown`
 - 已 START 但無 RETURN/FAIL → status = `incomplete`
@@ -88,7 +88,16 @@ M2 之前舊流程靠 `tail -n 10 <log>` + 關鍵字做 4 類判斷，現已由 
 
 ## Timeout 單層制（ADR-6）
 
-- **Monitor host**：orchestrator 整體上限 3600000ms（1 小時），由 Monitor `timeout_ms` 強制
+- **Claude Code**：背景 Bash 帶 `timeout: 3600000`（1 小時），但它只在背景 deadline 啟用時生效——2.1.312 實測 `claude -p` 有（預設 10 分鐘、上限 2 小時），互動 session 沒有、`timeout` 被忽略。實際保底是下面的每 reviewer safety net。前景 Bash 內建上限 10 分鐘不夠用
+- **Monitor（選用）**：上限 30 分鐘（`timeout_ms` 超過 1800000 會被截斷，schema 也沒有 `persistent`），短於每 reviewer 的 50 分鐘 safety net，到期會丟掉整輪結果。只在預期 30 分鐘內跑完、又想逐筆收 `RETURN`／`FAIL` 時才用：
+
+  ```
+  Monitor({
+    command: "bash ~/.claude/skills/ddd.xreview/scripts/xreview-orchestrator.sh <prompt-file>; rc=$?; rm -f <prompt-file>; exit $rc",
+    timeout_ms: 1800000,
+    description: "xreview 平行派 N 個 reviewer"
+  })
+  ```
 - **Blocking host**：用 host shell 能支援的最長 blocking timeout 跑同一支 orchestrator；host 做不到時明確回報 capability 缺失
 - **每 reviewer safety net**：預設 3000 秒（50 分鐘），由 orchestrator 外層的 `timeout --foreground` 強制。Adapter 本身不做 timeout。測試可用 `XREVIEW_TIMEOUT_SEC` env var 注入短 timeout 觸發 124 路徑
 
@@ -101,27 +110,27 @@ Timeout 觸發時：
 
 ## SIGKILL 與殘留
 
-- Monitor 強制 kill 或外部 `kill -9` 時，orchestrator 的 cleanup trap 不會執行
+- host 到期強制終止（背景 Bash／Monitor）或外部 `kill -9` 時，orchestrator 的 cleanup trap 未必執行
 - 子 reviewer process 由各自 PGID 隔離，依賴 OS 在 session 結束時收尾
 - 一般不會殘留；若 `ps` 顯示子程序殘留，手動 `pkill -f xreview-orchestrator`
-- Claude Code 專屬：Statusline 在 Monitor 結束後偶爾顯示 task 殘留，是 UI 顯示延遲，不影響實際清理
+- Claude Code 專屬：以 Monitor 執行時，Statusline 在結束後偶爾顯示 task 殘留，是 UI 顯示延遲，不影響實際清理
 
 ## Prompt 安全機制
 
-**嚴禁在 command line 暴露 prompt 內容**（違反點：Monitor command 字串會成為 shell argv、process listing 可見）。
+**嚴禁在 command line 暴露 prompt 內容**（違反點：orchestrator command 字串會成為 shell argv、process listing 可見，且整輪 review 期間都在）。
 
 實作：
 
 1. Coordinator 用 Bash `mktemp` 先 materialize 單一 prompt file
-2. Monitor command / blocking shell command 傳「檔案路徑」而非內容
+2. orchestrator command 傳「檔案路徑」而非內容
 3. Orchestrator 對外部 CLI 一律 stdin pipe
-4. Monitor command 尾巴內嵌 `rm -f $prompt_file` 清理
+4. orchestrator command 尾巴內嵌 `rm -f <prompt-file>` 清理；寫實際路徑而非 shell 變數，因為各次 tool call 不共用 shell 狀態
 
-**進階路徑**：orchestrator 在**無位置參數**或**首位為 `-` sentinel** 時會從 stdin 讀 prompt、自己 mktemp + EXIT trap 清理。此路徑僅適合直接在 shell 裡手動呼叫或有獨立 stdin 管道的 runner 使用；**不要透過 Monitor 採用此路徑**——heredoc 會讓 prompt 落在 Monitor command argv 上。
+**進階路徑**：orchestrator 在**無位置參數**或**首位為 `-` sentinel** 時會從 stdin 讀 prompt、自己 mktemp + EXIT trap 清理。此路徑僅適合直接在 shell 裡手動呼叫或有獨立 stdin 管道的 runner 使用；**不要透過背景 Bash 或 Monitor 採用此路徑**——heredoc 會讓 prompt 落在長時間執行的 command argv 上。
 
 ## 暫存檔清理策略
 
-- **Prompt 檔**（`/tmp/xreview-XXXXXX.md`）：Monitor command 尾巴內嵌 `rm` 自動清掉。若 orchestrator 被 SIGKILL 或使用者直接中斷可能殘留
+- **Prompt 檔**（`/tmp/xreview-XXXXXX.md`）：orchestrator command 尾巴內嵌 `rm` 自動清掉。若 orchestrator 被 SIGKILL 或使用者直接中斷可能殘留
 - **Reviewer 產出**（`/tmp/xreview-<runid>-*.{log,final.txt}`）：**保留**以便事後 peek／驗證。`.final.txt` 是 coordinator 讀檔的主要入口，`.log` 是除錯 fallback。兩者都需要保留直到系統清理
 
 ## 退化策略（None）
@@ -148,7 +157,7 @@ Timeout 觸發時：
 - 預設短名 11 個：`sol`、`astra`、`luna`、`5.4`、`5-mini`、`haiku`、`sonnet`、`opus`、`fable`、`pro`、`flash`（對照見 `cli-reference.md`）；`5.4`／`5-mini` 保留給 `opencode:github-copilot/*` 等 Copilot fallback 或 legacy 用法
 - 使用者既有的 config 需自行補 `aliases` 區塊才能用短名
 - Orchestrator 在 CLI 沒指定 spec 時自動讀 config 的 `reviewers` 清單
-- `--models` flag 可一次性覆蓋：`--models opus,sol,pro $prompt_file`（逗號分隔、可重複；alias 在 orchestrator 內 resolve 成完整 spec，alias key 不得含冒號——`:` 是 `cli:model` 分隔符）。舊的 prompt-file 後接位置 specs 形式仍相容，`--models` 優先
+- `--models` flag 可一次性覆蓋：`--models opus,sol,pro <prompt-file>`（逗號分隔、可重複；alias 在 orchestrator 內 resolve 成完整 spec，alias key 不得含冒號——`:` 是 `cli:model` 分隔符）。舊的 prompt-file 後接位置 specs 形式仍相容，`--models` 優先
 
 ## 相關 ADR
 
