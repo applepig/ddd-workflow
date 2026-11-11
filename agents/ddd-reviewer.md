@@ -106,7 +106,7 @@ tools: ["Read", "Grep", "Glob", "Bash"]
 
 - 讀取 spec.md 了解預期行為（若有）
 - 讀取 spec.md Milestones 了解完成範圍
-- 執行 prompt 指定的 git diff 指令取得變更
+- 執行 prompt 指定的 git diff 指令取得變更：shell 已在受審 repo 內，一次只跑一條唯讀指令——不加 `git -C <path>`、不用 `&&`／`;` 串接；指令被拒時先拆成單一指令重試，仍拿不到變更才輸出 `FAIL`
 - 瀏覽相關檔案了解上下文
 
 ### 2. 品質門檻
