@@ -218,6 +218,19 @@ function usedPercent(limit, now, observed_at, max_age_seconds = resolveMaxAgeSec
 function hasStaleObservation(observed_at, now, max_age_seconds) {
 	return observed_at !== void 0 && isObservedAtPlausible(observed_at, now) && !isObservationFresh(observed_at, now, max_age_seconds);
 }
+function compactUsageText(columns_list, tier) {
+	return columns_list.map((columns) => {
+		const parts = [columns.label.trim(), columns.percent.trim()];
+		if (tier === "full") parts.push(columns.reset.trim());
+		return parts.join(" ");
+	}).join(" · ");
+}
+function compactUsageTier(columns_list, budget) {
+	if (columns_list.length === 0) return "hidden";
+	if (compactUsageText(columns_list, "full").length <= budget) return "full";
+	if (compactUsageText(columns_list, "percent").length <= budget) return "percent";
+	return "hidden";
+}
 function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveMaxAgeSeconds()) {
 	const fresh_percent = usedPercent(limit, now, observed_at, max_age_seconds);
 	const stale_percent = fresh_percent === void 0 && hasStaleObservation(observed_at, now, max_age_seconds) ? validLimitPercent(limit, now) : void 0;
@@ -231,4 +244,4 @@ function limitColumns(label, limit, now, observed_at, max_age_seconds = resolveM
 	};
 }
 //#endregion
-export { activeLimitRows, formatRemaining, limitColumns, readProviderUsage, usedPercent };
+export { activeLimitRows, compactUsageTier, formatRemaining, limitColumns, readProviderUsage, usedPercent };
